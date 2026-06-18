@@ -27,3 +27,25 @@ export function addLead(lead) {
     body: JSON.stringify(lead),
   });
 }
+
+// GET /api/meetings → array of meetings (normalized to an array)
+export async function getMeetings() {
+  const res = await fetch("/api/meetings");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+// POST /api/meetings → append a new meeting row
+export function addMeeting(meeting) {
+  return fetch("/api/meetings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(meeting),
+  });
+}
+
+// DELETE /api/meetings?id=X → delete a meeting by id
+export function deleteMeeting(id) {
+  return fetch(`/api/meetings?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+}

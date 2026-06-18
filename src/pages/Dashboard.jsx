@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { GOLD, MEETINGS } from "../constants";
+import { GOLD } from "../constants";
 import { relDate } from "../utils";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
@@ -14,7 +14,8 @@ export default function Dashboard() {
   const [drawerLead, setDrawerLead] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [seenLeadIds, setSeenLeadIds] = useState([]);
-  const [meetings, setMeetings] = useState(MEETINGS);
+  const [meetings, setMeetings] = useState([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(true);
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -31,6 +32,16 @@ export default function Dashboard() {
       .then(data => { if (active) setLeads(data); })
       .catch(() => { if (active) setLeads([]); })
       .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  // Load meetings from Google Sheets on mount
+  useEffect(() => {
+    let active = true;
+    api.getMeetings()
+      .then(data => { if (active) setMeetings(data); })
+      .catch(() => { if (active) setMeetings([]); })
+      .finally(() => { if (active) setMeetingsLoading(false); });
     return () => { active = false; };
   }, []);
 
@@ -59,8 +70,20 @@ export default function Dashboard() {
     }
     setNotifOpen(!notifOpen);
   };
-  const deleteMeeting = (id) => setMeetings(ms => ms.filter(m => m.id !== id));
-  const createMeeting = (m) => setMeetings(ms => [...ms, { ...m, id: Date.now() }]);
+  // Persist new meeting to Google Sheets, then add the server-assigned row to state
+  const createMeeting = async (m) => {
+    try {
+      const res = await api.addMeeting(m);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const created = await res.json();
+      setMeetings(ms => [...ms, created]);
+    } catch { /* ignore — meeting not persisted */ }
+  };
+  // Optimistic removal + persist the delete
+  const deleteMeeting = (id) => {
+    setMeetings(ms => ms.filter(m => String(m.id) !== String(id)));
+    api.deleteMeeting(id).catch(() => {});
+  };
 
   const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["newsletter", "Newsletter"]];
 
@@ -190,6 +213,7 @@ export default function Dashboard() {
               <DashboardTab
                 leads={leads}
                 meetings={meetings}
+                meetingsLoading={meetingsLoading}
                 onOpenLead={setDrawerLead}
                 updateStatus={updateStatus}
                 onCreateMeeting={createMeeting}

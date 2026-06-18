@@ -9,7 +9,7 @@ import CustomTooltip from "../components/CustomTooltip";
 import MiniCalendar from "../components/MiniCalendar";
 import MeetingModal from "../components/MeetingModal";
 
-export default function DashboardTab({ leads, meetings, onOpenLead, updateStatus, onCreateMeeting, onDeleteMeeting, onViewAllLeads }) {
+export default function DashboardTab({ leads, meetings, meetingsLoading, onOpenLead, updateStatus, onCreateMeeting, onDeleteMeeting, onViewAllLeads }) {
   const [showMeetingForm, setShowMeetingForm] = useState(false);
 
   const chartData = buildChartData(leads);
@@ -67,7 +67,9 @@ export default function DashboardTab({ leads, meetings, onOpenLead, updateStatus
               <button onClick={() => setShowMeetingForm(true)} style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>+ Nova reunião</button>
             </div>
           </div>
-          <MiniCalendar meetings={meetings} onDelete={onDeleteMeeting} />
+          {meetingsLoading
+            ? <div style={{ padding: "40px 0", textAlign: "center", color: "#999", fontSize: 13 }}>A carregar reuniões…</div>
+            : <MiniCalendar meetings={meetings} onDelete={onDeleteMeeting} />}
         </div>
       </div>
 
