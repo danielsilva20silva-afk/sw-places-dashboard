@@ -1,42 +1,27 @@
 import { useState, useRef, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
-const MOCK_LEADS = [
-  { id: 1, name: "João Silva", email: "joao@email.com", phone: "+351912345678", budget: "300k–500k", intention: "Habitação própria", source: "V23 — Algarve", date: "2026-06-17", status: "Novo", notes: "" },
-  { id: 2, name: "Ana Martins", email: "ana@email.com", phone: "+351963111222", budget: "+500k", intention: "Investimento", source: "V5 — Comunidade", date: "2026-06-16", status: "Contactado", notes: "Interessada em Fix & Flip" },
-  { id: 3, name: "Michael Brown", email: "michael@email.com", phone: "+447911123456", budget: "+1M", intention: "Investimento", source: "V24 — EN Community", date: "2026-06-15", status: "Reunião agendada", notes: "Call marcada 20 jun" },
-  { id: 4, name: "Sara Costa", email: "sara@email.com", phone: "+351934567890", budget: "Até 300k", intention: "Casa de férias", source: "V1 — Lisboa vs CV", date: "2026-06-14", status: "Fechado", notes: "" },
-  { id: 5, name: "Thomas Müller", email: "thomas@email.com", phone: "+4915123456789", budget: "300k–500k", intention: "Casa de férias", source: "V12 — Foreigners", date: "2026-06-13", status: "Perdido", notes: "Decidiu outro país" },
-  { id: 6, name: "Catarina Lopes", email: "cat@email.com", phone: "+351965432109", budget: "300k–500k", intention: "Habitação própria", source: "V23 — Algarve", date: "2026-06-12", status: "Novo", notes: "" },
-  { id: 7, name: "James Wilson", email: "james@email.com", phone: "+14155550123", budget: "+1M", intention: "Investimento", source: "V24 — EN Community", date: "2026-06-11", status: "Contactado", notes: "" },
-  { id: 8, name: "Beatriz Fonseca", email: "bea@email.com", phone: "+351912000111", budget: "300k–500k", intention: "Habitação própria", source: "V7 — 3 Razões", date: "2026-06-10", status: "Novo", notes: "" },
-  { id: 9, name: "Lena Fischer", email: "lena@email.com", phone: "+4917612345678", budget: "+500k", intention: "Investimento", source: "V24 — EN Community", date: "2026-06-08", status: "Novo", notes: "" },
-  { id: 10, name: "Ricardo Sousa", email: "ricardo@email.com", phone: "+351961234567", budget: "300k–500k", intention: "Habitação própria", source: "V1 — Lisboa vs CV", date: "2026-06-05", status: "Contactado", notes: "" },
-  { id: 11, name: "Sophie Martin", email: "sophie@email.com", phone: "+33612345678", budget: "+1M", intention: "Investimento", source: "V24 — EN Community", date: "2026-06-03", status: "Reunião agendada", notes: "Videocall 25 jun 15h" },
-  { id: 12, name: "Paulo Ferreira", email: "paulo@email.com", phone: "+351934111222", budget: "Até 300k", intention: "Habitação própria", source: "V23 — Algarve", date: "2026-05-28", status: "Fechado", notes: "" },
-];
-
 const MEETINGS = [
   { id: 3, name: "Michael Brown", date: "2026-06-20", time: "14:00", type: "Videocall" },
   { id: 11, name: "Sophie Martin", date: "2026-06-25", time: "15:00", type: "Videocall" },
   { id: 7, name: "James Wilson", date: "2026-06-28", time: "10:00", type: "Presencial" },
 ];
 
-// Chart data — leads per day last 14 days
-const chartData = (() => {
+// Chart data — leads per day, last 14 days, computed from live leads
+function buildChartData(leads) {
   const days = [];
   for (let i = 13; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split("T")[0];
-    const count = MOCK_LEADS.filter(l => l.date === dateStr).length;
+    const count = leads.filter(l => l.date === dateStr).length;
     days.push({
       day: d.toLocaleDateString("pt-PT", { day: "numeric", month: "short" }),
       leads: count,
     });
   }
   return days;
-})();
+}
 
 const STATUS_CONFIG = {
   "Novo":             { bg: "#EFF6FF", text: "#1D4ED8", dot: "#3B82F6", border: "#BFDBFE" },
@@ -357,7 +342,8 @@ function NewsletterTab({ leads }) {
 }
 
 export default function Dashboard() {
-  const [leads, setLeads] = useState(MOCK_LEADS);
+  const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [drawerLead, setDrawerLead] = useState(null);
   const [filterBudget, setFilterBudget] = useState("Todos");
   const [filterIntention, setFilterIntention] = useState("Todas");
@@ -373,8 +359,33 @@ export default function Dashboard() {
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
-  const updateLead = (id, status, notes) => setLeads(leads.map(l => l.id === id ? { ...l, status, notes } : l));
-  const updateStatus = (id, status) => setLeads(leads.map(l => l.id === id ? { ...l, status } : l));
+  // Load leads from Google Sheets on mount
+  useEffect(() => {
+    let active = true;
+    fetch("/api/leads")
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(data => { if (active) setLeads(Array.isArray(data) ? data : []); })
+      .catch(() => { if (active) setLeads([]); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  // Optimistic local update + persist to Google Sheets via PATCH
+  const patchLead = (id, fields) => {
+    fetch("/api/leads", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...fields }),
+    }).catch(() => {});
+  };
+  const updateLead = (id, status, notes) => {
+    setLeads(leads.map(l => l.id === id ? { ...l, status, notes } : l));
+    patchLead(id, { status, notes });
+  };
+  const updateStatus = (id, status) => {
+    setLeads(leads.map(l => l.id === id ? { ...l, status } : l));
+    patchLead(id, { status });
+  };
 
   const newLeads = leads.filter(l => l.status === "Novo");
   const upcomingMeetings = MEETINGS.filter(m => new Date(m.date) >= new Date()).slice(0, 3);
@@ -390,6 +401,8 @@ export default function Dashboard() {
     if (search && !l.name.toLowerCase().includes(search.toLowerCase()) && !l.email.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
+
+  const chartData = buildChartData(leads);
 
   const stats = [
     { label: "Total Leads", value: leads.length, color: "#111", sub: `+${leads.filter(l => { const d = new Date(l.date); const now = new Date(); return (now - d) < 7 * 86400000; }).length} esta semana` },
@@ -519,6 +532,12 @@ export default function Dashboard() {
       </div>
 
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px 48px" }}>
+
+        {loading && (
+          <div style={{ padding: "80px 0", textAlign: "center", color: "#999", fontSize: 14 }}>A carregar leads…</div>
+        )}
+
+        {!loading && (<>
 
         {/* ── DASHBOARD TAB ── */}
         {activeTab === "dashboard" && (
@@ -668,6 +687,8 @@ export default function Dashboard() {
         )}
 
         {activeTab === "newsletter" && <NewsletterTab leads={leads} />}
+
+        </>)}
       </div>
 
       {drawerLead && <LeadDrawer lead={drawerLead} onClose={() => setDrawerLead(null)} onUpdate={updateLead} />}
