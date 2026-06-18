@@ -206,7 +206,7 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-function MiniCalendar({ meetings }) {
+function MiniCalendar({ meetings, onDelete }) {
   const today = new Date();
   const year = today.getFullYear();
   const month = today.getMonth();
@@ -214,7 +214,13 @@ function MiniCalendar({ meetings }) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const start = firstDay === 0 ? 6 : firstDay - 1;
 
-  const meetingDates = meetings.map(m => m.date);
+  const [openDay, setOpenDay] = useState(null);
+  const calRef = useRef(null);
+  useEffect(() => {
+    const h = e => { if (calRef.current && !calRef.current.contains(e.target)) setOpenDay(null); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
 
   const days = [];
   for (let i = 0; i < start; i++) days.push(null);
@@ -223,7 +229,7 @@ function MiniCalendar({ meetings }) {
   const monthName = today.toLocaleDateString("pt-PT", { month: "long", year: "numeric" });
 
   return (
-    <div>
+    <div ref={calRef}>
       <p style={{ fontSize: 12, color: "#888", textTransform: "capitalize", margin: "0 0 12px", fontWeight: 500 }}>{monthName}</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 16 }}>
         {["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"].map(d => (
@@ -233,17 +239,39 @@ function MiniCalendar({ meetings }) {
           if (!d) return <div key={`e${i}`} />;
           const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
           const isToday = d === today.getDate();
-          const hasMeeting = meetingDates.includes(dateStr);
+          const dayMeetings = meetings.filter(m => m.date === dateStr);
+          const hasMeeting = dayMeetings.length > 0;
+          const isOpen = openDay === dateStr;
           return (
-            <div key={d} style={{
-              aspectRatio: "1", display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center", borderRadius: 8,
-              background: isToday ? "#111" : "transparent",
-              position: "relative", cursor: hasMeeting ? "pointer" : "default",
-            }}>
+            <div key={d}
+              onClick={hasMeeting ? (e) => { e.stopPropagation(); setOpenDay(isOpen ? null : dateStr); } : undefined}
+              style={{
+                aspectRatio: "1", display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", borderRadius: 8,
+                background: isToday ? "#111" : (isOpen ? "#F0EDE6" : "transparent"),
+                position: "relative", cursor: hasMeeting ? "pointer" : "default",
+              }}>
               <span style={{ fontSize: 12, color: isToday ? "white" : hasMeeting ? "#111" : "#555", fontWeight: isToday || hasMeeting ? 700 : 400 }}>{d}</span>
               {hasMeeting && !isToday && (
                 <span style={{ width: 4, height: 4, borderRadius: "50%", background: GOLD, position: "absolute", bottom: 3 }} />
+              )}
+              {isOpen && hasMeeting && (
+                <div onClick={e => e.stopPropagation()} style={{
+                  position: "absolute", top: "calc(100% + 4px)", left: "50%", transform: "translateX(-50%)",
+                  zIndex: 50, background: "white", borderRadius: 10, width: 190, cursor: "default",
+                  boxShadow: "0 8px 28px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06)", padding: 6,
+                }}>
+                  {dayMeetings.map(m => (
+                    <div key={m.id} style={{ padding: 8 }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: "#111", margin: 0 }}>{m.name}</p>
+                      <p style={{ fontSize: 11, color: "#888", margin: "2px 0 8px" }}>{m.type} · {m.time}</p>
+                      <button onClick={() => { onDelete && onDelete(m.id); setOpenDay(null); }} style={{
+                        fontSize: 11, color: "white", background: "#DC2626", border: "none",
+                        borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontWeight: 600,
+                      }}>Apagar</button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           );
@@ -265,6 +293,57 @@ function MiniCalendar({ meetings }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function MeetingModal({ onClose, onCreate }) {
+  const [name, setName] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("10:00");
+  const [type, setType] = useState("Videocall");
+
+  const labelStyle = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, display: "block", marginBottom: 6 };
+  const inputStyle = { width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", color: "#111", boxSizing: "border-box", fontFamily: "inherit", background: "white" };
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!name.trim() || !date) return;
+    onCreate({ name: name.trim(), date, time, type });
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "'Inter', -apple-system, sans-serif" }}>
+      <form onClick={e => e.stopPropagation()} onSubmit={submit} style={{ background: "white", borderRadius: 16, width: "100%", maxWidth: 360, padding: 24, boxShadow: "0 12px 48px rgba(0,0,0,0.18)" }}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: "0 0 18px" }}>Nova reunião</h2>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Lead</label>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Nome do lead" required style={inputStyle} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Data</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} required style={inputStyle} />
+        </div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>Hora</label>
+            <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={labelStyle}>Tipo</label>
+            <select value={type} onChange={e => setType(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+              <option>Videocall</option>
+              <option>Presencial</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+          <button type="submit" style={{ flex: 1, background: "#111", color: "white", border: "none", borderRadius: 12, padding: 12, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Criar reunião</button>
+          <button type="button" onClick={onClose} style={{ padding: "12px 18px", border: "1px solid #E5E5E5", borderRadius: 12, fontSize: 14, color: "#555", background: "white", cursor: "pointer" }}>Cancelar</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -350,6 +429,9 @@ export default function Dashboard() {
   const [filterStatus, setFilterStatus] = useState("Todos");
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [seenLeadIds, setSeenLeadIds] = useState([]);
+  const [meetings, setMeetings] = useState(MEETINGS);
+  const [showMeetingForm, setShowMeetingForm] = useState(false);
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -388,11 +470,22 @@ export default function Dashboard() {
   };
 
   const newLeads = leads.filter(l => l.status === "Novo");
-  const upcomingMeetings = MEETINGS.filter(m => new Date(m.date) >= new Date()).slice(0, 3);
+  const unseenNewLeads = newLeads.filter(l => !seenLeadIds.includes(l.id));
+  const upcomingMeetings = meetings.filter(m => new Date(m.date) >= new Date()).slice(0, 3);
   const notContacted = leads.filter(l => {
     const diff = Math.floor((new Date() - new Date(l.date)) / 86400000);
     return l.status === "Novo" && diff >= 2;
   });
+
+  // Mark current "Novo" leads as seen when the notifications popup is opened
+  const toggleNotifications = () => {
+    if (!notifOpen) {
+      setSeenLeadIds(prev => Array.from(new Set([...prev, ...newLeads.map(l => l.id)])));
+    }
+    setNotifOpen(!notifOpen);
+  };
+  const deleteMeeting = (id) => setMeetings(ms => ms.filter(m => m.id !== id));
+  const createMeeting = (m) => setMeetings(ms => [...ms, { ...m, id: Date.now() }]);
 
   const filtered = leads.filter(l => {
     if (filterBudget !== "Todos" && l.budget !== filterBudget) return false;
@@ -436,18 +529,18 @@ export default function Dashboard() {
             ))}
           </div>
           <div ref={notifRef} style={{ position: "relative" }}>
-            <button onClick={() => setNotifOpen(!notifOpen)} style={{
+            <button onClick={toggleNotifications} style={{
               display: "flex", alignItems: "center", gap: 6,
               border: "none", cursor: "pointer", padding: "4px 8px", borderRadius: 8,
               background: notifOpen ? "rgba(255,255,255,0.1)" : "transparent",
             }}>
               <span style={{ fontSize: 16 }}>🔔</span>
-              {newLeads.length > 0 && (
+              {unseenNewLeads.length > 0 && (
                 <span style={{
                   background: GOLD, color: "#000", borderRadius: 20,
                   fontSize: 11, fontWeight: 700, padding: "1px 7px", lineHeight: "18px",
                 }}>
-                  {newLeads.length}
+                  {unseenNewLeads.length}
                 </span>
               )}
             </button>
@@ -581,9 +674,12 @@ export default function Dashboard() {
               <div style={{ background: "white", borderRadius: 16, padding: "22px 20px", border: "1px solid #EBEBEB" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                   <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Reuniões</p>
-                  <span style={{ background: "#F8F7F4", borderRadius: 20, padding: "2px 10px", fontSize: 12, color: "#888" }}>{MEETINGS.length} agendadas</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ background: "#F8F7F4", borderRadius: 20, padding: "2px 10px", fontSize: 12, color: "#888" }}>{meetings.length} agendadas</span>
+                    <button onClick={() => setShowMeetingForm(true)} style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>+ Nova reunião</button>
+                  </div>
                 </div>
-                <MiniCalendar meetings={MEETINGS} />
+                <MiniCalendar meetings={meetings} onDelete={deleteMeeting} />
               </div>
             </div>
 
@@ -692,6 +788,7 @@ export default function Dashboard() {
       </div>
 
       {drawerLead && <LeadDrawer lead={drawerLead} onClose={() => setDrawerLead(null)} onUpdate={updateLead} />}
+      {showMeetingForm && <MeetingModal onClose={() => setShowMeetingForm(false)} onCreate={(m) => { createMeeting(m); setShowMeetingForm(false); }} />}
     </div>
   );
 }
