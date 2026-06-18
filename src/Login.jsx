@@ -32,9 +32,9 @@ export default function Login({ onLogin }) {
       display: "flex", alignItems: "center", justifyContent: "center",
       fontFamily: "'Inter', -apple-system, sans-serif", padding: 16,
     }}>
-      <div style={{ width: "100%", maxWidth: 380 }}>
-        {/* Logo */}
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
+      <div style={{ position: "relative", width: "100%", maxWidth: 380 }}>
+        {/* Logo — positioned above the card without pushing it off-center */}
+        <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 40, textAlign: "center" }}>
           <div style={{
             width: 52, height: 52, background: "#C9A96E", borderRadius: 14,
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -106,7 +106,7 @@ export default function Login({ onLogin }) {
           </form>
         </div>
 
-        <p style={{ textAlign: "center", fontSize: 12, color: "#CCC", marginTop: 24 }}>
+        <p style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 24, textAlign: "center", fontSize: 12, color: "#CCC" }}>
           SW Places © 2026
         </p>
       </div>
