@@ -300,15 +300,14 @@ function NewsletterTab({ leads }) {
     setLoading(true);
     try {
       const seg = segments.length > 0 ? segments.join(", ") : "todos os leads";
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6", max_tokens: 1000,
-          messages: [{ role: "user", content: `Escreve uma newsletter imobiliária para Gustavo Miguel, consultor SW Places na Costa Vicentina, Portugal.\n\nTema: ${topic}\nSegmento: ${seg}\n\nRegras:\n- Tom pessoal, direto\n- Frases curtas\n- Máximo 180 palavras\n- Começa com frase de impacto\n- Termina com CTA simples\n- Português de Portugal\n\nApenas o corpo, sem assunto.` }]
-        })
+      const res = await fetch("/api/generate-newsletter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic, segment: seg }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setBody(data.content?.find(b => b.type === "text")?.text || "");
+      setBody(data.text || "");
       if (!subject) setSubject(`SW Places — ${topic}`);
     } catch { setBody("Erro ao gerar. Tenta novamente."); }
     setLoading(false);
