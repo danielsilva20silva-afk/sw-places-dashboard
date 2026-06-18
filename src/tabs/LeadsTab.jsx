@@ -49,7 +49,9 @@ export default function LeadsTab({ leads, onOpenLead, updateStatus }) {
         </div>
       </div>
 
-      <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB", overflow: "hidden" }}>
+      {/* No overflow:hidden — it would clip the StatusDropdown menu on the last rows.
+          The card look is kept via border + borderRadius; edge rows round their own corners. */}
+      <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB" }}>
         {filtered.length === 0 ? (
           <div style={{ padding: "60px", textAlign: "center", color: "#CCC", fontSize: 14 }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>Nenhum lead encontrado.
@@ -58,6 +60,7 @@ export default function LeadsTab({ leads, onOpenLead, updateStatus }) {
           <div key={lead.id} onClick={() => onOpenLead(lead)} style={{
             display: "flex", alignItems: "center", gap: 14, padding: "14px 20px",
             borderBottom: i < filtered.length - 1 ? "1px solid #F5F5F5" : "none", cursor: "pointer",
+            borderRadius: `${i === 0 ? "16px 16px" : "0 0"} ${i === filtered.length - 1 ? "16px 16px" : "0 0"}`,
           }}
             onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}

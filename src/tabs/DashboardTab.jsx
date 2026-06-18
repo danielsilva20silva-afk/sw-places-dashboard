@@ -72,15 +72,18 @@ export default function DashboardTab({ leads, meetings, onOpenLead, updateStatus
       </div>
 
       {/* Recent leads */}
-      <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB", overflow: "hidden" }}>
+      {/* No overflow:hidden — it would clip the StatusDropdown menu on the last rows.
+          The card look is kept via border + borderRadius; edge rows round their own corners. */}
+      <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB" }}>
         <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid #F0F0F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Leads recentes</p>
           <button onClick={onViewAllLeads} style={{ fontSize: 12, color: GOLD, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Ver todos →</button>
         </div>
-        {leads.slice(0, 5).map((lead, i) => (
+        {leads.slice(0, 5).map((lead, i, arr) => (
           <div key={lead.id} onClick={() => onOpenLead(lead)} style={{
             display: "flex", alignItems: "center", gap: 14, padding: "12px 20px",
-            borderBottom: i < 4 ? "1px solid #F5F5F5" : "none", cursor: "pointer",
+            borderBottom: i < arr.length - 1 ? "1px solid #F5F5F5" : "none", cursor: "pointer",
+            borderRadius: i === arr.length - 1 ? "0 0 16px 16px" : 0,
           }}
             onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
