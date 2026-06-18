@@ -98,6 +98,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   } catch (err) {
     console.error("leads handler error:", err);
-    return res.status(502).json({ error: "Erro a comunicar com o Google Sheets." });
+    const detail =
+      err?.errors?.[0]?.message ||
+      err?.response?.data?.error?.message ||
+      err?.message ||
+      "unknown";
+    const code = typeof err?.code === "number" ? err.code : err?.response?.status;
+    return res
+      .status(code >= 400 && code < 600 ? code : 502)
+      .json({ error: "Erro a comunicar com o Google Sheets.", detail });
   }
 }
