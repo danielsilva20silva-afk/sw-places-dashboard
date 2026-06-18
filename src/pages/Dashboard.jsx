@@ -63,13 +63,12 @@ export default function Dashboard() {
     return l.status === "Novo" && diff >= 2;
   });
 
-  // Mark current "Novo" leads as seen when the notifications popup is opened
-  const toggleNotifications = () => {
-    if (!notifOpen) {
-      setSeenLeadIds(prev => Array.from(new Set([...prev, ...newLeads.map(l => l.id)])));
-    }
-    setNotifOpen(!notifOpen);
-  };
+  // Opening the popup no longer auto-marks notifications as seen.
+  const toggleNotifications = () => setNotifOpen(o => !o);
+  // Mark a single lead notification as seen
+  const markSeen = (id) => setSeenLeadIds(prev => prev.includes(id) ? prev : [...prev, id]);
+  // Mark every current "Novo" lead as seen
+  const markAllSeen = () => setSeenLeadIds(prev => Array.from(new Set([...prev, ...newLeads.map(l => l.id)])));
   // Persist new meeting to Google Sheets, then add the server-assigned row to state
   const createMeeting = async (m) => {
     try {
@@ -137,28 +136,32 @@ export default function Dashboard() {
                 {/* New leads */}
                 {newLeads.length > 0 && (
                   <div>
-                    <p style={{ fontSize: 10, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, padding: "12px 18px 6px", margin: 0 }}>Novos leads</p>
-                    {newLeads.slice(0, 3).map(lead => (
-                      <div key={lead.id} onClick={() => { setDrawerLead(lead); setNotifOpen(false); }} style={{
-                        display: "flex", alignItems: "center", gap: 10, padding: "10px 18px",
-                        cursor: "pointer", transition: "background 0.1s",
-                      }}
-                        onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
-                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                      >
-                        <Avatar name={lead.name} size={32} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 13, fontWeight: 600, color: "#111", margin: 0 }}>{lead.name}</p>
-                          <p style={{ fontSize: 11, color: "#888", margin: "2px 0 0" }}>{lead.budget} · {lead.intention}</p>
-                        </div>
-                        <span style={{ fontSize: 11, color: "#CCC", flexShrink: 0 }}>{relDate(lead.date)}</span>
-                      </div>
-                    ))}
-                    {newLeads.length > 3 && (
-                      <p onClick={() => { setActiveTab("leads"); setNotifOpen(false); }} style={{ fontSize: 12, color: GOLD, padding: "4px 18px 10px", margin: 0, cursor: "pointer", fontWeight: 600 }}>
-                        +{newLeads.length - 3} mais →
-                      </p>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px 6px" }}>
+                      <p style={{ fontSize: 10, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, margin: 0 }}>Novos leads</p>
+                      <button onClick={markAllSeen} style={{ fontSize: 11, color: "#888", cursor: "pointer", background: "none", border: "none", padding: 0 }}>Marcar todas como vistas</button>
+                    </div>
+                    <div style={{ maxHeight: 280, overflowY: "auto" }}>
+                      {newLeads.map(lead => {
+                        const unread = !seenLeadIds.includes(lead.id);
+                        return (
+                          <div key={lead.id} onClick={() => { markSeen(lead.id); setDrawerLead(lead); setNotifOpen(false); }} style={{
+                            display: "flex", alignItems: "center", gap: 10, padding: "10px 18px",
+                            cursor: "pointer", transition: "background 0.1s",
+                          }}
+                            onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                          >
+                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: unread ? "#3B82F6" : "transparent", flexShrink: 0 }} />
+                            <Avatar name={lead.name} size={32} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontSize: 13, fontWeight: unread ? 700 : 400, color: unread ? "#111" : "#555", margin: 0 }}>{lead.name}</p>
+                              <p style={{ fontSize: 11, color: "#888", margin: "2px 0 0" }}>{lead.budget} · {lead.intention}</p>
+                            </div>
+                            <span style={{ fontSize: 11, color: "#CCC", flexShrink: 0 }}>{relDate(lead.date)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
