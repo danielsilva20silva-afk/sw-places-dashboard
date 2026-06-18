@@ -1,0 +1,115 @@
+import { useState } from "react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { GOLD } from "../constants";
+import { relDate, buildChartData } from "../utils";
+import Avatar from "../components/Avatar";
+import StatusDropdown from "../components/StatusDropdown";
+import QuickActions from "../components/QuickActions";
+import CustomTooltip from "../components/CustomTooltip";
+import MiniCalendar from "../components/MiniCalendar";
+import MeetingModal from "../components/MeetingModal";
+
+export default function DashboardTab({ leads, meetings, onOpenLead, updateStatus, onCreateMeeting, onDeleteMeeting, onViewAllLeads }) {
+  const [showMeetingForm, setShowMeetingForm] = useState(false);
+
+  const chartData = buildChartData(leads);
+
+  const stats = [
+    { label: "Total Leads", value: leads.length, color: "#111", sub: `+${leads.filter(l => { const d = new Date(l.date); const now = new Date(); return (now - d) < 7 * 86400000; }).length} esta semana` },
+    { label: "Novos", value: leads.filter(l => l.status === "Novo").length, color: "#2563EB", sub: "por contactar" },
+    { label: "Em contacto", value: leads.filter(l => l.status === "Contactado" || l.status === "Reunião agendada").length, color: "#D97706", sub: "em progresso" },
+    { label: "Fechados", value: leads.filter(l => l.status === "Fechado").length, color: "#16A34A", sub: "este mês" },
+  ];
+
+  return (
+    <>
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
+        {stats.map(s => (
+          <div key={s.label} style={{ background: "white", borderRadius: 16, padding: "20px 20px 16px", border: "1px solid #EBEBEB" }}>
+            <p style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px", fontWeight: 600 }}>{s.label}</p>
+            <p style={{ fontSize: 36, fontWeight: 700, color: "#111", letterSpacing: "-2px", margin: "0 0 6px", lineHeight: 1 }}>{s.value}</p>
+            <p style={{ fontSize: 11, color: "#BBB", margin: 0 }}>{s.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Chart + Calendar */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12, marginBottom: 20, alignItems: "stretch" }}>
+        {/* Chart */}
+        <div style={{ background: "white", borderRadius: 16, padding: "22px 24px", border: "1px solid #EBEBEB", display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+            <div>
+              <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Leads ao longo do tempo</p>
+              <p style={{ fontSize: 12, color: "#888", margin: "3px 0 0" }}>Últimos 14 dias</p>
+            </div>
+            <div style={{ background: "#F8F7F4", borderRadius: 8, padding: "4px 10px", fontSize: 12, color: "#888" }}>Jun 2026</div>
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false} />
+                <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#AAA" }} tickLine={false} axisLine={false} interval={2} />
+                <YAxis tick={{ fontSize: 11, fill: "#AAA" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#F0F0F0", strokeWidth: 2 }} />
+                <Line type="monotone" dataKey="leads" stroke={GOLD} strokeWidth={2.5} dot={{ fill: GOLD, r: 4, strokeWidth: 0 }} activeDot={{ r: 6, fill: GOLD, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Calendar */}
+        <div style={{ background: "white", borderRadius: 16, padding: "22px 20px", border: "1px solid #EBEBEB" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Reuniões</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ background: "#F8F7F4", borderRadius: 20, padding: "2px 10px", fontSize: 12, color: "#888" }}>{meetings.length} agendadas</span>
+              <button onClick={() => setShowMeetingForm(true)} style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>+ Nova reunião</button>
+            </div>
+          </div>
+          <MiniCalendar meetings={meetings} onDelete={onDeleteMeeting} />
+        </div>
+      </div>
+
+      {/* Recent leads */}
+      <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB", overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid #F0F0F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Leads recentes</p>
+          <button onClick={onViewAllLeads} style={{ fontSize: 12, color: GOLD, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Ver todos →</button>
+        </div>
+        {leads.slice(0, 5).map((lead, i) => (
+          <div key={lead.id} onClick={() => onOpenLead(lead)} style={{
+            display: "flex", alignItems: "center", gap: 14, padding: "12px 20px",
+            borderBottom: i < 4 ? "1px solid #F5F5F5" : "none", cursor: "pointer",
+          }}
+            onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
+            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+          >
+            <Avatar name={lead.name} size={34} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#111" }}>{lead.name}</span>
+              <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                <span style={{ fontSize: 11, color: "#888" }}>{lead.budget}</span>
+                <span style={{ fontSize: 11, color: "#CCC" }}>·</span>
+                <span style={{ fontSize: 11, color: "#AAA" }}>{relDate(lead.date)}</span>
+              </div>
+            </div>
+            <div onClick={e => e.stopPropagation()}>
+              <StatusDropdown status={lead.status} onChange={s => updateStatus(lead.id, s)} />
+            </div>
+            <div onClick={e => e.stopPropagation()}>
+              <QuickActions lead={lead} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showMeetingForm && (
+        <MeetingModal
+          onClose={() => setShowMeetingForm(false)}
+          onCreate={(m) => { onCreateMeeting(m); setShowMeetingForm(false); }}
+        />
+      )}
+    </>
+  );
+}
