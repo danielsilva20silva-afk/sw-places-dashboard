@@ -65,7 +65,7 @@ export default async function handler(req, res) {
       await sheets.spreadsheets.values.append({
         spreadsheetId,
         range: `${SHEET_NAME}!A:J`,
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         requestBody: { values: [row] },
       });
       return res.status(201).json(rowToLead(row));
@@ -88,7 +88,7 @@ export default async function handler(req, res) {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: `${SHEET_NAME}!I${rowNumber}:J${rowNumber}`,
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         requestBody: { values: [[newStatus, newNotes]] },
       });
       return res.status(200).json({ ...rowToLead(existing), status: newStatus, notes: newNotes });
