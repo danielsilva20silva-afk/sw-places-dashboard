@@ -8,7 +8,7 @@ import DashboardTab from "../tabs/DashboardTab";
 import LeadsTab from "../tabs/LeadsTab";
 import NewsletterTab from "../tabs/NewsletterTab";
 
-export default function Dashboard() {
+export default function Dashboard({ onLogout }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [drawerLead, setDrawerLead] = useState(null);
@@ -104,7 +104,8 @@ export default function Dashboard() {
               }}>{label}</button>
             ))}
           </div>
-          <div ref={notifRef} style={{ position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div ref={notifRef} style={{ position: "relative" }}>
             <button onClick={toggleNotifications} style={{
               display: "flex", alignItems: "center", gap: 6,
               border: "none", cursor: "pointer", padding: "4px 8px", borderRadius: 8,
@@ -200,6 +201,12 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+            </div>
+            <button onClick={onLogout} title="Sair da conta" style={{
+              background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.7)",
+              border: "none", borderRadius: 8, padding: "5px 12px",
+              fontSize: 13, fontWeight: 500, cursor: "pointer",
+            }}>Sair</button>
           </div>
         </div>
       </div>

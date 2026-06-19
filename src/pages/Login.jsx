@@ -18,7 +18,10 @@ export default function Login({ onLogin }) {
     setTimeout(() => {
       const user = USERS.find(u => u.email === email && u.password === password);
       if (user) {
-        onLogin(user);
+        // Persist the session (without the password) so it survives refresh
+        const { password: _pw, ...safeUser } = user;
+        localStorage.setItem("sw_places_user", JSON.stringify(safeUser));
+        onLogin(safeUser);
       } else {
         setError("Email ou password incorretos.");
       }
