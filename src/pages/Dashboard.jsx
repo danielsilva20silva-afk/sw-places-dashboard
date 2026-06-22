@@ -87,7 +87,7 @@ export default function Dashboard({ onLogout }) {
   const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["newsletter", "Newsletter"]];
 
   return (
-    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", background: "#F4F4F2", minHeight: "100vh" }}>
+    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", background: "#F4F4F2", minHeight: "100vh", maxWidth: "100%", overflowX: "hidden" }}>
       {/* Header */}
       <div style={{ background: "#111", position: "sticky", top: 0, zIndex: 40 }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>

@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { STATUSES, STATUS_CONFIG } from "../constants";
-import { relDate } from "../utils";
+import { relDate, isValidEmail, isValidPhone } from "../utils";
 import Avatar from "./Avatar";
 
 export default function LeadDrawer({ lead, onClose, onUpdate }) {
   const [status, setStatus] = useState(lead.status);
   const [notes, setNotes] = useState(lead.notes || "");
+  const phoneOk = isValidPhone(lead.phone);
+  const emailOk = isValidEmail(lead.email);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }} onClick={onClose}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)" }} />
@@ -28,10 +30,21 @@ export default function LeadDrawer({ lead, onClose, onUpdate }) {
           </div>
         </div>
         <div style={{ padding: "20px 24px", flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
-          <div style={{ display: "flex", gap: 10 }}>
-            <a href={`tel:${lead.phone}`} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#16A34A", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📞 Ligar</a>
-            <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#25D366", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>💬 WhatsApp</a>
-          </div>
+          {(phoneOk || emailOk) ? (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {phoneOk && (
+                <a href={`tel:${lead.phone}`} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#16A34A", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📞 Ligar</a>
+              )}
+              {phoneOk && (
+                <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#25D366", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>💬 WhatsApp</a>
+              )}
+              {emailOk && (
+                <a href={`mailto:${lead.email}`} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#2563EB", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>✉️ Email</a>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "#F8F7F4", color: "#AAA", borderRadius: 12, padding: "12px", fontSize: 13, fontWeight: 500 }}>Sem contacto válido</div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {[["Email", lead.email], ["Telefone", lead.phone], ["Orçamento", lead.budget], ["Intenção", lead.intention]].map(([label, value]) => (
               <div key={label} style={{ background: "#F8F7F4", borderRadius: 10, padding: "12px 14px" }}>

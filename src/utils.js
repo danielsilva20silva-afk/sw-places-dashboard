@@ -7,6 +7,25 @@ export function relDate(dateStr) {
   return new Date(dateStr).toLocaleDateString("pt-PT", { day: "numeric", month: "short" });
 }
 
+// Contact validation. Empty values and leftover webhook placeholders
+// (anything starting with "{{", e.g. "{{phone}}") are treated as invalid.
+function isPlaceholder(value) {
+  if (typeof value !== "string") return true;
+  const v = value.trim();
+  return v === "" || v.startsWith("{{");
+}
+
+export function isValidEmail(value) {
+  if (isPlaceholder(value)) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+export function isValidPhone(value) {
+  if (isPlaceholder(value)) return false;
+  // Require at least 7 digits once non-numeric chars (+, spaces, ()) are stripped
+  return value.replace(/[^0-9]/g, "").length >= 7;
+}
+
 // Chart data — leads per day, last 14 days, computed from live leads
 export function buildChartData(leads) {
   const days = [];
