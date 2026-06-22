@@ -8,6 +8,20 @@ import DashboardTab from "../tabs/DashboardTab";
 import LeadsTab from "../tabs/LeadsTab";
 import NewsletterTab from "../tabs/NewsletterTab";
 
+// Tracks whether the viewport is mobile-width (header switches to a hamburger menu)
+function useIsMobile(breakpoint = 640) {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia(`(max-width: ${breakpoint}px)`).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export default function Dashboard({ onLogout }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,6 +35,15 @@ export default function Dashboard({ onLogout }) {
   const notifRef = useRef(null);
   useEffect(() => {
     const h = e => { if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const isMobile = useIsMobile();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    const h = e => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
@@ -86,24 +109,34 @@ export default function Dashboard({ onLogout }) {
 
   const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["newsletter", "Newsletter"]];
 
+  // Notifications panel: full-width sheet on mobile (never clipped), anchored dropdown on desktop
+  const notifPanelStyle = isMobile
+    ? { position: "fixed", top: 60, left: 12, right: 12, zIndex: 200, background: "white", borderRadius: 16, overflow: "hidden", boxShadow: "0 12px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06)" }
+    : { position: "absolute", top: "calc(100% + 10px)", right: 0, zIndex: 200, background: "white", borderRadius: 16, width: 320, overflow: "hidden", boxShadow: "0 12px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06)" };
+
   return (
     <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", background: "#F4F4F2", minHeight: "100vh", maxWidth: "100%", overflowX: "hidden" }}>
       {/* Header */}
       <div style={{ background: "#111", position: "sticky", top: 0, zIndex: 40 }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div onClick={() => setActiveTab("dashboard")} title="Ir para o Dashboard"
+            onMouseEnter={e => e.currentTarget.style.opacity = "0.75"}
+            onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+            style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", transition: "opacity 0.15s" }}>
             <div style={{ width: 28, height: 28, background: GOLD, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#000" }}>S</div>
             <span style={{ fontSize: 14, fontWeight: 600, color: "white", letterSpacing: "-0.3px" }}>SW Places</span>
           </div>
-          <div style={{ display: "flex", gap: 2 }}>
-            {tabs.map(([tab, label]) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer",
-                background: activeTab === tab ? "rgba(255,255,255,0.12)" : "transparent",
-                color: activeTab === tab ? "white" : "rgba(255,255,255,0.4)",
-              }}>{label}</button>
-            ))}
-          </div>
+          {!isMobile && (
+            <div style={{ display: "flex", gap: 2 }}>
+              {tabs.map(([tab, label]) => (
+                <button key={tab} onClick={() => setActiveTab(tab)} style={{
+                  padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer",
+                  background: activeTab === tab ? "rgba(255,255,255,0.12)" : "transparent",
+                  color: activeTab === tab ? "white" : "rgba(255,255,255,0.4)",
+                }}>{label}</button>
+              ))}
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div ref={notifRef} style={{ position: "relative" }}>
             <button onClick={toggleNotifications} style={{
@@ -123,12 +156,7 @@ export default function Dashboard({ onLogout }) {
             </button>
 
             {notifOpen && (
-              <div style={{
-                position: "absolute", top: "calc(100% + 10px)", right: 0, zIndex: 200,
-                background: "white", borderRadius: 16, width: 320,
-                boxShadow: "0 12px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06)",
-                overflow: "hidden",
-              }}>
+              <div style={notifPanelStyle}>
                 <div style={{ padding: "16px 18px 12px", borderBottom: "1px solid #F0F0F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Notificações</p>
                   <span style={{ fontSize: 11, color: "#888" }}>{newLeads.length + upcomingMeetings.length} novas</span>
@@ -202,11 +230,46 @@ export default function Dashboard({ onLogout }) {
               </div>
             )}
             </div>
-            <button onClick={onLogout} title="Sair da conta" style={{
-              background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.7)",
-              border: "none", borderRadius: 8, padding: "5px 12px",
-              fontSize: 13, fontWeight: 500, cursor: "pointer",
-            }}>Sair</button>
+            {!isMobile && (
+              <button onClick={onLogout} title="Sair da conta" style={{
+                background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.7)",
+                border: "none", borderRadius: 8, padding: "5px 12px",
+                fontSize: 13, fontWeight: 500, cursor: "pointer",
+              }}>Sair</button>
+            )}
+            {isMobile && (
+              <div ref={menuRef} style={{ position: "relative" }}>
+                <button onClick={() => setMenuOpen(o => !o)} aria-label="Menu" title="Menu" style={{
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: menuOpen ? "rgba(255,255,255,0.1)" : "transparent",
+                  border: "none", color: "white", fontSize: 20, lineHeight: 1,
+                  cursor: "pointer", padding: "4px 8px", borderRadius: 8,
+                }}>☰</button>
+                {menuOpen && (
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 10px)", right: 0, zIndex: 200,
+                    background: "white", borderRadius: 14, width: 200, overflow: "hidden",
+                    boxShadow: "0 12px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06)",
+                  }}>
+                    {tabs.map(([tab, label]) => (
+                      <button key={tab} onClick={() => { setActiveTab(tab); setMenuOpen(false); }} style={{
+                        display: "block", width: "100%", textAlign: "left", padding: "12px 16px",
+                        border: "none", cursor: "pointer", fontSize: 14,
+                        background: activeTab === tab ? "#F8F7F4" : "white",
+                        color: activeTab === tab ? "#111" : "#555",
+                        fontWeight: activeTab === tab ? 600 : 500,
+                        borderLeft: `3px solid ${activeTab === tab ? GOLD : "transparent"}`,
+                      }}>{label}</button>
+                    ))}
+                    <button onClick={() => { setMenuOpen(false); onLogout(); }} style={{
+                      display: "block", width: "100%", textAlign: "left", padding: "12px 16px",
+                      border: "none", borderTop: "1px solid #F0F0F0", background: "white",
+                      color: "#DC2626", fontSize: 14, fontWeight: 500, cursor: "pointer",
+                    }}>Sair</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
