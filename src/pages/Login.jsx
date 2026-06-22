@@ -2,7 +2,7 @@ import { useState } from "react";
 
 const USERS = [
   { email: "daniel@swplaces.com", password: "daniel2026", role: "admin", name: "Daniel Silva" },
-  { email: "gustavo@swplaces.com", password: "guga2026", role: "consultant", name: "Gustavo Miguel" },
+  { email: "gmiguel@sw-places.com", password: "guga2026", role: "admin", name: "Gustavo Miguel" },
 ];
 
 export default function Login({ onLogin }) {
