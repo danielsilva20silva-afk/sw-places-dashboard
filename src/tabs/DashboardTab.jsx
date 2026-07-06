@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { GOLD } from "../constants";
-import { relDate, buildChartData } from "../utils";
+import { buildChartData } from "../utils";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
 import CustomTooltip from "../components/CustomTooltip";
 import MiniCalendar from "../components/MiniCalendar";
 import MeetingModal from "../components/MeetingModal";
+import LeadMeta from "../components/LeadMeta";
 
 export default function DashboardTab({ leads, meetings, meetingsLoading, onOpenLead, updateStatus, onCreateMeeting, onDeleteMeeting, onViewAllLeads }) {
   const [showMeetingForm, setShowMeetingForm] = useState(false);
@@ -93,11 +94,7 @@ export default function DashboardTab({ leads, meetings, meetingsLoading, onOpenL
             <Avatar name={lead.name} size={34} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: "#111" }}>{lead.name}</span>
-              <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-                <span style={{ fontSize: 11, color: "#888" }}>{lead.budget}</span>
-                <span style={{ fontSize: 11, color: "#CCC" }}>·</span>
-                <span style={{ fontSize: 11, color: "#AAA" }}>{relDate(lead.date)}</span>
-              </div>
+              <LeadMeta lead={lead} />
             </div>
             <div onClick={e => e.stopPropagation()}>
               <StatusDropdown status={lead.status} onChange={s => updateStatus(lead.id, s)} />

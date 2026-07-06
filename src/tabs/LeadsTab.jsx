@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { STATUSES, BUDGETS, INTENTIONS, GOLD } from "../constants";
-import { relDate } from "../utils";
+import { cleanField } from "../utils";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
+import LeadMeta from "../components/LeadMeta";
 
 function FilterLabel({ children }) {
   return (
@@ -69,15 +70,9 @@ export default function LeadsTab({ leads, onOpenLead, updateStatus }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</span>
-                {lead.notes && <span title={lead.notes} style={{ fontSize: 11, color: GOLD }}>📝</span>}
+                {cleanField(lead.notes) && <span title={cleanField(lead.notes)} style={{ fontSize: 11, color: GOLD }}>📝</span>}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "#888" }}>{lead.budget}</span>
-                <span style={{ color: "#DDD", fontSize: 10 }}>•</span>
-                <span style={{ fontSize: 12, color: "#888" }}>{lead.intention}</span>
-                <span style={{ color: "#DDD", fontSize: 10 }}>•</span>
-                <span style={{ fontSize: 12, color: "#CCC" }}>{relDate(lead.date)}</span>
-              </div>
+              <LeadMeta lead={lead} />
             </div>
             <div onClick={e => e.stopPropagation()}>
               <StatusDropdown status={lead.status} onChange={s => updateStatus(lead.id, s)} />

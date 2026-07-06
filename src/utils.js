@@ -26,6 +26,12 @@ export function isValidPhone(value) {
   return value.replace(/[^0-9]/g, "").length >= 7;
 }
 
+// Returns the trimmed value if it's real data, or null if empty/placeholder.
+// Use for display so raw "{{...}}" placeholders never reach the UI.
+export function cleanField(value) {
+  return isPlaceholder(value) ? null : value.trim();
+}
+
 // Chart data — leads per day, last 14 days, computed from live leads
 export function buildChartData(leads) {
   const days = [];
