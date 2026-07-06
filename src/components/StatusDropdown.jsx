@@ -1,30 +1,74 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { STATUSES, STATUS_CONFIG, GOLD } from "../constants";
 import StatusPill from "./StatusPill";
 
+const MENU_WIDTH = 180;
+const EST_ROW_H = 37; // approximate height of one option, for flip detection
+
 export default function StatusDropdown({ status, onChange }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [coords, setCoords] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+
+  // Compute a viewport-fixed position from the trigger's rect, flipping up
+  // when there isn't enough room below and clamping inside the viewport.
+  const place = () => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const menuH = STATUSES.length * EST_ROW_H + 8;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const flipUp = spaceBelow < menuH + 8 && rect.top > spaceBelow;
+    const top = flipUp ? Math.max(8, rect.top - menuH - 6) : rect.bottom + 6;
+    let left = rect.left;
+    if (left + MENU_WIDTH > window.innerWidth - 8) left = rect.right - MENU_WIDTH;
+    left = Math.max(8, left);
+    setCoords({ top, left });
+  };
+
+  const toggle = (e) => {
+    e.stopPropagation();
+    if (open) { setOpen(false); return; }
+    place();
+    setOpen(true);
+  };
+
+  // Close on outside click, on any scroll, and on resize.
   useEffect(() => {
-    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
+    if (!open) return;
+    const onDown = (e) => {
+      if (triggerRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const close = () => setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("scroll", close, true); // capture → catches nested scroll containers
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
   return (
-    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
-      <button onClick={e => { e.stopPropagation(); setOpen(!open); }} style={{
+    <>
+      <button ref={triggerRef} onClick={toggle} style={{
         display: "inline-flex", alignItems: "center", gap: 4,
         background: "none", border: "none", cursor: "pointer", padding: 0,
       }}>
         <StatusPill status={status} small />
         <span style={{ fontSize: 9, color: "#AAA" }}>▾</span>
       </button>
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 100,
-          background: "white", borderRadius: 12,
+      {open && coords && createPortal(
+        <div ref={menuRef} onClick={e => e.stopPropagation()} style={{
+          position: "fixed", top: coords.top, left: coords.left, zIndex: 1000,
+          background: "white", borderRadius: 12, width: MENU_WIDTH,
           boxShadow: "0 8px 32px rgba(0,0,0,0.12)", border: "1px solid #F0F0F0",
-          overflow: "hidden", minWidth: 180,
+          overflow: "hidden",
         }}>
           {STATUSES.map(s => (
             <button key={s} onClick={e => { e.stopPropagation(); onChange(s); setOpen(false); }} style={{
@@ -42,8 +86,9 @@ export default function StatusDropdown({ status, onChange }) {
               {s === status && <span style={{ marginLeft: "auto", fontSize: 12, color: GOLD }}>✓</span>}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
