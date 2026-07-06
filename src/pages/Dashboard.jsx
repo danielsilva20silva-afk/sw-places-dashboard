@@ -77,6 +77,17 @@ export default function Dashboard({ onLogout }) {
     setLeads(leads.map(l => l.id === id ? { ...l, status } : l));
     api.updateLead(id, status).catch(() => {});
   };
+  // Delete a lead: persist, then drop it from the list on success
+  const deleteLead = async (id) => {
+    try {
+      const res = await api.deleteLead(id);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setLeads(ls => ls.filter(l => String(l.id) !== String(id)));
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   const newLeads = leads.filter(l => l.status === "Novo");
   const unseenNewLeads = newLeads.filter(l => !seenLeadIds.includes(l.id));
@@ -304,7 +315,7 @@ export default function Dashboard({ onLogout }) {
         )}
       </div>
 
-      {drawerLead && <LeadDrawer lead={drawerLead} onClose={() => setDrawerLead(null)} onUpdate={updateLead} />}
+      {drawerLead && <LeadDrawer lead={drawerLead} onClose={() => setDrawerLead(null)} onUpdate={updateLead} onDelete={deleteLead} />}
     </div>
   );
 }

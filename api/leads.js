@@ -19,6 +19,16 @@ function getSheetsClient() {
   return { sheets: google.sheets({ version: "v4", auth }), spreadsheetId };
 }
 
+// Resolve the numeric sheetId (gid) for a tab title — required by deleteDimension.
+async function getSheetId(sheets, spreadsheetId, title) {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: "sheets.properties(sheetId,title)",
+  });
+  const sheet = (meta.data.sheets || []).find((s) => s.properties.title === title);
+  return sheet ? sheet.properties.sheetId : null;
+}
+
 function rowToLead(r) {
   return {
     id: r[0] ?? "",
@@ -94,7 +104,33 @@ export default async function handler(req, res) {
       return res.status(200).json({ ...rowToLead(existing), status: newStatus, notes: newNotes });
     }
 
-    res.setHeader("Allow", "GET, POST, PATCH");
+    if (req.method === "DELETE") {
+      const id = req.query?.id ?? req.body?.id;
+      if (!id) return res.status(400).json({ error: "Parâmetro 'id' em falta." });
+
+      const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: DATA_RANGE });
+      const rows = resp.data.values || [];
+      const idx = rows.findIndex((r) => r && String(r[0]) === String(id));
+      if (idx === -1) return res.status(404).json({ error: "Lead não encontrado." });
+
+      const sheetId = await getSheetId(sheets, spreadsheetId, SHEET_NAME);
+      if (sheetId == null) return res.status(500).json({ error: `Tab "${SHEET_NAME}" não encontrada.` });
+
+      // Data rows start at sheet row 2 → 0-based dimension index of rows[idx] is idx + 1.
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            deleteDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: idx + 1, endIndex: idx + 2 },
+            },
+          }],
+        },
+      });
+      return res.status(200).json({ id: String(id) });
+    }
+
+    res.setHeader("Allow", "GET, POST, PATCH, DELETE");
     return res.status(405).json({ error: "Method not allowed" });
   } catch (err) {
     console.error("leads handler error:", err);

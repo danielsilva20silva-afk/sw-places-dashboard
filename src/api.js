@@ -28,6 +28,11 @@ export function addLead(lead) {
   });
 }
 
+// DELETE /api/leads?id=X → delete a lead by id
+export function deleteLead(id) {
+  return fetch(`/api/leads?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 // GET /api/meetings → array of meetings (normalized to an array)
 export async function getMeetings() {
   const res = await fetch("/api/meetings");

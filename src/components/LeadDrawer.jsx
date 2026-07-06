@@ -3,11 +3,25 @@ import { STATUSES, STATUS_CONFIG } from "../constants";
 import { relDate, isValidEmail, isValidPhone } from "../utils";
 import Avatar from "./Avatar";
 
-export default function LeadDrawer({ lead, onClose, onUpdate }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
   const [status, setStatus] = useState(lead.status);
   const [notes, setNotes] = useState(lead.notes || "");
+  const [deleting, setDeleting] = useState(false);
   const phoneOk = isValidPhone(lead.phone);
   const emailOk = isValidEmail(lead.email);
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    if (!window.confirm("Tens a certeza que queres eliminar este lead?")) return;
+    setDeleting(true);
+    const ok = await onDelete(lead.id);
+    if (ok) {
+      onClose();
+    } else {
+      setDeleting(false);
+      alert("Não foi possível eliminar o lead. Tenta novamente.");
+    }
+  };
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }} onClick={onClose}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)" }} />
@@ -66,6 +80,12 @@ export default function LeadDrawer({ lead, onClose, onUpdate }) {
             <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>Notas</p>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notas sobre este lead..." rows={4} style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#111", resize: "none", outline: "none", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit" }} />
           </div>
+          <button onClick={handleDelete} disabled={deleting} style={{
+            width: "100%", background: "#FFF1F2", color: "#DC2626",
+            border: "1px solid #FECDD3", borderRadius: 10, padding: "11px",
+            fontSize: 13, fontWeight: 600, cursor: deleting ? "not-allowed" : "pointer",
+            opacity: deleting ? 0.6 : 1,
+          }}>{deleting ? "A eliminar…" : "🗑 Eliminar lead"}</button>
         </div>
         <div style={{ padding: "16px 24px", borderTop: "1px solid #F0F0F0", display: "flex", gap: 10 }}>
           <button onClick={() => { onUpdate(lead.id, status, notes); onClose(); }} style={{ flex: 1, background: "#111", color: "white", border: "none", borderRadius: 12, padding: "13px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Guardar</button>
