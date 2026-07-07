@@ -11,6 +11,7 @@ export default function AnaTab() {
   const [loading, setLoading] = useState(false);
   const [typing, setTyping] = useState(false);
   const [error, setError] = useState("");
+  const [noDelay, setNoDelay] = useState(false);
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -31,19 +32,22 @@ export default function AnaTab() {
       .then((data) => ({ reply: data.reply || "(sem resposta)" }))
       .catch((err) => ({ error: err.message || "Erro ao contactar a Ana." }));
 
-    // "Noticing" pause before the typing indicator appears
-    await sleep(1500);
+    // "Noticing" pause before the typing indicator appears (skipped in fast mode)
+    if (!noDelay) await sleep(1500);
     setTyping(true);
 
     const result = await replyPromise;
     const errMsg = result.error || null;
     const reply = result.reply || null;
 
-    // Typing shows ~30ms/char (2–6s). Reveal at whichever is longer:
-    // the artificial timeline (1.5s + typing) or the actual network time.
-    const typingMs = errMsg ? 0 : Math.min(6000, Math.max(2000, reply.length * 30));
-    const remaining = Math.max(0, 1500 + typingMs - (Date.now() - start));
-    await sleep(remaining);
+    // Typing shows ~30ms/char (2–6s). Reveal at whichever is longer: the
+    // artificial timeline (1.5s + typing) or the actual network time.
+    // In fast mode ("Sem delay") skip the artificial wait entirely.
+    if (!noDelay) {
+      const typingMs = errMsg ? 0 : Math.min(6000, Math.max(2000, reply.length * 30));
+      const remaining = Math.max(0, 1500 + typingMs - (Date.now() - start));
+      await sleep(remaining);
+    }
 
     setTyping(false);
     setLoading(false);
@@ -61,7 +65,7 @@ export default function AnaTab() {
     <div style={{ maxWidth: 680, margin: "0 auto" }}>
       <div style={{ background: "white", borderRadius: 20, border: "1px solid #EBEBEB", overflow: "hidden", display: "flex", flexDirection: "column", height: "70vh", minHeight: 420 }}>
         {/* Header */}
-        <div style={{ padding: "18px 24px", borderBottom: "1px solid #F0F0F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ padding: "18px 24px", borderBottom: "1px solid #F0F0F0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 34, height: 34, borderRadius: "50%", background: GOLD, display: "flex", alignItems: "center", justifyContent: "center", color: "#000", fontWeight: 700, fontSize: 15 }}>A</div>
             <div>
@@ -69,7 +73,15 @@ export default function AnaTab() {
               <p style={{ fontSize: 11, color: "#888", margin: "1px 0 0" }}>Assistente · página de teste interna</p>
             </div>
           </div>
-          <button onClick={clear} style={{ fontSize: 12, color: "#888", background: "none", border: "1px solid #E5E5E5", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 500 }}>Limpar conversa</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div onClick={() => setNoDelay((v) => !v)} title="Mostrar a resposta assim que a API responde" style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#888", cursor: "pointer", userSelect: "none" }}>
+              <span>Sem delay</span>
+              <span style={{ width: 34, height: 20, borderRadius: 20, background: noDelay ? GOLD : "#E5E5E5", position: "relative", transition: "background 0.15s", display: "inline-block", flexShrink: 0 }}>
+                <span style={{ position: "absolute", top: 2, left: noDelay ? 16 : 2, width: 16, height: 16, borderRadius: "50%", background: "white", transition: "left 0.15s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)" }} />
+              </span>
+            </div>
+            <button onClick={clear} style={{ fontSize: 12, color: "#888", background: "none", border: "1px solid #E5E5E5", borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontWeight: 500 }}>Limpar conversa</button>
+          </div>
         </div>
 
         {/* Messages */}
