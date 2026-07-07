@@ -3,17 +3,19 @@ import { GOLD } from "../constants";
 import * as api from "../api";
 
 const TEST_CONTACT_ID = "test-web";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export default function AnaTab() {
   const [messages, setMessages] = useState([]); // { role: "user"|"assistant", text }
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [typing, setTyping] = useState(false);
   const [error, setError] = useState("");
   const scrollRef = useRef(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, loading]);
+  }, [messages, typing]);
 
   const send = async () => {
     const text = input.trim();
@@ -22,14 +24,31 @@ export default function AnaTab() {
     setError("");
     setMessages((m) => [...m, { role: "user", text }]);
     setLoading(true);
-    try {
-      const { reply } = await api.aiReply(TEST_CONTACT_ID, text);
-      setMessages((m) => [...m, { role: "assistant", text: reply || "(sem resposta)" }]);
-    } catch (err) {
-      setError(err.message || "Erro ao contactar a Ana.");
-    } finally {
-      setLoading(false);
-    }
+
+    const start = Date.now();
+    // Fire the real request immediately so it overlaps the artificial delay
+    const replyPromise = api.aiReply(TEST_CONTACT_ID, text)
+      .then((data) => ({ reply: data.reply || "(sem resposta)" }))
+      .catch((err) => ({ error: err.message || "Erro ao contactar a Ana." }));
+
+    // "Noticing" pause before the typing indicator appears
+    await sleep(1500);
+    setTyping(true);
+
+    const result = await replyPromise;
+    const errMsg = result.error || null;
+    const reply = result.reply || null;
+
+    // Typing shows ~30ms/char (2–6s). Reveal at whichever is longer:
+    // the artificial timeline (1.5s + typing) or the actual network time.
+    const typingMs = errMsg ? 0 : Math.min(6000, Math.max(2000, reply.length * 30));
+    const remaining = Math.max(0, 1500 + typingMs - (Date.now() - start));
+    await sleep(remaining);
+
+    setTyping(false);
+    setLoading(false);
+    if (errMsg) setError(errMsg);
+    else setMessages((m) => [...m, { role: "assistant", text: reply }]);
   };
 
   const clear = async () => {
@@ -73,7 +92,7 @@ export default function AnaTab() {
               </div>
             );
           })}
-          {loading && (
+          {typing && (
             <div style={{ display: "flex", justifyContent: "flex-start" }}>
               <div style={{ padding: "10px 14px", fontSize: 13, fontStyle: "italic", color: "#999", background: "white", border: "1px solid #EBEBEB", borderRadius: "14px 14px 14px 4px" }}>Ana está a escrever…</div>
             </div>
