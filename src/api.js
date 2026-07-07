@@ -54,3 +54,20 @@ export function addMeeting(meeting) {
 export function deleteMeeting(id) {
   return fetch(`/api/meetings?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }
+
+// POST /api/ai-reply → { reply } from Ana for a contact's conversation
+export async function aiReply(contactId, message) {
+  const res = await fetch("/api/ai-reply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact_id: contactId, message }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// DELETE /api/ai-reply?contact_id=X → clear a conversation's history
+export function clearConversation(contactId) {
+  return fetch(`/api/ai-reply?contact_id=${encodeURIComponent(contactId)}`, { method: "DELETE" });
+}
