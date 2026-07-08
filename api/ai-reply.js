@@ -37,6 +37,73 @@ async function ensureTab(sheets, spreadsheetId) {
   });
 }
 
+// "Leads" tab, columns A–J: id | name | email | phone | budget | intention | source | date | status | notes
+const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
+const LEADS_RANGE = `${LEADS_TAB}!A2:J`;
+
+// Extract + strip the hidden <lead>{...}</lead> block Ana may append.
+// Returns { clean, data } — data is the parsed JSON, or null if absent/invalid.
+function extractLead(reply) {
+  const match = reply.match(/<lead>([\s\S]*?)<\/lead>/i);
+  let data = null;
+  if (match) {
+    try { data = JSON.parse(match[1].trim()); }
+    catch (e) { console.error("lead JSON parse failed:", e?.message); }
+  }
+  let clean = reply.replace(/<lead>[\s\S]*?<\/lead>/i, "").trim();
+  // Safety net: drop any unclosed/leftover block so the user never sees it
+  const stray = clean.indexOf("<lead>");
+  if (stray !== -1) clean = clean.slice(0, stray).trim();
+  return { clean, data };
+}
+
+// Create or update a lead from Ana's block. Deduped by lead id === contact_id,
+// so one conversation maps to at most one lead. Preserves fields a human may
+// have changed (budget/source/date/status).
+async function upsertLead(sheets, spreadsheetId, leadId, data, source) {
+  const today = new Date().toISOString().slice(0, 10);
+  const zone = String(data.zone || "").trim();
+  const summary = String(data.summary || "").trim();
+  const notes = zone && !summary.toLowerCase().includes(zone.toLowerCase())
+    ? `${summary}${summary ? " — " : ""}Zona de interesse: ${zone}`
+    : summary;
+
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: LEADS_RANGE });
+  const rows = resp.data.values || [];
+  const idx = rows.findIndex((r) => r && String(r[0]) === String(leadId));
+
+  if (idx === -1) {
+    const row = [
+      leadId, data.name || "", data.email || "", data.phone || "", "",
+      data.intention || "", source, today, "Novo", notes,
+    ];
+    await sheets.spreadsheets.values.append({
+      spreadsheetId, range: `${LEADS_TAB}!A:J`, valueInputOption: "RAW",
+      requestBody: { values: [row] },
+    });
+    return "created";
+  }
+
+  const ex = rows[idx];
+  const merged = [
+    leadId,
+    data.name || ex[1] || "",
+    data.email || ex[2] || "",
+    data.phone || ex[3] || "",
+    ex[4] || "",                    // budget preserved
+    data.intention || ex[5] || "",
+    ex[6] || source,                // source preserved
+    ex[7] || today,                 // date preserved
+    ex[8] || "Novo",                // status preserved
+    notes || ex[9] || "",           // latest AI summary preferred
+  ];
+  await sheets.spreadsheets.values.update({
+    spreadsheetId, range: `${LEADS_TAB}!A${idx + 2}:J${idx + 2}`, valueInputOption: "RAW",
+    requestBody: { values: [merged] },
+  });
+  return "updated";
+}
+
 export default async function handler(req, res) {
   const ctx = getSheetsClient();
   if (!ctx) {
@@ -73,10 +140,11 @@ export default async function handler(req, res) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY não configurada." });
 
-    const { contact_id, message } = req.body ?? {};
+    const { contact_id, message, source } = req.body ?? {};
     if (!contact_id || !message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Campos 'contact_id' e 'message' são obrigatórios." });
     }
+    const leadSource = (source && String(source).trim()) || "AI CHAT";
 
     await ensureTab(sheets, spreadsheetId);
 
@@ -95,9 +163,12 @@ export default async function handler(req, res) {
       system: ANA_PROMPT,
       messages: [...history, { role: "user", content: message }],
     });
-    const reply = aiRes.content.find((b) => b.type === "text")?.text?.trim() || "";
+    const rawReply = aiRes.content.find((b) => b.type === "text")?.text?.trim() || "";
 
-    // 3. Persist both turns
+    // 3. Extract + strip Ana's hidden <lead> block — only clean text is saved/shown
+    const { clean: reply, data: leadData } = extractLead(rawReply);
+
+    // 4. Persist both turns (clean reply only)
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: `${SHEET_NAME}!A:D`,
@@ -109,6 +180,16 @@ export default async function handler(req, res) {
         ],
       },
     });
+
+    // 5. If Ana collected a contact, create/update the lead (best-effort:
+    //    a lead failure must never break the conversation)
+    if (leadData && (String(leadData.phone || "").trim() || String(leadData.email || "").trim())) {
+      try {
+        await upsertLead(sheets, spreadsheetId, contact_id, leadData, leadSource);
+      } catch (e) {
+        console.error("upsertLead failed:", e?.message);
+      }
+    }
 
     return res.status(200).json({ reply });
   } catch (err) {
