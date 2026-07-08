@@ -5,6 +5,7 @@ import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
 import LeadMeta from "../components/LeadMeta";
+import LeadFormModal from "../components/LeadFormModal";
 
 function FilterLabel({ children }) {
   return (
@@ -12,11 +13,12 @@ function FilterLabel({ children }) {
   );
 }
 
-export default function LeadsTab({ leads, onOpenLead, updateStatus }) {
+export default function LeadsTab({ leads, onOpenLead, updateStatus, onCreateLead }) {
   const [filterBudget, setFilterBudget] = useState("Todos");
   const [filterIntention, setFilterIntention] = useState("Todas");
   const [filterStatus, setFilterStatus] = useState("Todos");
   const [search, setSearch] = useState("");
+  const [showForm, setShowForm] = useState(false);
 
   const filtered = leads.filter(l => {
     if (filterBudget !== "Todos" && l.budget !== filterBudget) return false;
@@ -48,7 +50,12 @@ export default function LeadsTab({ leads, onOpenLead, updateStatus }) {
         <div style={{ alignSelf: "flex-end", paddingBottom: 10 }}>
           <span style={{ fontSize: 12, color: "#AAA" }}>{filtered.length} leads</span>
         </div>
+        <div style={{ alignSelf: "flex-end" }}>
+          <button onClick={() => setShowForm(true)} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>+ Novo lead</button>
+        </div>
       </div>
+
+      {showForm && <LeadFormModal onClose={() => setShowForm(false)} onCreate={onCreateLead} />}
 
       {/* No overflow:hidden — it would clip the StatusDropdown menu on the last rows.
           The card look is kept via border + borderRadius; edge rows round their own corners. */}

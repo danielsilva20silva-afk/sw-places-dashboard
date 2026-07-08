@@ -90,6 +90,33 @@ export default function Dashboard({ onLogout }) {
       return false;
     }
   };
+  // Manually create a lead (source "Manual"); zone folded into notes (no column)
+  const addLead = async (f) => {
+    const zone = (f.zone || "").trim();
+    const baseNotes = (f.notes || "").trim();
+    const notes = zone ? `${baseNotes}${baseNotes ? "\n" : ""}Zona: ${zone}` : baseNotes;
+    const payload = {
+      id: String(Date.now()),
+      name: (f.name || "").trim(),
+      email: (f.email || "").trim(),
+      phone: (f.phone || "").trim(),
+      budget: (f.budget || "").trim(),
+      intention: (f.intention || "").trim(),
+      source: "Manual",
+      status: "Novo",
+      date: new Date().toISOString().slice(0, 10),
+      notes,
+    };
+    try {
+      const res = await api.addLead(payload);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const created = await res.json();
+      setLeads(ls => [created, ...ls]);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e?.message || "erro" };
+    }
+  };
 
   const newLeads = leads.filter(l => l.status === "Novo");
   const unseenNewLeads = newLeads.filter(l => !seenLeadIds.includes(l.id));
@@ -309,7 +336,7 @@ export default function Dashboard({ onLogout }) {
             )}
 
             {activeTab === "leads" && (
-              <LeadsTab leads={leads} onOpenLead={setDrawerLead} updateStatus={updateStatus} />
+              <LeadsTab leads={leads} onOpenLead={setDrawerLead} updateStatus={updateStatus} onCreateLead={addLead} />
             )}
 
             {activeTab === "conversas" && <ConversasTab />}
