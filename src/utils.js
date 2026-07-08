@@ -32,6 +32,18 @@ export function cleanField(value) {
   return isPlaceholder(value) ? null : value.trim();
 }
 
+// Relative time with minute/hour granularity (for conversation freshness)
+export function relTime(dateStr) {
+  const then = new Date(dateStr).getTime();
+  if (isNaN(then)) return "";
+  const min = Math.floor((Date.now() - then) / 60000);
+  if (min < 1) return "agora";
+  if (min < 60) return `há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `há ${h}h`;
+  return relDate(dateStr);
+}
+
 // Chart data — leads per day, last 14 days, computed from live leads
 export function buildChartData(leads) {
   const days = [];

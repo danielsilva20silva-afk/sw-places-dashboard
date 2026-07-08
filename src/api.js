@@ -71,3 +71,30 @@ export async function aiReply(contactId, message) {
 export function clearConversation(contactId) {
   return fetch(`/api/ai-reply?contact_id=${encodeURIComponent(contactId)}`, { method: "DELETE" });
 }
+
+// GET /api/conversations → active conversations (not yet leads)
+export async function getConversations() {
+  const res = await fetch("/api/conversations");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+// GET /api/toggle-ana?subscriber_id=X → { active }
+export async function getAnaState(subscriberId) {
+  const res = await fetch(`/api/toggle-ana?subscriber_id=${encodeURIComponent(subscriberId)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// POST /api/toggle-ana → set Ana active/silenced for a subscriber
+export async function setAnaState(subscriberId, active) {
+  const res = await fetch("/api/toggle-ana", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ subscriber_id: subscriberId, active }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}

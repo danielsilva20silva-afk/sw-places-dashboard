@@ -47,3 +47,25 @@ export async function sendFlow(subscriberId, flowNs) {
   if (!res.ok) throw new Error(`sendFlow HTTP ${res.status}`);
   return res.json();
 }
+
+// POST /fb/subscriber/addTagByName → add a tag (created if it doesn't exist)
+export async function addTagByName(subscriberId, tagName) {
+  const res = await fetch(`${BASE}/subscriber/addTagByName`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ subscriber_id: subscriberId, tag_name: tagName }),
+  });
+  if (!res.ok) throw new Error(`addTagByName HTTP ${res.status}`);
+  return res.json();
+}
+
+// POST /fb/subscriber/removeTagByName → remove a tag
+export async function removeTagByName(subscriberId, tagName) {
+  const res = await fetch(`${BASE}/subscriber/removeTagByName`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ subscriber_id: subscriberId, tag_name: tagName }),
+  });
+  if (!res.ok) throw new Error(`removeTagByName HTTP ${res.status}`);
+  return res.json();
+}

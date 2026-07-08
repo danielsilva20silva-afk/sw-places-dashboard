@@ -2,6 +2,7 @@ import { useState } from "react";
 import { STATUSES, STATUS_CONFIG } from "../constants";
 import { relDate, isValidEmail, isValidPhone } from "../utils";
 import Avatar from "./Avatar";
+import AnaToggle from "./AnaToggle";
 
 export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
   const [status, setStatus] = useState(lead.status);
@@ -9,6 +10,8 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
   const [deleting, setDeleting] = useState(false);
   const phoneOk = isValidPhone(lead.phone);
   const emailOk = isValidEmail(lead.email);
+  // Ana toggle only for leads that came from Instagram DMs (id is a ManyChat subscriber id)
+  const isAnaSubscriber = lead.source === "DM · ANA" && /^\d+$/.test(String(lead.id));
 
   const handleDelete = async () => {
     if (deleting) return;
@@ -58,6 +61,15 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "#F8F7F4", color: "#AAA", borderRadius: 12, padding: "12px", fontSize: 13, fontWeight: 500 }}>Sem contacto válido</div>
+          )}
+          {isAnaSubscriber && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#F8F7F4", borderRadius: 12, padding: "12px 14px" }}>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "#111", margin: 0 }}>Assistente Ana</p>
+                <p style={{ fontSize: 11, color: "#888", margin: "2px 0 0" }}>Desliga para responderes tu (a Ana fica em silêncio no Instagram).</p>
+              </div>
+              <AnaToggle subscriberId={String(lead.id)} />
+            </div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {[["Email", lead.email], ["Telefone", lead.phone], ["Orçamento", lead.budget], ["Intenção", lead.intention]].map(([label, value]) => (
