@@ -1,6 +1,17 @@
 import { google } from "googleapis";
 import Anthropic from "@anthropic-ai/sdk";
+import { waitUntil } from "@vercel/functions";
 import { ANA_PROMPT } from "./_ana-prompt.js";
+import * as mc from "./_manychat.js";
+
+// Let the background delivery work (Claude + ManyChat calls) finish after we
+// return the immediate 200 to ManyChat.
+export const config = { maxDuration: 60 };
+
+// ManyChat delivery config (overridable via env)
+const MC_FIELD_ID = Number(process.env.MANYCHAT_ANA_FIELD_ID || 14760048);
+const MC_FLOW_NS = process.env.MANYCHAT_FLOW_NS || "content20260708180843_207601";
+const MC_HUMAN_TAG = process.env.MANYCHAT_HUMAN_TAG || "Humano";
 
 // "Conversations" tab, columns A–D: contact_id | role | message | timestamp
 const SHEET_NAME = process.env.GOOGLE_CONVERSATIONS_TAB || "Conversations";
@@ -74,7 +85,7 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source) {
 
   if (idx === -1) {
     const row = [
-      leadId, data.name || "", data.email || "", data.phone || "", "",
+      leadId, data.name || "", data.email || "", data.phone || "", data.budget || "",
       data.intention || "", source, today, "Novo", notes,
     ];
     await sheets.spreadsheets.values.append({
@@ -90,7 +101,7 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source) {
     data.name || ex[1] || "",
     data.email || ex[2] || "",
     data.phone || ex[3] || "",
-    ex[4] || "",                    // budget preserved
+    data.budget || ex[4] || "",     // budget from block, else preserved
     data.intention || ex[5] || "",
     ex[6] || source,                // source preserved
     ex[7] || today,                 // date preserved
@@ -102,6 +113,83 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source) {
     requestBody: { values: [merged] },
   });
   return "updated";
+}
+
+// Core: read history → Claude → strip <lead> → persist turns → upsert lead.
+// Shared by the test page (sync) and the ManyChat webhook (async).
+async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, message, source }) {
+  await ensureTab(sheets, spreadsheetId);
+
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: DATA_RANGE });
+  const rows = resp.data.values || [];
+  const history = rows
+    .filter((r) => r && r[0] === contactId && (r[1] === "user" || r[1] === "assistant") && r[2])
+    .map((r) => ({ role: r[1], content: String(r[2]) }));
+
+  const client = new Anthropic({ apiKey });
+  const aiRes = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1000,
+    system: ANA_PROMPT,
+    messages: [...history, { role: "user", content: message }],
+  });
+  const rawReply = aiRes.content.find((b) => b.type === "text")?.text?.trim() || "";
+  const { clean: reply, data: leadData } = extractLead(rawReply);
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A:D`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [
+        [contactId, "user", message, new Date().toISOString()],
+        [contactId, "assistant", reply, new Date().toISOString()],
+      ],
+    },
+  });
+
+  if (leadData && (String(leadData.phone || "").trim() || String(leadData.email || "").trim())) {
+    try {
+      await upsertLead(sheets, spreadsheetId, contactId, leadData, source);
+    } catch (e) {
+      console.error("upsertLead failed:", e?.message);
+    }
+  }
+
+  return { reply, leadData };
+}
+
+// ManyChat async flow: human-takeover check FIRST, then generate + deliver.
+async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message }) {
+  try {
+    // a. Human takeover: if the subscriber has the 'Humano' tag, stay silent.
+    try {
+      const info = await mc.getSubscriberInfo(subscriberId);
+      if (mc.subscriberHasTag(info, MC_HUMAN_TAG)) {
+        console.log(`[ana] subscriber ${subscriberId} has '${MC_HUMAN_TAG}' tag — staying silent.`);
+        return;
+      }
+    } catch (e) {
+      // Can't confirm takeover; proceed (bias toward answering) but log it.
+      console.error(`[ana] getInfo failed for ${subscriberId}, proceeding:`, e?.message);
+    }
+
+    // b–e. Generate reply + persist turns + upsert lead
+    const { reply } = await generateAndPersist({
+      sheets, spreadsheetId, apiKey,
+      contactId: String(subscriberId), message, source: "DM · ANA",
+    });
+    if (!reply) {
+      console.error(`[ana] empty reply for ${subscriberId}, nothing to deliver.`);
+      return;
+    }
+
+    // f. Deliver: set the ana_response field, then fire the delivery flow
+    await mc.setCustomField(subscriberId, MC_FIELD_ID, reply);
+    await mc.sendFlow(subscriberId, MC_FLOW_NS);
+  } catch (e) {
+    console.error(`[ana] processManyChat failed for ${subscriberId}:`, e?.message);
+  }
 }
 
 export default async function handler(req, res) {
@@ -138,59 +226,34 @@ export default async function handler(req, res) {
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY não configurada." });
+    const body = req.body ?? {};
 
-    const { contact_id, message, source } = req.body ?? {};
+    // ── ManyChat webhook path (detected by presence of subscriber_id) ──
+    const rawSid = body.subscriber_id;
+    if (rawSid !== undefined && rawSid !== null && String(rawSid).trim() !== "") {
+      // Respond 200 immediately so ManyChat's automation ends (avoids its ~10s
+      // timeout); waitUntil keeps the function alive to finish Claude + delivery.
+      res.status(200).json({ status: "ok" });
+      const subscriberId = /^\d+$/.test(String(rawSid)) ? Number(rawSid) : rawSid;
+      const message = typeof body.message === "string" ? body.message.trim() : "";
+      if (apiKey && message) {
+        waitUntil(processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message }));
+      } else {
+        console.error("[ana] ManyChat call missing ANTHROPIC_API_KEY or message; skipping.");
+      }
+      return;
+    }
+
+    // ── Test-page path (synchronous: { contact_id, message } → { reply }) ──
+    if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY não configurada." });
+    const { contact_id, message, source } = body;
     if (!contact_id || !message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Campos 'contact_id' e 'message' são obrigatórios." });
     }
     const leadSource = (source && String(source).trim()) || "AI CHAT";
-
-    await ensureTab(sheets, spreadsheetId);
-
-    // 1. Read this contact's history, in order
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: DATA_RANGE });
-    const rows = resp.data.values || [];
-    const history = rows
-      .filter((r) => r && r[0] === contact_id && (r[1] === "user" || r[1] === "assistant") && r[2])
-      .map((r) => ({ role: r[1], content: String(r[2]) }));
-
-    // 2. Call Anthropic with the system prompt + prior turns + the new message
-    const client = new Anthropic({ apiKey });
-    const aiRes = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      system: ANA_PROMPT,
-      messages: [...history, { role: "user", content: message }],
+    const { reply } = await generateAndPersist({
+      sheets, spreadsheetId, apiKey, contactId: contact_id, message, source: leadSource,
     });
-    const rawReply = aiRes.content.find((b) => b.type === "text")?.text?.trim() || "";
-
-    // 3. Extract + strip Ana's hidden <lead> block — only clean text is saved/shown
-    const { clean: reply, data: leadData } = extractLead(rawReply);
-
-    // 4. Persist both turns (clean reply only)
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${SHEET_NAME}!A:D`,
-      valueInputOption: "RAW",
-      requestBody: {
-        values: [
-          [contact_id, "user", message, new Date().toISOString()],
-          [contact_id, "assistant", reply, new Date().toISOString()],
-        ],
-      },
-    });
-
-    // 5. If Ana collected a contact, create/update the lead (best-effort:
-    //    a lead failure must never break the conversation)
-    if (leadData && (String(leadData.phone || "").trim() || String(leadData.email || "").trim())) {
-      try {
-        await upsertLead(sheets, spreadsheetId, contact_id, leadData, leadSource);
-      } catch (e) {
-        console.error("upsertLead failed:", e?.message);
-      }
-    }
-
     return res.status(200).json({ reply });
   } catch (err) {
     console.error("ai-reply error:", err);
