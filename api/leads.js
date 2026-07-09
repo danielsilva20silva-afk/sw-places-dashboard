@@ -1,9 +1,9 @@
 import { google } from "googleapis";
 
-// Google Sheet tab name. Columns A–K must be, in order:
-// id | name | email | phone | budget | intention | source | date | status | notes | created_at
+// Google Sheet tab name. Columns A–L must be, in order:
+// id | name | email | phone | budget | intention | source | date | status | notes | created_at | username
 const SHEET_NAME = process.env.GOOGLE_SHEETS_TAB || "Leads";
-const DATA_RANGE = `${SHEET_NAME}!A2:K`;
+const DATA_RANGE = `${SHEET_NAME}!A2:L`;
 
 // Full ISO timestamp with the Europe/Lisbon offset, e.g. "2026-07-09T14:32:05+01:00".
 // (Kept self-contained here so this route doesn't import the Ana/Anthropic bundle.)
@@ -59,6 +59,7 @@ function rowToLead(r) {
     status: r[8] || "Novo",
     notes: r[9] ?? "",
     created_at: r[10] ?? "",
+    username: r[11] ?? "",
   };
 }
 
@@ -89,11 +90,11 @@ export default async function handler(req, res) {
       const createdAt = b.created_at || lisbonISO();
       const row = [
         id, b.name || "", b.email || "", b.phone || "", b.budget || "",
-        b.intention || "", b.source || "", date, b.status || "Novo", b.notes || "", createdAt,
+        b.intention || "", b.source || "", date, b.status || "Novo", b.notes || "", createdAt, b.username || "",
       ];
       await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${SHEET_NAME}!A:K`,
+        range: `${SHEET_NAME}!A:L`,
         valueInputOption: "RAW",
         requestBody: { values: [row] },
       });

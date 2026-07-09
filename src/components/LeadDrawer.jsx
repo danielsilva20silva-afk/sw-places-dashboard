@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { STATUSES, STATUS_CONFIG } from "../constants";
-import { leadWhen, isValidEmail, isValidPhone } from "../utils";
+import { leadWhen, isValidEmail, isValidPhone, cleanField } from "../utils";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
@@ -25,6 +25,9 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
 
   const phoneOk = isValidPhone(phone);
   const emailOk = isValidEmail(email);
+  // Instagram handle (stored bare, but tolerate a leading @). Placeholder-safe.
+  const igHandle = (cleanField(lead.username) || "").replace(/^@+/, "").trim();
+  const igOk = igHandle.length > 0;
   // Ana toggle only for leads that came from Instagram DMs (id is a ManyChat subscriber id)
   const isAnaSubscriber = lead.source === "DM · ANA" && /^\d+$/.test(String(lead.id));
 
@@ -72,7 +75,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
           </div>
         </div>
         <div style={{ padding: "20px 24px", flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
-          {(phoneOk || emailOk) ? (
+          {(phoneOk || emailOk || igOk) ? (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {phoneOk && (
                 <a href={`tel:${phone}`} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#16A34A", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📞 Ligar</a>
@@ -82,6 +85,9 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
               )}
               {emailOk && (
                 <a href={`mailto:${email}`} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#2563EB", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>✉️ Email</a>
+              )}
+              {igOk && (
+                <a href={`https://instagram.com/${igHandle}`} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📷 Instagram</a>
               )}
             </div>
           ) : (

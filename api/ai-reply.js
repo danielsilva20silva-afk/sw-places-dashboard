@@ -48,10 +48,10 @@ async function ensureTab(sheets, spreadsheetId) {
   });
 }
 
-// "Leads" tab, columns A–K:
-// id | name | email | phone | budget | intention | source | date | status | notes | created_at
+// "Leads" tab, columns A–L:
+// id | name | email | phone | budget | intention | source | date | status | notes | created_at | username
 const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
-const LEADS_RANGE = `${LEADS_TAB}!A2:K`;
+const LEADS_RANGE = `${LEADS_TAB}!A2:L`;
 
 // "Subscribers" tab, columns A–D: contact_id | name | username | last_seen
 // Holds the display identity of every ManyChat subscriber so active
@@ -200,10 +200,10 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackN
     const name = resolveName({ profileFull: fallbackName, stated: data.name, username: fallbackUsername, existing: "" });
     const row = [
       leadId, name, data.email || "", data.phone || "", data.budget || "",
-      data.intention || "", source, today, "Novo", notes, lisbonISO(),
+      data.intention || "", source, today, "Novo", notes, lisbonISO(), String(fallbackUsername || "").trim(),
     ];
     await sheets.spreadsheets.values.append({
-      spreadsheetId, range: `${LEADS_TAB}!A:K`, valueInputOption: "RAW",
+      spreadsheetId, range: `${LEADS_TAB}!A:L`, valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
     return "created";
@@ -224,9 +224,10 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackN
     ex[8] || "Novo",                // status preserved
     notes || ex[9] || "",           // latest AI summary preferred
     ex[10] || "",                   // created_at preserved (blank for legacy rows)
+    String(fallbackUsername || "").trim() || ex[11] || "", // username: fill from profile, else keep
   ];
   await sheets.spreadsheets.values.update({
-    spreadsheetId, range: `${LEADS_TAB}!A${idx + 2}:K${idx + 2}`, valueInputOption: "RAW",
+    spreadsheetId, range: `${LEADS_TAB}!A${idx + 2}:L${idx + 2}`, valueInputOption: "RAW",
     requestBody: { values: [merged] },
   });
   return "updated";
