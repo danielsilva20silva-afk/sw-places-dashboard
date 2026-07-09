@@ -9,7 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 export const config = { maxDuration: 30 };
 
 const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
-const LEADS_RANGE = `${LEADS_TAB}!A2:L`;
+const LEADS_RANGE = `${LEADS_TAB}!A2:M`;
 const CONV_TAB = process.env.GOOGLE_CONVERSATIONS_TAB || "Conversations";
 const CONV_RANGE = `${CONV_TAB}!A2:D`;
 
@@ -18,7 +18,7 @@ function rowToLead(r) {
   return {
     id: r[0] ?? "", name: r[1] ?? "", email: r[2] ?? "", phone: r[3] ?? "",
     budget: r[4] ?? "", intention: r[5] ?? "", source: r[6] ?? "", date: r[7] ?? "",
-    status: r[8] || "Novo", notes: r[9] ?? "", created_at: r[10] ?? "", username: r[11] ?? "",
+    status: r[8] || "Novo", notes: r[9] ?? "", created_at: r[10] ?? "", username: r[11] ?? "", source_content: r[12] ?? "",
   };
 }
 

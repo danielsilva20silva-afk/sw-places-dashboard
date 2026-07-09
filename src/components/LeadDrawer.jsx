@@ -28,6 +28,9 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
   // Instagram handle (stored bare, but tolerate a leading @). Placeholder-safe.
   const igHandle = (cleanField(lead.username) || "").replace(/^@+/, "").trim();
   const igOk = igHandle.length > 0;
+  // Shared reel/post link the person pasted (empty for most leads).
+  const sourceContent = (cleanField(lead.source_content) || "").trim();
+  const sourceOk = /^https?:\/\//i.test(sourceContent);
   // Ana toggle only for leads that came from Instagram DMs (id is a ManyChat subscriber id)
   const isAnaSubscriber = lead.source === "DM · ANA" && /^\d+$/.test(String(lead.id));
 
@@ -140,6 +143,15 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
             <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>Notas</p>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notas sobre este lead..." rows={4} style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#111", resize: "none", outline: "none", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit" }} />
           </div>
+          {sourceOk && (
+            <div>
+              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 6px" }}>Publicação de origem</p>
+              <a href={sourceContent} target="_blank" rel="noopener noreferrer" style={{
+                display: "flex", alignItems: "center", gap: 8, background: "#F8F7F4", borderRadius: 10,
+                padding: "10px 12px", textDecoration: "none", fontSize: 12, color: "#8A6D2F", fontWeight: 600, wordBreak: "break-all",
+              }}>📷 Ver publicação partilhada ↗</a>
+            </div>
+          )}
           <LeadConversation lead={lead} />
           {error && (
             <div style={{ background: "#FFF1F2", border: "1px solid #FECDD3", color: "#BE123C", borderRadius: 10, padding: "10px 14px", fontSize: 13 }}>{error}</div>
