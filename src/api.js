@@ -81,11 +81,46 @@ export async function getConversations() {
 }
 
 // GET /api/conversations?contact_id=X → just that thread's messages
+// (each with its sheet `row`, needed for edit/delete).
 export async function getConversation(contactId) {
   const res = await fetch(`/api/conversations?contact_id=${encodeURIComponent(contactId)}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   return Array.isArray(data.messages) ? data.messages : [];
+}
+
+// PATCH /api/conversations → edit a stored message's text
+export async function editMessage({ contactId, row, timestamp, message }) {
+  const res = await fetch("/api/conversations", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact_id: contactId, row, timestamp, message }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// DELETE /api/conversations?contact_id&row&timestamp → remove one message
+export async function deleteMessage({ contactId, row, timestamp }) {
+  const qs = new URLSearchParams({ contact_id: String(contactId), row: String(row) });
+  if (timestamp) qs.set("timestamp", timestamp);
+  const res = await fetch(`/api/conversations?${qs.toString()}`, { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// POST /api/conversations → append a message to a thread
+export async function addMessage({ contactId, role, message, timestamp }) {
+  const res = await fetch("/api/conversations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact_id: contactId, role, message, timestamp }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
 }
 
 // POST /api/recover-conversation (mode "generate") → Ana's reply for a pre-Ana
