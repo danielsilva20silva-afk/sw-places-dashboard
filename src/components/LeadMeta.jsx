@@ -1,5 +1,5 @@
 import { GOLD } from "../constants";
-import { cleanField, relDate } from "../utils";
+import { cleanField, leadWhen } from "../utils";
 
 // Subtitle line for a lead: valid budget/intention fields, then the source as a
 // small origin tag, then the date. Empty or "{{...}}" placeholder values are
@@ -18,7 +18,7 @@ export default function LeadMeta({ lead }) {
         }}>{source}</span>
       )}
       {(meta || source) && <span style={{ color: "#DDD", fontSize: 10 }}>•</span>}
-      <span style={{ fontSize: 12, color: "#CCC" }}>{relDate(lead.date)}</span>
+      <span style={{ fontSize: 12, color: "#CCC" }}>{leadWhen(lead)}</span>
     </div>
   );
 }

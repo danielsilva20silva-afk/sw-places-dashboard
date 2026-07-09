@@ -48,9 +48,10 @@ async function ensureTab(sheets, spreadsheetId) {
   });
 }
 
-// "Leads" tab, columns A–J: id | name | email | phone | budget | intention | source | date | status | notes
+// "Leads" tab, columns A–K:
+// id | name | email | phone | budget | intention | source | date | status | notes | created_at
 const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
-const LEADS_RANGE = `${LEADS_TAB}!A2:J`;
+const LEADS_RANGE = `${LEADS_TAB}!A2:K`;
 
 // "Subscribers" tab, columns A–D: contact_id | name | username | last_seen
 // Holds the display identity of every ManyChat subscriber so active
@@ -140,11 +141,50 @@ function lisbonHuman() {
     timeZone: "Europe/Lisbon", day: "numeric", month: "long", year: "numeric",
   }).format(new Date());
 }
+// Full ISO timestamp with the Europe/Lisbon offset, e.g. "2026-07-09T14:32:05+01:00".
+function lisbonISO(d = new Date()) {
+  const p = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    timeZoneName: "shortOffset",
+  }).formatToParts(d);
+  const g = (t) => p.find((x) => x.type === t)?.value || "";
+  let hh = g("hour"); if (hh === "24") hh = "00";
+  // shortOffset looks like "GMT", "GMT+1" or "GMT+01:00" depending on runtime.
+  const raw = g("timeZoneName").replace("GMT", "").trim();
+  let off = "+00:00";
+  const m = raw.match(/([+-])(\d{1,2})(?::?(\d{2}))?/);
+  if (m) off = `${m[1]}${m[2].padStart(2, "0")}:${m[3] || "00"}`;
+  return `${g("year")}-${g("month")}-${g("day")}T${hh}:${g("minute")}:${g("second")}${off}`;
+}
+
+// Word count of a name (whitespace-separated tokens).
+function wordCount(s) {
+  return String(s || "").trim().split(/\s+/).filter(Boolean).length;
+}
+// Resolve a lead's name by priority:
+//   1. Full name from the ManyChat profile (unless the stated name is clearly
+//      more complete — more words)
+//   2. Name the person stated in conversation (Claude's <lead> block)
+//   3. Existing stored name (never wipe a previously-captured one)
+//   4. @username
+//   5. empty (never invent)
+function resolveName({ profileFull, stated, username, existing }) {
+  const pf = String(profileFull || "").trim();
+  const st = String(stated || "").trim();
+  const ex = String(existing || "").trim();
+  const un = String(username || "").trim();
+  if (pf) return st && wordCount(st) > wordCount(pf) ? st : pf;
+  if (st) return st;
+  if (ex) return ex;
+  if (un) return un.startsWith("@") ? un : `@${un}`;
+  return "";
+}
 
 // Create or update a lead from Ana's block. Deduped by lead id === contact_id,
 // so one conversation maps to at most one lead. Preserves fields a human may
 // have changed (budget/source/date/status).
-async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackName) {
+async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackName, fallbackUsername) {
   const today = new Date().toISOString().slice(0, 10);
   const zone = String(data.zone || "").trim();
   const summary = String(data.summary || "").trim();
@@ -157,21 +197,24 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackN
   const idx = rows.findIndex((r) => r && String(r[0]) === String(leadId));
 
   if (idx === -1) {
+    const name = resolveName({ profileFull: fallbackName, stated: data.name, username: fallbackUsername, existing: "" });
     const row = [
-      leadId, data.name || fallbackName || "", data.email || "", data.phone || "", data.budget || "",
-      data.intention || "", source, today, "Novo", notes,
+      leadId, name, data.email || "", data.phone || "", data.budget || "",
+      data.intention || "", source, today, "Novo", notes, lisbonISO(),
     ];
     await sheets.spreadsheets.values.append({
-      spreadsheetId, range: `${LEADS_TAB}!A:J`, valueInputOption: "RAW",
+      spreadsheetId, range: `${LEADS_TAB}!A:K`, valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
     return "created";
   }
 
   const ex = rows[idx];
+  // Prefer a fuller profile name over an existing first-name-only value.
+  const name = resolveName({ profileFull: fallbackName, stated: data.name, username: fallbackUsername, existing: ex[1] });
   const merged = [
     leadId,
-    data.name || ex[1] || fallbackName || "",
+    name,
     data.email || ex[2] || "",
     data.phone || ex[3] || "",
     data.budget || ex[4] || "",     // budget from block, else preserved
@@ -180,9 +223,10 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackN
     ex[7] || today,                 // date preserved
     ex[8] || "Novo",                // status preserved
     notes || ex[9] || "",           // latest AI summary preferred
+    ex[10] || "",                   // created_at preserved (blank for legacy rows)
   ];
   await sheets.spreadsheets.values.update({
-    spreadsheetId, range: `${LEADS_TAB}!A${idx + 2}:J${idx + 2}`, valueInputOption: "RAW",
+    spreadsheetId, range: `${LEADS_TAB}!A${idx + 2}:K${idx + 2}`, valueInputOption: "RAW",
     requestBody: { values: [merged] },
   });
   return "updated";
@@ -247,14 +291,14 @@ export async function appendTurns({ sheets, spreadsheetId, contactId, userMessag
 
 // Core: generate → persist turns → upsert lead. Shared by the test page (sync)
 // and the ManyChat webhook (async).
-async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, message, source, profileName, profileFirstName }) {
+async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, message, source, profileName, profileUsername, profileFirstName }) {
   const { reply, leadData } = await generateReply({ sheets, spreadsheetId, apiKey, contactId, message, profileFirstName });
 
   await appendTurns({ sheets, spreadsheetId, contactId, userMessage: message, assistantReply: reply });
 
   if (leadData && (String(leadData.phone || "").trim() || String(leadData.email || "").trim())) {
     try {
-      await upsertLead(sheets, spreadsheetId, contactId, leadData, source, profileName);
+      await upsertLead(sheets, spreadsheetId, contactId, leadData, source, profileName, profileUsername);
     } catch (e) {
       console.error("upsertLead failed:", e?.message);
     }
@@ -288,23 +332,24 @@ async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, me
       console.error(`[ana] getInfo failed for ${subscriberId}, proceeding:`, e?.message);
     }
 
-    // Lead name: full name → @username → webhook-body name. (Claude's stated
-    // name in the <lead> block still wins inside upsertLead.)
-    const effName = apiFullName || apiUsername || profileName || "";
+    // Full name (API primary, webhook body as fallback) and username kept
+    // separate so upsertLead can apply the full name-resolution priority.
+    const effFullName = apiFullName || profileName || "";
+    const effUsername = apiUsername || "";
     const effFirst = apiFirst || profileFirstName || "";
 
     // Persist the display identity so active conversations (no lead yet) show
     // who's talking. Prefer the real name; keep username as a separate column.
     await upsertSubscriber(
       sheets, spreadsheetId, String(subscriberId),
-      apiFullName || profileName || "", apiUsername,
+      effFullName, effUsername,
     );
 
     // b–e. Generate reply + persist turns + upsert lead
     const { reply } = await generateAndPersist({
       sheets, spreadsheetId, apiKey,
       contactId: String(subscriberId), message, source: "DM · ANA",
-      profileName: effName, profileFirstName: effFirst,
+      profileName: effFullName, profileUsername: effUsername, profileFirstName: effFirst,
     });
     if (!reply) {
       console.error(`[ana] empty reply for ${subscriberId}, nothing to deliver.`);

@@ -8,14 +8,14 @@ export async function getLeads() {
   return Array.isArray(data) ? data : [];
 }
 
-// PATCH /api/leads → update status/notes for a lead by id.
-// `notes` is optional: when omitted it's left out of the body and the
-// server preserves the existing value.
-export function updateLead(id, status, notes) {
+// PATCH /api/leads → update a lead by id. `fields` is a partial object; any of
+// name/email/phone/budget/intention/status/notes may be present. Fields left
+// out are preserved server-side (id/source/date/created_at always are).
+export function updateLead(id, fields) {
   return fetch("/api/leads", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, status, notes }),
+    body: JSON.stringify({ id, ...fields }),
   });
 }
 

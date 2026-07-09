@@ -44,6 +44,25 @@ export function relTime(dateStr) {
   return relDate(dateStr);
 }
 
+// Day + time label for a lead, in Europe/Lisbon.
+// Uses created_at (full ISO) when present → "Hoje, 14:32" / "9 jul, 09:15".
+// Falls back to date-only (relDate) for legacy rows without a created_at.
+export function leadWhen(lead) {
+  const iso = lead && lead.created_at;
+  if (!iso) return relDate(lead && lead.date);
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return relDate(lead.date);
+  const time = d.toLocaleTimeString("pt-PT", { timeZone: "Europe/Lisbon", hour: "2-digit", minute: "2-digit" });
+  return `${relDate(iso)}, ${time}`;
+}
+
+// Epoch ms a lead was received — created_at if present, else the date column.
+// Used for sorting/filtering. Returns 0 when neither parses.
+export function leadTime(lead) {
+  const t = new Date((lead && lead.created_at) || (lead && lead.date) || 0).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
 // Chart data — leads per day, last 14 days, computed from live leads
 export function buildChartData(leads) {
   const days = [];

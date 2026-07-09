@@ -71,14 +71,27 @@ export default function Dashboard({ onLogout }) {
     return () => { active = false; };
   }, []);
 
-  // Optimistic local update + persist to Google Sheets via PATCH
-  const updateLead = (id, status, notes) => {
-    setLeads(leads.map(l => l.id === id ? { ...l, status, notes } : l));
-    api.updateLead(id, status, notes).catch(() => {});
+  // Edit lead details (from the drawer). Optimistic, persists via PATCH, and
+  // reconciles with the server row. Returns {ok} so the drawer can show errors
+  // without discarding the user's typed values.
+  const updateLead = async (id, fields) => {
+    const snapshot = leads;
+    setLeads(ls => ls.map(l => String(l.id) === String(id) ? { ...l, ...fields } : l));
+    try {
+      const res = await api.updateLead(id, fields);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const updated = await res.json();
+      setLeads(ls => ls.map(l => String(l.id) === String(id) ? { ...l, ...updated } : l));
+      return { ok: true };
+    } catch (e) {
+      setLeads(snapshot); // revert on failure
+      return { ok: false, error: e?.message || "erro" };
+    }
   };
+  // Quick status change (from the row dropdowns) — optimistic, best-effort.
   const updateStatus = (id, status) => {
     setLeads(leads.map(l => l.id === id ? { ...l, status } : l));
-    api.updateLead(id, status).catch(() => {});
+    api.updateLead(id, { status }).catch(() => {});
   };
   // Delete a lead: persist, then drop it from the list on success
   const deleteLead = async (id) => {

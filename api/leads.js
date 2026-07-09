@@ -1,9 +1,26 @@
 import { google } from "googleapis";
 
-// Google Sheet tab name. Columns A–J must be, in order:
-// id | name | email | phone | budget | intention | source | date | status | notes
+// Google Sheet tab name. Columns A–K must be, in order:
+// id | name | email | phone | budget | intention | source | date | status | notes | created_at
 const SHEET_NAME = process.env.GOOGLE_SHEETS_TAB || "Leads";
-const DATA_RANGE = `${SHEET_NAME}!A2:J`;
+const DATA_RANGE = `${SHEET_NAME}!A2:K`;
+
+// Full ISO timestamp with the Europe/Lisbon offset, e.g. "2026-07-09T14:32:05+01:00".
+// (Kept self-contained here so this route doesn't import the Ana/Anthropic bundle.)
+function lisbonISO(d = new Date()) {
+  const p = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    timeZoneName: "shortOffset",
+  }).formatToParts(d);
+  const g = (t) => p.find((x) => x.type === t)?.value || "";
+  let hh = g("hour"); if (hh === "24") hh = "00";
+  const raw = g("timeZoneName").replace("GMT", "").trim();
+  let off = "+00:00";
+  const m = raw.match(/([+-])(\d{1,2})(?::?(\d{2}))?/);
+  if (m) off = `${m[1]}${m[2].padStart(2, "0")}:${m[3] || "00"}`;
+  return `${g("year")}-${g("month")}-${g("day")}T${hh}:${g("minute")}:${g("second")}${off}`;
+}
 
 function getSheetsClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -41,6 +58,7 @@ function rowToLead(r) {
     date: r[7] ?? "",
     status: r[8] || "Novo",
     notes: r[9] ?? "",
+    created_at: r[10] ?? "",
   };
 }
 
@@ -68,13 +86,14 @@ export default async function handler(req, res) {
       }
       const id = b.id ? String(b.id) : String(Date.now());
       const date = b.date || new Date().toISOString().slice(0, 10);
+      const createdAt = b.created_at || lisbonISO();
       const row = [
         id, b.name || "", b.email || "", b.phone || "", b.budget || "",
-        b.intention || "", b.source || "", date, b.status || "Novo", b.notes || "",
+        b.intention || "", b.source || "", date, b.status || "Novo", b.notes || "", createdAt,
       ];
       await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${SHEET_NAME}!A:J`,
+        range: `${SHEET_NAME}!A:K`,
         valueInputOption: "RAW",
         requestBody: { values: [row] },
       });
@@ -82,26 +101,40 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "PATCH") {
-      const { id, status, notes } = req.body ?? {};
+      const b = req.body ?? {};
+      const { id } = b;
       if (!id) return res.status(400).json({ error: "Campo 'id' em falta." });
 
-      // Find the row by id, preserving any field not provided.
+      // Find the row by id. Only the fields present in the body are changed;
+      // id / source / date / created_at are always preserved.
       const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: DATA_RANGE });
       const rows = resp.data.values || [];
       const idx = rows.findIndex((r) => r && String(r[0]) === String(id));
       if (idx === -1) return res.status(404).json({ error: "Lead não encontrado." });
 
-      const existing = rows[idx];
-      const newStatus = status ?? existing[8] ?? "Novo";
-      const newNotes = notes ?? existing[9] ?? "";
-      const rowNumber = idx + 2; // +1 for header row, +1 for 1-based indexing
+      const ex = rowToLead(rows[idx]);
+      const merged = {
+        ...ex,
+        name: b.name ?? ex.name,
+        email: b.email ?? ex.email,
+        phone: b.phone ?? ex.phone,
+        budget: b.budget ?? ex.budget,
+        intention: b.intention ?? ex.intention,
+        status: b.status ?? ex.status,
+        notes: b.notes ?? ex.notes,
+      };
+      const rowNumber = idx + 2; // +1 header, +1 for 1-based indexing
+      const rowVals = [
+        merged.id, merged.name, merged.email, merged.phone, merged.budget,
+        merged.intention, merged.source, merged.date, merged.status, merged.notes, merged.created_at,
+      ];
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${SHEET_NAME}!I${rowNumber}:J${rowNumber}`,
+        range: `${SHEET_NAME}!A${rowNumber}:K${rowNumber}`,
         valueInputOption: "RAW",
-        requestBody: { values: [[newStatus, newNotes]] },
+        requestBody: { values: [rowVals] },
       });
-      return res.status(200).json({ ...rowToLead(existing), status: newStatus, notes: newNotes });
+      return res.status(200).json(merged);
     }
 
     if (req.method === "DELETE") {
