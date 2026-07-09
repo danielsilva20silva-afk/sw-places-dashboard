@@ -47,6 +47,21 @@ export default async function handler(req, res) {
   const { sheets, spreadsheetId } = ctx;
 
   try {
+    // Single thread: ?contact_id=X → just that conversation's messages
+    // (used by the lead detail panel). Chronological order.
+    const contactId = req.query?.contact_id;
+    if (contactId) {
+      const conv = await getValues(sheets, spreadsheetId, CONV_RANGE);
+      const messages = [];
+      for (const r of conv) {
+        if (!r || String(r[0]) !== String(contactId)) continue;
+        const role = r[1] || "";
+        if (role !== "user" && role !== "assistant") continue;
+        messages.push({ role, message: r[2] || "", timestamp: r[3] || "" });
+      }
+      return res.status(200).json({ contact_id: String(contactId), messages });
+    }
+
     const [conv, leadRows, mutedRows, subRows] = await Promise.all([
       getValues(sheets, spreadsheetId, CONV_RANGE),
       getValues(sheets, spreadsheetId, LEADS_ID_RANGE),

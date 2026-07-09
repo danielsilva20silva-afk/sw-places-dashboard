@@ -72,12 +72,20 @@ export function clearConversation(contactId) {
   return fetch(`/api/ai-reply?contact_id=${encodeURIComponent(contactId)}`, { method: "DELETE" });
 }
 
-// GET /api/conversations → active conversations (not yet leads)
+// GET /api/conversations → all conversations (with isLead + full threads)
 export async function getConversations() {
   const res = await fetch("/api/conversations");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   return Array.isArray(data) ? data : [];
+}
+
+// GET /api/conversations?contact_id=X → just that thread's messages
+export async function getConversation(contactId) {
+  const res = await fetch(`/api/conversations?contact_id=${encodeURIComponent(contactId)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data.messages) ? data.messages : [];
 }
 
 // POST /api/recover-conversation (mode "generate") → Ana's reply for a pre-Ana

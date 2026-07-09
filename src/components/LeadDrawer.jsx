@@ -3,6 +3,7 @@ import { STATUSES, STATUS_CONFIG } from "../constants";
 import { leadWhen, isValidEmail, isValidPhone } from "../utils";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
+import LeadConversation from "./LeadConversation";
 
 const fieldInput = {
   width: "100%", boxSizing: "border-box", border: "1px solid #E5E5E5", borderRadius: 10,
@@ -133,6 +134,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
             <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>Notas</p>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notas sobre este lead..." rows={4} style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#111", resize: "none", outline: "none", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit" }} />
           </div>
+          <LeadConversation lead={lead} />
           {error && (
             <div style={{ background: "#FFF1F2", border: "1px solid #FECDD3", color: "#BE123C", borderRadius: 10, padding: "10px 14px", fontSize: 13 }}>{error}</div>
           )}
