@@ -52,6 +52,62 @@ async function ensureTab(sheets, spreadsheetId) {
 const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
 const LEADS_RANGE = `${LEADS_TAB}!A2:J`;
 
+// "Subscribers" tab, columns A–D: contact_id | name | username | last_seen
+// Holds the display identity of every ManyChat subscriber so active
+// conversations (which have no lead yet) can still show who is talking.
+const SUBS_TAB = process.env.GOOGLE_SUBSCRIBERS_TAB || "Subscribers";
+const SUBS_RANGE = `${SUBS_TAB}!A2:D`;
+
+// Create the Subscribers tab (with headers) if it doesn't exist yet.
+async function ensureSubsTab(sheets, spreadsheetId) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties(title)" });
+  const exists = (meta.data.sheets || []).some((s) => s.properties.title === SUBS_TAB);
+  if (exists) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: [{ addSheet: { properties: { title: SUBS_TAB } } }] },
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${SUBS_TAB}!A1:D1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [["contact_id", "name", "username", "last_seen"]] },
+  });
+}
+
+// Upsert a subscriber's display name/username (deduped by contact_id). Best
+// effort — never throws into the caller. Never blanks an existing name/username
+// with an empty value (a later message that fails to resolve a name won't wipe
+// a previously-captured one).
+async function upsertSubscriber(sheets, spreadsheetId, contactId, name, username) {
+  try {
+    await ensureSubsTab(sheets, spreadsheetId);
+    const now = new Date().toISOString();
+    const nm = String(name || "").trim();
+    const un = String(username || "").trim();
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: SUBS_RANGE });
+    const rows = resp.data.values || [];
+    const idx = rows.findIndex((r) => r && String(r[0]) === String(contactId));
+    if (idx === -1) {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId, range: `${SUBS_TAB}!A:D`, valueInputOption: "RAW",
+        requestBody: { values: [[String(contactId), nm, un, now]] },
+      });
+      console.log(`[ana] subscriber persisted (new) ${contactId}:`, JSON.stringify({ name: nm, username: un }));
+    } else {
+      const ex = rows[idx];
+      const merged = [String(contactId), nm || ex[1] || "", un || ex[2] || "", now];
+      await sheets.spreadsheets.values.update({
+        spreadsheetId, range: `${SUBS_TAB}!A${idx + 2}:D${idx + 2}`, valueInputOption: "RAW",
+        requestBody: { values: [merged] },
+      });
+      console.log(`[ana] subscriber persisted (update) ${contactId}:`, JSON.stringify({ name: merged[1], username: merged[2] }));
+    }
+  } catch (e) {
+    console.error(`[ana] upsertSubscriber failed for ${contactId}:`, e?.message);
+  }
+}
+
 // Extract + strip the hidden <lead>{...}</lead> block Ana may append.
 // Returns { clean, data } — data is the parsed JSON, or null if absent/invalid.
 function extractLead(reply) {
@@ -198,7 +254,8 @@ async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, me
     // a. Fetch subscriber info: human-takeover check + profile name/username.
     //    The API is the PRIMARY source of the name; webhook-body values (if any)
     //    are only a fallback.
-    let apiName = "";
+    let apiFullName = "";   // real name only (no username fallback)
+    let apiUsername = "";
     let apiFirst = "";
     try {
       const info = await mc.getSubscriberInfo(subscriberId);
@@ -207,17 +264,26 @@ async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, me
         return;
       }
       const p = mc.subscriberProfile(info);
-      const fullName = p.name || [p.first, p.last].filter(Boolean).join(" ");
-      apiName = fullName || p.username || "";      // full name preferred, else @username
+      apiFullName = p.name || [p.first, p.last].filter(Boolean).join(" ");
+      apiUsername = p.username || "";
       apiFirst = p.first || (p.name ? p.name.split(/\s+/)[0] : "");
-      console.log(`[ana] getInfo profile ${subscriberId}:`, JSON.stringify({ name: p.name, first_name: p.first, last_name: p.last, username: p.username, resolvedName: apiName }));
+      console.log(`[ana] getInfo profile ${subscriberId}:`, JSON.stringify({ name: p.name, first_name: p.first, last_name: p.last, username: p.username, resolvedName: apiFullName || apiUsername }));
     } catch (e) {
       // Can't confirm takeover / fetch profile; proceed (bias toward answering).
       console.error(`[ana] getInfo failed for ${subscriberId}, proceeding:`, e?.message);
     }
 
-    const effName = apiName || profileName || "";        // API primary, body fallback
+    // Lead name: full name → @username → webhook-body name. (Claude's stated
+    // name in the <lead> block still wins inside upsertLead.)
+    const effName = apiFullName || apiUsername || profileName || "";
     const effFirst = apiFirst || profileFirstName || "";
+
+    // Persist the display identity so active conversations (no lead yet) show
+    // who's talking. Prefer the real name; keep username as a separate column.
+    await upsertSubscriber(
+      sheets, spreadsheetId, String(subscriberId),
+      apiFullName || profileName || "", apiUsername,
+    );
 
     // b–e. Generate reply + persist turns + upsert lead
     const { reply } = await generateAndPersist({

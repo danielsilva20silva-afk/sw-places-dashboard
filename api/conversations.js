@@ -9,6 +9,10 @@ const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
 const LEADS_ID_RANGE = `${LEADS_TAB}!A2:A`;
 const MUTED_TAB = process.env.GOOGLE_ANA_MUTED_TAB || "AnaMuted";
 const MUTED_RANGE = `${MUTED_TAB}!A2:A`;
+// Display identity per subscriber (written by /api/ai-reply). Columns A–D:
+// contact_id | name | username | last_seen
+const SUBS_TAB = process.env.GOOGLE_SUBSCRIBERS_TAB || "Subscribers";
+const SUBS_RANGE = `${SUBS_TAB}!A2:C`;
 
 function getSheetsClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -43,14 +47,22 @@ export default async function handler(req, res) {
   const { sheets, spreadsheetId } = ctx;
 
   try {
-    const [conv, leadRows, mutedRows] = await Promise.all([
+    const [conv, leadRows, mutedRows, subRows] = await Promise.all([
       getValues(sheets, spreadsheetId, CONV_RANGE),
       getValues(sheets, spreadsheetId, LEADS_ID_RANGE),
       getValues(sheets, spreadsheetId, MUTED_RANGE),
+      getValues(sheets, spreadsheetId, SUBS_RANGE),
     ]);
 
     const leadIds = new Set(leadRows.map((r) => String(r[0])).filter(Boolean));
     const muted = new Set(mutedRows.map((r) => String(r[0])).filter(Boolean));
+    // contact_id → { name, username } for display
+    const profiles = new Map();
+    for (const r of subRows) {
+      const id = r && r[0];
+      if (!id) continue;
+      profiles.set(String(id), { name: String(r[1] || "").trim(), username: String(r[2] || "").trim() });
+    }
 
     // Group conversations by contact_id (rows are in chronological order)
     const byId = new Map();
@@ -68,8 +80,11 @@ export default async function handler(req, res) {
     const active = [];
     for (const [id, e] of byId) {
       if (leadIds.has(String(id))) continue; // already a lead → not an "active conversation"
+      const p = profiles.get(String(id)) || { name: "", username: "" };
       active.push({
         contact_id: id,
+        name: p.name,
+        username: p.username,
         lastMessage: e.lastMessage,
         lastTimestamp: e.lastTimestamp,
         active: !muted.has(String(id)),

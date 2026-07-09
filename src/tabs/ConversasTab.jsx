@@ -20,7 +20,12 @@ export default function ConversasTab() {
 
   // Numeric ids are ManyChat subscribers; non-numeric (e.g. "test-web") aren't.
   const isSubscriber = (id) => /^\d+$/.test(String(id));
-  const label = (id) => (isSubscriber(id) ? "Sem nome" : String(id));
+  // Display: resolved name → @username → "Sem nome" (subscribers) / raw id (test).
+  const label = (c) => {
+    if (c.name) return c.name;
+    if (c.username) return `@${c.username}`;
+    return isSubscriber(c.contact_id) ? "Sem nome" : String(c.contact_id);
+  };
 
   return (
     <>
@@ -49,9 +54,9 @@ export default function ConversasTab() {
               borderBottom: i < items.length - 1 ? "1px solid #F5F5F5" : "none",
               borderRadius: `${i === 0 ? "16px 16px" : "0 0"} ${i === items.length - 1 ? "16px 16px" : "0 0"}`,
             }}>
-              <Avatar name={label(c.contact_id)} size={36} />
+              <Avatar name={label(c)} size={36} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={`ID: ${c.contact_id}`}>{label(c.contact_id)}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={`ID: ${c.contact_id}`}>{label(c)}</div>
                 <div style={{ fontSize: 12, color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{c.lastMessage || "—"}</div>
               </div>
               <span style={{ fontSize: 12, color: "#CCC", flexShrink: 0, whiteSpace: "nowrap" }}>{relTime(c.lastTimestamp)}</span>
