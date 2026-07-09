@@ -262,6 +262,11 @@ export default async function handler(req, res) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     const body = req.body ?? {};
 
+    // Log the raw body of every POST (test page + ManyChat). Logged before
+    // detection so a mis-keyed payload — e.g. the subscriber id under a name
+    // other than "subscriber_id" — is still visible in Vercel logs.
+    console.log("[ana] incoming POST body:", JSON.stringify(body));
+
     // ── ManyChat webhook path (detected by presence of subscriber_id) ──
     const rawSid = body.subscriber_id;
     if (rawSid !== undefined && rawSid !== null && String(rawSid).trim() !== "") {
@@ -273,6 +278,18 @@ export default async function handler(req, res) {
       const first = typeof body.first_name === "string" ? body.first_name.trim() : "";
       const last = typeof body.last_name === "string" ? body.last_name.trim() : "";
       const profileName = [first, last].filter(Boolean).join(" ");
+      console.log("[ana] ManyChat extracted:", JSON.stringify({
+        subscriber_id: body.subscriber_id ?? null,
+        message: body.message ?? null,
+        first_name: body.first_name ?? null,
+        last_name: body.last_name ?? null,
+      }));
+      console.log("[ana] field present?", JSON.stringify({
+        subscriber_id: body.subscriber_id !== undefined,
+        message: body.message !== undefined,
+        first_name: body.first_name !== undefined,
+        last_name: body.last_name !== undefined,
+      }));
       if (apiKey && message) {
         waitUntil(processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName: first }));
       } else {
