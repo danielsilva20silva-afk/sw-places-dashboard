@@ -68,10 +68,27 @@ function extractLead(reply) {
   return { clean, data };
 }
 
+// Current date/time helpers in Europe/Lisbon.
+function lisbonStamp(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  if (isNaN(d.getTime())) return "";
+  const p = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d);
+  const g = (t) => p.find((x) => x.type === t)?.value || "";
+  return `${g("year")}-${g("month")}-${g("day")} ${g("hour")}:${g("minute")}`;
+}
+function lisbonHuman() {
+  return new Intl.DateTimeFormat("pt-PT", {
+    timeZone: "Europe/Lisbon", day: "numeric", month: "long", year: "numeric",
+  }).format(new Date());
+}
+
 // Create or update a lead from Ana's block. Deduped by lead id === contact_id,
 // so one conversation maps to at most one lead. Preserves fields a human may
 // have changed (budget/source/date/status).
-async function upsertLead(sheets, spreadsheetId, leadId, data, source) {
+async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackName) {
   const today = new Date().toISOString().slice(0, 10);
   const zone = String(data.zone || "").trim();
   const summary = String(data.summary || "").trim();
@@ -85,7 +102,7 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source) {
 
   if (idx === -1) {
     const row = [
-      leadId, data.name || "", data.email || "", data.phone || "", data.budget || "",
+      leadId, data.name || fallbackName || "", data.email || "", data.phone || "", data.budget || "",
       data.intention || "", source, today, "Novo", notes,
     ];
     await sheets.spreadsheets.values.append({
@@ -98,7 +115,7 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source) {
   const ex = rows[idx];
   const merged = [
     leadId,
-    data.name || ex[1] || "",
+    data.name || ex[1] || fallbackName || "",
     data.email || ex[2] || "",
     data.phone || ex[3] || "",
     data.budget || ex[4] || "",     // budget from block, else preserved
@@ -117,21 +134,37 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source) {
 
 // Core: read history → Claude → strip <lead> → persist turns → upsert lead.
 // Shared by the test page (sync) and the ManyChat webhook (async).
-async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, message, source }) {
+async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, message, source, profileName, profileFirstName }) {
   await ensureTab(sheets, spreadsheetId);
 
   const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: DATA_RANGE });
   const rows = resp.data.values || [];
   const history = rows
     .filter((r) => r && r[0] === contactId && (r[1] === "user" || r[1] === "assistant") && r[2])
-    .map((r) => ({ role: r[1], content: String(r[2]) }));
+    .map((r) => {
+      const content = String(r[2]);
+      // Prefix past USER messages with their send time so Claude can resolve
+      // relative dates; assistant turns stay clean so Ana doesn't mimic the tag.
+      if (r[1] === "user" && r[3]) return { role: "user", content: `[${lisbonStamp(r[3])}] ${content}` };
+      return { role: r[1], content };
+    });
+
+  const nowStamp = lisbonStamp();
+  const ctx = [
+    `A data e hora atuais em Portugal (Europe/Lisbon) são: ${lisbonHuman()} (${nowStamp}).`,
+    `As mensagens do utilizador no histórico vêm prefixadas com [AAAA-MM-DD HH:MM], que indica quando foram enviadas. Isto são metadados: não faz parte do texto da pessoa e nunca incluis esse prefixo nas tuas respostas.`,
+  ];
+  if (profileFirstName && String(profileFirstName).trim()) {
+    ctx.push(`O primeiro nome da pessoa (perfil de Instagram) é "${String(profileFirstName).trim()}". Podes usá-lo com naturalidade quando fizer sentido, mas não és obrigada a usá-lo em todas as mensagens.`);
+  }
+  const system = `${ANA_PROMPT}\n\n## Contexto (injetado automaticamente)\n${ctx.join("\n")}`;
 
   const client = new Anthropic({ apiKey });
   const aiRes = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1000,
-    system: ANA_PROMPT,
-    messages: [...history, { role: "user", content: message }],
+    system,
+    messages: [...history, { role: "user", content: `[${nowStamp}] ${message}` }],
   });
   const rawReply = aiRes.content.find((b) => b.type === "text")?.text?.trim() || "";
   const { clean: reply, data: leadData } = extractLead(rawReply);
@@ -150,7 +183,7 @@ async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, me
 
   if (leadData && (String(leadData.phone || "").trim() || String(leadData.email || "").trim())) {
     try {
-      await upsertLead(sheets, spreadsheetId, contactId, leadData, source);
+      await upsertLead(sheets, spreadsheetId, contactId, leadData, source, profileName);
     } catch (e) {
       console.error("upsertLead failed:", e?.message);
     }
@@ -160,7 +193,7 @@ async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, me
 }
 
 // ManyChat async flow: human-takeover check FIRST, then generate + deliver.
-async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message }) {
+async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName }) {
   try {
     // a. Human takeover: if the subscriber has the 'Humano' tag, stay silent.
     try {
@@ -178,6 +211,7 @@ async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, me
     const { reply } = await generateAndPersist({
       sheets, spreadsheetId, apiKey,
       contactId: String(subscriberId), message, source: "DM · ANA",
+      profileName, profileFirstName,
     });
     if (!reply) {
       console.error(`[ana] empty reply for ${subscriberId}, nothing to deliver.`);
@@ -236,8 +270,11 @@ export default async function handler(req, res) {
       res.status(200).json({ status: "ok" });
       const subscriberId = /^\d+$/.test(String(rawSid)) ? Number(rawSid) : rawSid;
       const message = typeof body.message === "string" ? body.message.trim() : "";
+      const first = typeof body.first_name === "string" ? body.first_name.trim() : "";
+      const last = typeof body.last_name === "string" ? body.last_name.trim() : "";
+      const profileName = [first, last].filter(Boolean).join(" ");
       if (apiKey && message) {
-        waitUntil(processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message }));
+        waitUntil(processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName: first }));
       } else {
         console.error("[ana] ManyChat call missing ANTHROPIC_API_KEY or message; skipping.");
       }
