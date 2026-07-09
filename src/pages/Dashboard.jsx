@@ -160,6 +160,21 @@ export default function Dashboard({ onLogout }) {
     setMeetings(ms => ms.filter(m => String(m.id) !== String(id)));
     api.deleteMeeting(id).catch(() => {});
   };
+  // Promote a conversation into a lead, then jump to it in the Leads tab.
+  const convertToLead = async (conv) => {
+    try {
+      const { lead } = await api.convertToLead({ contactId: conv.contact_id, name: conv.name, username: conv.username });
+      if (!lead) throw new Error("sem lead");
+      setLeads(ls => ls.some(l => String(l.id) === String(lead.id))
+        ? ls.map(l => String(l.id) === String(lead.id) ? lead : l)
+        : [lead, ...ls]);
+      setActiveTab("leads");
+      setDrawerLead(lead);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e?.message || "erro" };
+    }
+  };
 
   const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["conversas", "Conversas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
 
@@ -353,7 +368,7 @@ export default function Dashboard({ onLogout }) {
               <LeadsTab leads={leads} onOpenLead={setDrawerLead} updateStatus={updateStatus} onCreateLead={addLead} />
             )}
 
-            {activeTab === "conversas" && <ConversasTab />}
+            {activeTab === "conversas" && <ConversasTab onConvert={convertToLead} />}
 
             {activeTab === "recuperar" && <RecuperarTab />}
 

@@ -34,12 +34,13 @@ function inRange(ts, filter) {
   return true;
 }
 
-export default function ConversasTab() {
+export default function ConversasTab({ onConvert }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dateFilter, setDateFilter] = useState("7d");
   const [openConv, setOpenConv] = useState(null);
+  const [convertingId, setConvertingId] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -57,6 +58,15 @@ export default function ConversasTab() {
     if (c.name) return c.name;
     if (c.username) return `@${c.username}`;
     return isSubscriber(c.contact_id) ? "Sem nome" : String(c.contact_id);
+  };
+
+  const handleConvert = async (c) => {
+    if (convertingId) return;
+    setConvertingId(c.contact_id);
+    const r = await onConvert?.(c);
+    setConvertingId(null);
+    if (!r?.ok) alert("Não foi possível converter em lead. Tenta novamente.");
+    // On success, Dashboard navigates to the Leads tab (this tab unmounts).
   };
 
   const filtered = items.filter((c) => inRange(c.lastTimestamp, dateFilter));
@@ -117,13 +127,26 @@ export default function ConversasTab() {
                 <div style={{ fontSize: 12, color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{c.lastMessage || "—"}</div>
               </div>
               <span style={{ fontSize: 12, color: "#CCC", flexShrink: 0, whiteSpace: "nowrap" }}>{relTime(c.lastTimestamp)}</span>
+              {!c.isLead && isSubscriber(c.contact_id) && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleConvert(c); }}
+                  disabled={convertingId === c.contact_id}
+                  title="Converter esta conversa num lead"
+                  style={{
+                    flexShrink: 0, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
+                    color: convertingId === c.contact_id ? "#AAA" : "#8A6D2F",
+                    background: GOLD + "22", border: `1px solid ${GOLD}66`, borderRadius: 8,
+                    padding: "5px 10px", cursor: convertingId === c.contact_id ? "default" : "pointer",
+                  }}
+                >{convertingId === c.contact_id ? "A converter…" : "→ Lead"}</button>
+              )}
               {isSubscriber(c.contact_id) && <AnaToggle subscriberId={String(c.contact_id)} initialActive={c.active} />}
             </div>
           ))}
         </div>
       )}
 
-      {openConv && <ConversationDrawer conversation={openConv} onClose={() => setOpenConv(null)} />}
+      {openConv && <ConversationDrawer conversation={openConv} onClose={() => setOpenConv(null)} onConvert={onConvert} />}
     </>
   );
 }

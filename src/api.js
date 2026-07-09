@@ -119,6 +119,19 @@ export async function recoverSave({ subscriberId, message, reply, name, username
   return data;
 }
 
+// POST /api/convert-lead → promote a conversation into a lead (id = contact_id).
+// Returns { status: "created" | "exists", lead }.
+export async function convertToLead({ contactId, name, username }) {
+  const res = await fetch("/api/convert-lead", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contact_id: contactId, name, username }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 // GET /api/toggle-ana?subscriber_id=X → { active }
 export async function getAnaState(subscriberId) {
   const res = await fetch(`/api/toggle-ana?subscriber_id=${encodeURIComponent(subscriberId)}`);

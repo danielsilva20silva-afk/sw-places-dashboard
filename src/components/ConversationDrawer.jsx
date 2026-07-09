@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { GOLD } from "../constants";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
@@ -21,9 +21,19 @@ function msgStamp(ts) {
   return d.toLocaleString("pt-PT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-export default function ConversationDrawer({ conversation: c, onClose }) {
+export default function ConversationDrawer({ conversation: c, onClose, onConvert }) {
   const scrollRef = useRef(null);
+  const [converting, setConverting] = useState(false);
   const messages = c.messages || [];
+
+  const convert = async () => {
+    if (converting) return;
+    setConverting(true);
+    const r = await onConvert?.(c);
+    setConverting(false);
+    // On success Dashboard navigates to the Leads tab (this drawer unmounts).
+    if (!r?.ok) alert("Não foi possível converter em lead. Tenta novamente.");
+  };
 
   // Land on the most recent message.
   useEffect(() => {
@@ -81,10 +91,18 @@ export default function ConversationDrawer({ conversation: c, onClose }) {
           })}
         </div>
 
-        {/* Read-only footer note */}
-        <div style={{ padding: "12px 24px", borderTop: "1px solid #F0F0F0", background: "white", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: GOLD, flexShrink: 0 }} />
-          <span style={{ fontSize: 11, color: "#999" }}>Vista só de leitura. As respostas são geridas pela Ana no Instagram.</span>
+        {/* Footer: convert action (non-leads) + read-only note */}
+        <div style={{ padding: "12px 24px", borderTop: "1px solid #F0F0F0", background: "white", display: "flex", flexDirection: "column", gap: 10 }}>
+          {!c.isLead && isSubscriber(c.contact_id) && (
+            <button onClick={convert} disabled={converting} style={{
+              width: "100%", background: "#111", color: "white", border: "none", borderRadius: 12,
+              padding: "12px", fontSize: 14, fontWeight: 600, cursor: converting ? "default" : "pointer", opacity: converting ? 0.7 : 1,
+            }}>{converting ? "A converter…" : "Converter em lead"}</button>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: GOLD, flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: "#999" }}>Vista só de leitura. As respostas são geridas pela Ana no Instagram.</span>
+          </div>
         </div>
       </div>
     </div>

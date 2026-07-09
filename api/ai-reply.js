@@ -184,7 +184,7 @@ function resolveName({ profileFull, stated, username, existing }) {
 // Create or update a lead from Ana's block. Deduped by lead id === contact_id,
 // so one conversation maps to at most one lead. Preserves fields a human may
 // have changed (budget/source/date/status).
-async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackName, fallbackUsername) {
+export async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackName, fallbackUsername) {
   const today = new Date().toISOString().slice(0, 10);
   const zone = String(data.zone || "").trim();
   const summary = String(data.summary || "").trim();
