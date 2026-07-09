@@ -195,23 +195,35 @@ async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, me
 // ManyChat async flow: human-takeover check FIRST, then generate + deliver.
 async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName }) {
   try {
-    // a. Human takeover: if the subscriber has the 'Humano' tag, stay silent.
+    // a. Fetch subscriber info: human-takeover check + profile name/username.
+    //    The API is the PRIMARY source of the name; webhook-body values (if any)
+    //    are only a fallback.
+    let apiName = "";
+    let apiFirst = "";
     try {
       const info = await mc.getSubscriberInfo(subscriberId);
       if (mc.subscriberHasTag(info, MC_HUMAN_TAG)) {
         console.log(`[ana] subscriber ${subscriberId} has '${MC_HUMAN_TAG}' tag — staying silent.`);
         return;
       }
+      const p = mc.subscriberProfile(info);
+      const fullName = p.name || [p.first, p.last].filter(Boolean).join(" ");
+      apiName = fullName || p.username || "";      // full name preferred, else @username
+      apiFirst = p.first || (p.name ? p.name.split(/\s+/)[0] : "");
+      console.log(`[ana] getInfo profile ${subscriberId}:`, JSON.stringify({ name: p.name, first_name: p.first, last_name: p.last, username: p.username, resolvedName: apiName }));
     } catch (e) {
-      // Can't confirm takeover; proceed (bias toward answering) but log it.
+      // Can't confirm takeover / fetch profile; proceed (bias toward answering).
       console.error(`[ana] getInfo failed for ${subscriberId}, proceeding:`, e?.message);
     }
+
+    const effName = apiName || profileName || "";        // API primary, body fallback
+    const effFirst = apiFirst || profileFirstName || "";
 
     // b–e. Generate reply + persist turns + upsert lead
     const { reply } = await generateAndPersist({
       sheets, spreadsheetId, apiKey,
       contactId: String(subscriberId), message, source: "DM · ANA",
-      profileName, profileFirstName,
+      profileName: effName, profileFirstName: effFirst,
     });
     if (!reply) {
       console.error(`[ana] empty reply for ${subscriberId}, nothing to deliver.`);

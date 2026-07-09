@@ -19,6 +19,18 @@ export async function getSubscriberInfo(subscriberId) {
   return res.json();
 }
 
+// Extract profile fields from a getInfo response. Username key varies by
+// ManyChat/IG setup, so we check the common candidates.
+export function subscriberProfile(info) {
+  const d = info?.data || {};
+  return {
+    first: String(d.first_name || "").trim(),
+    last: String(d.last_name || "").trim(),
+    name: String(d.name || "").trim(),
+    username: String(d.username || d.user_name || d.ig_username || d.instagram_username || "").trim(),
+  };
+}
+
 // True if the subscriber carries the given tag (case-insensitive).
 export function subscriberHasTag(info, tagName) {
   const tags = info?.data?.tags || [];
