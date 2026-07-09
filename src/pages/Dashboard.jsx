@@ -148,7 +148,7 @@ export default function Dashboard({ onLogout }) {
     api.deleteMeeting(id).catch(() => {});
   };
 
-  const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["conversas", "Conversas ativas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
+  const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["conversas", "Conversas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
 
   // Notifications panel: full-width sheet on mobile (never clipped), anchored dropdown on desktop
   const notifPanelStyle = isMobile

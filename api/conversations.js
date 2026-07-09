@@ -1,8 +1,8 @@
 import { google } from "googleapis";
 
-// Active conversation = a distinct contact_id in "Conversations" that is NOT
-// yet a lead (its id is absent from the Leads tab). Muted state comes from the
-// AnaMuted mirror tab (see /api/toggle-ana).
+// Lists every distinct contact_id in "Conversations", each tagged with isLead
+// (whether its id exists in the Leads tab) and its full message thread. Muted
+// state comes from the AnaMuted mirror tab (see /api/toggle-ana).
 const CONV_TAB = process.env.GOOGLE_CONVERSATIONS_TAB || "Conversations";
 const CONV_RANGE = `${CONV_TAB}!A2:D`;
 const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
@@ -64,35 +64,42 @@ export default async function handler(req, res) {
       profiles.set(String(id), { name: String(r[1] || "").trim(), username: String(r[2] || "").trim() });
     }
 
-    // Group conversations by contact_id (rows are in chronological order)
+    // Group conversations by contact_id (rows are in chronological order),
+    // keeping the full message thread so the drawer can render it.
     const byId = new Map();
     for (const r of conv) {
       const id = r && r[0];
       if (!id) continue;
+      const role = r[1] || "";
       const msg = r[2] || "";
       const ts = r[3] || "";
-      const e = byId.get(id) || { contact_id: id, lastMessage: "", lastTimestamp: "" };
+      const e = byId.get(id) || { contact_id: id, lastMessage: "", lastTimestamp: "", messages: [] };
+      if (role === "user" || role === "assistant") {
+        e.messages.push({ role, message: msg, timestamp: ts });
+      }
       if (msg) e.lastMessage = msg;
       if (ts) e.lastTimestamp = ts;
       byId.set(id, e);
     }
 
-    const active = [];
+    // All conversations (leads and not-yet-leads), tagged with isLead.
+    const list = [];
     for (const [id, e] of byId) {
-      if (leadIds.has(String(id))) continue; // already a lead → not an "active conversation"
       const p = profiles.get(String(id)) || { name: "", username: "" };
-      active.push({
+      list.push({
         contact_id: id,
         name: p.name,
         username: p.username,
         lastMessage: e.lastMessage,
         lastTimestamp: e.lastTimestamp,
         active: !muted.has(String(id)),
+        isLead: leadIds.has(String(id)),
+        messages: e.messages,
       });
     }
-    active.sort((a, b) => String(b.lastTimestamp).localeCompare(String(a.lastTimestamp)));
+    list.sort((a, b) => String(b.lastTimestamp).localeCompare(String(a.lastTimestamp)));
 
-    return res.status(200).json(active);
+    return res.status(200).json(list);
   } catch (err) {
     console.error("conversations error:", err);
     const detail = err?.errors?.[0]?.message || err?.message || "unknown";
