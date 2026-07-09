@@ -15,6 +15,15 @@ export default function DashboardTab({ leads, meetings, meetingsLoading, onOpenL
 
   const chartData = buildChartData(leads);
 
+  // Most recent first: by date desc, then id (timestamp for most leads) desc
+  const recentLeads = [...leads]
+    .sort((a, b) => {
+      const byDate = String(b.date || "").localeCompare(String(a.date || ""));
+      if (byDate !== 0) return byDate;
+      return String(b.id || "").localeCompare(String(a.id || ""), undefined, { numeric: true });
+    })
+    .slice(0, 10);
+
   const stats = [
     { label: "Total Leads", value: leads.length, color: "#111", sub: `+${leads.filter(l => { const d = new Date(l.date); const now = new Date(); return (now - d) < 7 * 86400000; }).length} esta semana` },
     { label: "Novos", value: leads.filter(l => l.status === "Novo").length, color: "#2563EB", sub: "por contactar" },
@@ -82,7 +91,7 @@ export default function DashboardTab({ leads, meetings, meetingsLoading, onOpenL
           <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Leads recentes</p>
           <button onClick={onViewAllLeads} style={{ fontSize: 12, color: GOLD, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Ver todos →</button>
         </div>
-        {leads.slice(0, 5).map((lead, i, arr) => (
+        {recentLeads.map((lead, i, arr) => (
           <div key={lead.id} onClick={() => onOpenLead(lead)} style={{
             display: "flex", alignItems: "center", gap: 14, padding: "12px 20px",
             borderBottom: i < arr.length - 1 ? "1px solid #F5F5F5" : "none", cursor: "pointer",
