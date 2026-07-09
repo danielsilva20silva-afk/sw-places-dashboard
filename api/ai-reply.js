@@ -17,7 +17,7 @@ const MC_HUMAN_TAG = process.env.MANYCHAT_HUMAN_TAG || "Humano";
 const SHEET_NAME = process.env.GOOGLE_CONVERSATIONS_TAB || "Conversations";
 const DATA_RANGE = `${SHEET_NAME}!A2:D`;
 
-function getSheetsClient() {
+export function getSheetsClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
   const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
@@ -79,7 +79,7 @@ async function ensureSubsTab(sheets, spreadsheetId) {
 // effort — never throws into the caller. Never blanks an existing name/username
 // with an empty value (a later message that fails to resolve a name won't wipe
 // a previously-captured one).
-async function upsertSubscriber(sheets, spreadsheetId, contactId, name, username) {
+export async function upsertSubscriber(sheets, spreadsheetId, contactId, name, username) {
   try {
     await ensureSubsTab(sheets, spreadsheetId);
     const now = new Date().toISOString();
@@ -188,9 +188,10 @@ async function upsertLead(sheets, spreadsheetId, leadId, data, source, fallbackN
   return "updated";
 }
 
-// Core: read history → Claude → strip <lead> → persist turns → upsert lead.
-// Shared by the test page (sync) and the ManyChat webhook (async).
-async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, message, source, profileName, profileFirstName }) {
+// Generate Ana's reply: read history → Claude → strip <lead>. Does NOT persist
+// anything. Shared by the live flow and the "Recuperar conversas" tool (which
+// needs the reply before Gustavo confirms he sent it).
+export async function generateReply({ sheets, spreadsheetId, apiKey, contactId, message, profileFirstName }) {
   await ensureTab(sheets, spreadsheetId);
 
   const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: DATA_RANGE });
@@ -224,18 +225,32 @@ async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, me
   });
   const rawReply = aiRes.content.find((b) => b.type === "text")?.text?.trim() || "";
   const { clean: reply, data: leadData } = extractLead(rawReply);
+  return { reply, leadData };
+}
 
+// Append a user turn + an assistant turn to the Conversations tab, keyed by
+// contactId (same key the live webhook uses). `assistantReply` is passed in so
+// the recovery flow can store exactly what Gustavo actually sent.
+export async function appendTurns({ sheets, spreadsheetId, contactId, userMessage, assistantReply }) {
   await sheets.spreadsheets.values.append({
     spreadsheetId,
     range: `${SHEET_NAME}!A:D`,
     valueInputOption: "RAW",
     requestBody: {
       values: [
-        [contactId, "user", message, new Date().toISOString()],
-        [contactId, "assistant", reply, new Date().toISOString()],
+        [contactId, "user", userMessage, new Date().toISOString()],
+        [contactId, "assistant", assistantReply, new Date().toISOString()],
       ],
     },
   });
+}
+
+// Core: generate → persist turns → upsert lead. Shared by the test page (sync)
+// and the ManyChat webhook (async).
+async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, message, source, profileName, profileFirstName }) {
+  const { reply, leadData } = await generateReply({ sheets, spreadsheetId, apiKey, contactId, message, profileFirstName });
+
+  await appendTurns({ sheets, spreadsheetId, contactId, userMessage: message, assistantReply: reply });
 
   if (leadData && (String(leadData.phone || "").trim() || String(leadData.email || "").trim())) {
     try {

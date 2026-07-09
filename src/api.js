@@ -80,6 +80,37 @@ export async function getConversations() {
   return Array.isArray(data) ? data : [];
 }
 
+// POST /api/recover-conversation (mode "generate") → Ana's reply for a pre-Ana
+// DM, resolving the subscriber from a handle or an explicit subscriber_id.
+// On a failed handle lookup the thrown error carries .needSubscriberId = true.
+export async function recoverGenerate({ handle, subscriberId, message }) {
+  const res = await fetch("/api/recover-conversation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "generate", handle, subscriber_id: subscriberId, message }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || `HTTP ${res.status}`);
+    err.needSubscriberId = data.status === "need_subscriber_id";
+    throw err;
+  }
+  return data;
+}
+
+// POST /api/recover-conversation (mode "save") → save the (message, reply) pair
+// to the conversation history so live Ana has context next time.
+export async function recoverSave({ subscriberId, message, reply, name, username }) {
+  const res = await fetch("/api/recover-conversation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "save", subscriber_id: subscriberId, message, reply, name, username }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 // GET /api/toggle-ana?subscriber_id=X → { active }
 export async function getAnaState(subscriberId) {
   const res = await fetch(`/api/toggle-ana?subscriber_id=${encodeURIComponent(subscriberId)}`);

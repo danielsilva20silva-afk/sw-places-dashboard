@@ -19,16 +19,32 @@ export async function getSubscriberInfo(subscriberId) {
   return res.json();
 }
 
-// Extract profile fields from a getInfo response. Username key varies by
-// ManyChat/IG setup, so we check the common candidates.
+// Extract profile fields from a subscriber record. Accepts either a full
+// getInfo response ({ data: {...} }) or a raw subscriber object (as returned in
+// findByName's data array). Username key varies by ManyChat/IG setup, so we
+// check the common candidates.
 export function subscriberProfile(info) {
-  const d = info?.data || {};
+  const d = info?.data || info || {};
   return {
+    id: String(d.id || d.subscriber_id || "").trim(),
     first: String(d.first_name || "").trim(),
     last: String(d.last_name || "").trim(),
     name: String(d.name || "").trim(),
     username: String(d.username || d.user_name || d.ig_username || d.instagram_username || "").trim(),
   };
+}
+
+// GET /fb/subscriber/findByName?name=... → subscribers whose name/username
+// matches the query. ManyChat matches loosely, so callers must disambiguate.
+// Returns the raw data array (each element is a subscriber record).
+export async function findByName(query) {
+  const res = await fetch(`${BASE}/subscriber/findByName?name=${encodeURIComponent(query)}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${process.env.MANYCHAT_API_TOKEN}` },
+  });
+  if (!res.ok) throw new Error(`findByName HTTP ${res.status}`);
+  const json = await res.json();
+  return Array.isArray(json?.data) ? json.data : [];
 }
 
 // True if the subscriber carries the given tag (case-insensitive).

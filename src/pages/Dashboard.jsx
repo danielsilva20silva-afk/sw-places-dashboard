@@ -9,6 +9,7 @@ import LeadsTab from "../tabs/LeadsTab";
 import NewsletterTab from "../tabs/NewsletterTab";
 import AnaTab from "../tabs/AnaTab";
 import ConversasTab from "../tabs/ConversasTab";
+import RecuperarTab from "../tabs/RecuperarTab";
 
 // Tracks whether the viewport is mobile-width (header switches to a hamburger menu)
 function useIsMobile(breakpoint = 640) {
@@ -147,7 +148,7 @@ export default function Dashboard({ onLogout }) {
     api.deleteMeeting(id).catch(() => {});
   };
 
-  const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["conversas", "Conversas ativas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
+  const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["conversas", "Conversas ativas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
 
   // Notifications panel: full-width sheet on mobile (never clipped), anchored dropdown on desktop
   const notifPanelStyle = isMobile
@@ -340,6 +341,8 @@ export default function Dashboard({ onLogout }) {
             )}
 
             {activeTab === "conversas" && <ConversasTab />}
+
+            {activeTab === "recuperar" && <RecuperarTab />}
 
             {activeTab === "newsletter" && <NewsletterTab leads={leads} />}
 
