@@ -1,6 +1,12 @@
 <!doctype html>
 <html lang="pt">
   <head>
+    <!-- TODO (multi-client): these static strings are client-specific and are
+         NOT yet driven by src/config (they load before the app / can't read
+         import.meta.env here easily). Templatize per-client in a later step:
+           - <title>SW Places Dashboard</title>
+           - <meta name="apple-mobile-web-app-title" content="SW Places">
+           - public/manifest.json → name / short_name / description -->
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

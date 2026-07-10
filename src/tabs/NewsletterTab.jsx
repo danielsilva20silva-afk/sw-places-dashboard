@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { GOLD } from "../constants";
+import { branding } from "../config";
 
 export default function NewsletterTab({ leads }) {
   const [subject, setSubject] = useState("");
@@ -25,7 +26,7 @@ export default function NewsletterTab({ leads }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setBody(data.text || "");
-      if (!subject) setSubject(`SW Places — ${topic}`);
+      if (!subject) setSubject(`${branding.name} — ${topic}`);
     } catch { setBody("Erro ao gerar. Tenta novamente."); }
     setLoading(false);
   };

@@ -1,5 +1,8 @@
+import { GOLD } from "../constants";
+
 export default function Avatar({ name, size = 36 }) {
-  const palette = ["#C9A96E", "#4F7CAC", "#8B5CF6", "#E67E5A", "#2D9E6B", "#E91E8C"];
+  // Brand gold leads the avatar palette; the rest are fixed accents.
+  const palette = [GOLD, "#4F7CAC", "#8B5CF6", "#E67E5A", "#2D9E6B", "#E91E8C"];
   const color = palette[name.charCodeAt(0) % palette.length];
   return (
     <div style={{

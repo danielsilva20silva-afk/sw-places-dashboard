@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { STATUSES, STATUS_CONFIG } from "../constants";
+import { branding } from "../config";
 import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber } from "../utils";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
 
-const WA_NO_ANSWER = "Olá! É o Gustavo, da SW Places. Tentei ligar-lhe agora mas não consegui. Quando lhe der jeito, diga-me e falamos 🙂";
+const WA_NO_ANSWER = `Olá! É o Gustavo, da ${branding.name}. Tentei ligar-lhe agora mas não consegui. Quando lhe der jeito, diga-me e falamos 🙂`;
 const TEXT_KEYS = ["name", "email", "phone", "budget", "intention", "notes"];
 const SAVE_DEBOUNCE = 900;
 

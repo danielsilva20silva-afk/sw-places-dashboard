@@ -1,9 +1,5 @@
 import { useState } from "react";
-
-const USERS = [
-  { email: "daniel@swplaces.com", password: "daniel2026", role: "admin", name: "Daniel Silva" },
-  { email: "gmiguel@sw-places.com", password: "guga2026", role: "admin", name: "Gustavo Miguel" },
-];
+import { branding, users as USERS } from "../config";
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -39,12 +35,12 @@ export default function Login({ onLogin }) {
         {/* Logo — positioned above the card without pushing it off-center */}
         <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 40, textAlign: "center" }}>
           <div style={{
-            width: 52, height: 52, background: "#C9A96E", borderRadius: 14,
+            width: 52, height: 52, background: branding.primaryColor, borderRadius: 14,
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 22, fontWeight: 700, color: "white", margin: "0 auto 16px",
-          }}>S</div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111", margin: 0, letterSpacing: "-0.5px" }}>SW Places</h1>
-          <p style={{ fontSize: 14, color: "#888", margin: "6px 0 0" }}>Costa Vicentina</p>
+          }}>{branding.logoMonogram}</div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111", margin: 0, letterSpacing: "-0.5px" }}>{branding.logoText}</h1>
+          <p style={{ fontSize: 14, color: "#888", margin: "6px 0 0" }}>{branding.tagline}</p>
         </div>
 
         {/* Card */}
@@ -60,14 +56,14 @@ export default function Login({ onLogin }) {
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="email@swplaces.com"
+                placeholder={branding.loginPlaceholder}
                 required
                 style={{
                   width: "100%", border: "1px solid #E5E5E5", borderRadius: 10,
                   padding: "11px 14px", fontSize: 14, outline: "none", color: "#111",
                   boxSizing: "border-box", fontFamily: "inherit", transition: "border 0.15s",
                 }}
-                onFocus={e => e.target.style.borderColor = "#C9A96E"}
+                onFocus={e => e.target.style.borderColor = branding.primaryColor}
                 onBlur={e => e.target.style.borderColor = "#E5E5E5"}
               />
             </div>
@@ -87,7 +83,7 @@ export default function Login({ onLogin }) {
                   padding: "11px 14px", fontSize: 14, outline: "none", color: "#111",
                   boxSizing: "border-box", fontFamily: "inherit", transition: "border 0.15s",
                 }}
-                onFocus={e => e.target.style.borderColor = "#C9A96E"}
+                onFocus={e => e.target.style.borderColor = branding.primaryColor}
                 onBlur={e => e.target.style.borderColor = "#E5E5E5"}
               />
             </div>
@@ -110,7 +106,7 @@ export default function Login({ onLogin }) {
         </div>
 
         <p style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 24, textAlign: "center", fontSize: 12, color: "#CCC" }}>
-          SW Places © 2026
+          {branding.name} © 2026
         </p>
       </div>
     </div>

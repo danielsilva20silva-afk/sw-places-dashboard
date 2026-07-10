@@ -1,18 +1,10 @@
-// Design tokens
-export const GOLD = "#C9A96E";
+// Client-specific tokens now live in the active client config (src/config).
+// Re-exported here so existing `../constants` imports keep working unchanged;
+// switch clients via VITE_CLIENT.
+import config from "./config";
 
-// Lead status configuration
-export const STATUS_CONFIG = {
-  "Novo":             { bg: "#EFF6FF", text: "#1D4ED8", dot: "#3B82F6", border: "#BFDBFE" },
-  "Contactado":       { bg: "#FFFBEB", text: "#92400E", dot: "#F59E0B", border: "#FDE68A" },
-  "Sem resposta":     { bg: "#F1F5F9", text: "#475569", dot: "#64748B", border: "#E2E8F0" },
-  "Reunião agendada": { bg: "#F5F3FF", text: "#5B21B6", dot: "#8B5CF6", border: "#DDD6FE" },
-  "Fechado":          { bg: "#F0FDF4", text: "#14532D", dot: "#22C55E", border: "#BBF7D0" },
-  "Perdido":          { bg: "#FFF1F2", text: "#881337", dot: "#F43F5E", border: "#FECDD3" },
-};
-export const STATUSES = ["Novo", "Contactado", "Sem resposta", "Reunião agendada", "Fechado", "Perdido"];
-export const BUDGETS = ["Todos", "Até 300k", "300k–500k", "+500k", "+1M"];
-export const INTENTIONS = ["Todas", "Habitação própria", "Casa de férias", "Investimento"];
+export const GOLD = config.branding.primaryColor;
+export const { STATUS_CONFIG, STATUSES, BUDGETS, INTENTIONS } = config.constants;
 
 // Initial mock meetings (in-memory)
 export const MEETINGS = [

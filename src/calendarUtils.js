@@ -1,5 +1,5 @@
 // Date helpers for the calendar. The browser runs in the user's local zone
-// (Europe/Lisbon for SW Places), so local getters == Lisbon time.
+// (Europe/Lisbon for this client), so local getters == Lisbon time.
 
 export const p2 = (n) => String(n).padStart(2, "0");
 

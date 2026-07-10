@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { GOLD } from "../constants";
+import { branding } from "../config";
 import { relDate, buildMeetingPrefill } from "../utils";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
@@ -194,8 +195,8 @@ export default function Dashboard({ onLogout }) {
             onMouseEnter={e => e.currentTarget.style.opacity = "0.75"}
             onMouseLeave={e => e.currentTarget.style.opacity = "1"}
             style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", transition: "opacity 0.15s" }}>
-            <div style={{ width: 28, height: 28, background: GOLD, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#000" }}>S</div>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "white", letterSpacing: "-0.3px" }}>SW Places</span>
+            <div style={{ width: 28, height: 28, background: GOLD, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#000" }}>{branding.logoMonogram}</div>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "white", letterSpacing: "-0.3px" }}>{branding.logoText}</span>
           </div>
           {!isMobile && (
             <div style={{ display: "flex", gap: 2 }}>
