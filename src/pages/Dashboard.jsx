@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { GOLD } from "../constants";
-import { branding } from "../config";
+import { branding, hasFeature } from "../config";
 import { relDate, buildMeetingPrefill } from "../utils";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
@@ -179,7 +179,12 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
-  const tabs = [["dashboard", "Dashboard"], ["leads", "Leads"], ["conversas", "Conversas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
+  // Only tabs whose feature flag is true render (nav + content). shownTab
+  // falls back to the first enabled tab if activeTab points at a disabled one
+  // (stale state / direct link) instead of rendering it.
+  const ALL_TABS = [["dashboard", "Dashboard"], ["leads", "Leads"], ["conversas", "Conversas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
+  const tabs = ALL_TABS.filter(([key]) => hasFeature(key));
+  const shownTab = hasFeature(activeTab) ? activeTab : (tabs[0]?.[0] || "dashboard");
 
   // Notifications panel: full-width sheet on mobile (never clipped), anchored dropdown on desktop
   const notifPanelStyle = isMobile
@@ -203,8 +208,8 @@ export default function Dashboard({ onLogout }) {
               {tabs.map(([tab, label]) => (
                 <button key={tab} onClick={() => setActiveTab(tab)} style={{
                   padding: "5px 14px", borderRadius: 8, fontSize: 13, fontWeight: 500, border: "none", cursor: "pointer",
-                  background: activeTab === tab ? "rgba(255,255,255,0.12)" : "transparent",
-                  color: activeTab === tab ? "white" : "rgba(255,255,255,0.4)",
+                  background: shownTab ===tab ? "rgba(255,255,255,0.12)" : "transparent",
+                  color: shownTab ===tab ? "white" : "rgba(255,255,255,0.4)",
                 }}>{label}</button>
               ))}
             </div>
@@ -333,10 +338,10 @@ export default function Dashboard({ onLogout }) {
                       <button key={tab} onClick={() => { setActiveTab(tab); setMenuOpen(false); }} style={{
                         display: "block", width: "100%", textAlign: "left", padding: "12px 16px",
                         border: "none", cursor: "pointer", fontSize: 14,
-                        background: activeTab === tab ? "#F8F7F4" : "white",
-                        color: activeTab === tab ? "#111" : "#555",
-                        fontWeight: activeTab === tab ? 600 : 500,
-                        borderLeft: `3px solid ${activeTab === tab ? GOLD : "transparent"}`,
+                        background: shownTab ===tab ? "#F8F7F4" : "white",
+                        color: shownTab ===tab ? "#111" : "#555",
+                        fontWeight: shownTab ===tab ? 600 : 500,
+                        borderLeft: `3px solid ${shownTab ===tab ? GOLD : "transparent"}`,
                       }}>{label}</button>
                     ))}
                     <button onClick={() => { setMenuOpen(false); onLogout(); }} style={{
@@ -360,7 +365,7 @@ export default function Dashboard({ onLogout }) {
 
         {!loading && (
           <>
-            {activeTab === "dashboard" && (
+            {shownTab ==="dashboard" && (
               <DashboardTab
                 leads={leads}
                 onOpenLead={setDrawerLead}
@@ -371,17 +376,17 @@ export default function Dashboard({ onLogout }) {
               />
             )}
 
-            {activeTab === "leads" && (
+            {shownTab ==="leads" && (
               <LeadsTab leads={leads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} />
             )}
 
-            {activeTab === "conversas" && <ConversasTab onConvert={convertToLead} />}
+            {shownTab ==="conversas" && <ConversasTab onConvert={convertToLead} />}
 
-            {activeTab === "recuperar" && <RecuperarTab />}
+            {shownTab ==="recuperar" && <RecuperarTab />}
 
-            {activeTab === "newsletter" && <NewsletterTab leads={leads} />}
+            {shownTab ==="newsletter" && <NewsletterTab leads={leads} />}
 
-            {activeTab === "ana" && <AnaTab />}
+            {shownTab ==="ana" && <AnaTab />}
           </>
         )}
       </div>
