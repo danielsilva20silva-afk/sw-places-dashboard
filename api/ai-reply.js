@@ -424,13 +424,18 @@ export default async function handler(req, res) {
         message: body.message ?? null,
         first_name: body.first_name ?? null,
         last_name: body.last_name ?? null,
+        message_time: body.message_time ?? null,
       }));
       console.log("[ana] field present?", JSON.stringify({
         subscriber_id: body.subscriber_id !== undefined,
         message: body.message !== undefined,
         first_name: body.first_name !== undefined,
         last_name: body.last_name !== undefined,
+        message_time: body.message_time !== undefined,
       }));
+      // INSPECTION ONLY (not used yet): show the raw message_time so we can see
+      // its exact format before threading it into timestamps.
+      console.log("[ana] message_time raw:", JSON.stringify({ value: body.message_time ?? null, typeof: typeof body.message_time }));
       if (apiKey && message) {
         waitUntil(processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName: first }));
       } else {
