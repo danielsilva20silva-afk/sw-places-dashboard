@@ -33,26 +33,47 @@ export function deleteLead(id) {
   return fetch(`/api/leads?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-// GET /api/meetings → array of meetings (normalized to an array)
-export async function getMeetings() {
-  const res = await fetch("/api/meetings");
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
+// GET /api/calendar?start&end → events in a range (backed by Google Calendar)
+export async function getCalendarEvents(startISO, endISO) {
+  const qs = new URLSearchParams();
+  if (startISO) qs.set("start", startISO);
+  if (endISO) qs.set("end", endISO);
+  const res = await fetch(`/api/calendar?${qs.toString()}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return Array.isArray(data) ? data : [];
 }
 
-// POST /api/meetings → append a new meeting row
-export function addMeeting(meeting) {
-  return fetch("/api/meetings", {
+// POST /api/calendar → create an event, returns the created event
+export async function createEvent(event) {
+  const res = await fetch("/api/calendar", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(meeting),
+    body: JSON.stringify(event),
   });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
 }
 
-// DELETE /api/meetings?id=X → delete a meeting by id
-export function deleteMeeting(id) {
-  return fetch(`/api/meetings?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+// PATCH /api/calendar → update an event by id
+export async function updateEvent(event) {
+  const res = await fetch("/api/calendar", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(event),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// DELETE /api/calendar?id=X → delete an event
+export async function deleteEvent(id) {
+  const res = await fetch(`/api/calendar?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
 }
 
 // POST /api/ai-reply → { reply } from Ana for a contact's conversation

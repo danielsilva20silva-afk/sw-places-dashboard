@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { GOLD } from "../constants";
 import { buildChartData, leadTime } from "../utils";
@@ -6,13 +5,10 @@ import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
 import CustomTooltip from "../components/CustomTooltip";
-import MiniCalendar from "../components/MiniCalendar";
-import MeetingModal from "../components/MeetingModal";
+import CalendarView from "../components/CalendarView";
 import LeadMeta from "../components/LeadMeta";
 
-export default function DashboardTab({ leads, meetings, meetingsLoading, onOpenLead, updateStatus, onCreateMeeting, onDeleteMeeting, onViewAllLeads }) {
-  const [showMeetingForm, setShowMeetingForm] = useState(false);
-
+export default function DashboardTab({ leads, onOpenLead, updateStatus, onViewAllLeads }) {
   const chartData = buildChartData(leads);
 
   // Most recent first, by the normalised lead instant (same key the Leads tab
@@ -41,43 +37,28 @@ export default function DashboardTab({ leads, meetings, meetingsLoading, onOpenL
         ))}
       </div>
 
-      {/* Chart + Calendar */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12, marginBottom: 20, alignItems: "stretch" }}>
-        {/* Chart */}
-        <div style={{ background: "white", borderRadius: 16, padding: "22px 24px", border: "1px solid #EBEBEB", display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-            <div>
-              <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Leads ao longo do tempo</p>
-              <p style={{ fontSize: 12, color: "#888", margin: "3px 0 0" }}>Últimos 14 dias</p>
-            </div>
-            <div style={{ background: "#F8F7F4", borderRadius: 8, padding: "4px 10px", fontSize: 12, color: "#888" }}>Jun 2026</div>
-          </div>
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#AAA" }} tickLine={false} axisLine={false} interval={2} />
-                <YAxis tick={{ fontSize: 11, fill: "#AAA" }} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#F0F0F0", strokeWidth: 2 }} />
-                <Line type="monotone" dataKey="leads" stroke={GOLD} strokeWidth={2.5} dot={{ fill: GOLD, r: 4, strokeWidth: 0 }} activeDot={{ r: 6, fill: GOLD, strokeWidth: 0 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+      {/* Leads chart */}
+      <div style={{ background: "white", borderRadius: 16, padding: "22px 24px", border: "1px solid #EBEBEB", display: "flex", flexDirection: "column", height: 280, marginBottom: 20 }}>
+        <div style={{ marginBottom: 20 }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Leads ao longo do tempo</p>
+          <p style={{ fontSize: 12, color: "#888", margin: "3px 0 0" }}>Últimos 14 dias</p>
         </div>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false} />
+              <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#AAA" }} tickLine={false} axisLine={false} interval={2} />
+              <YAxis tick={{ fontSize: 11, fill: "#AAA" }} tickLine={false} axisLine={false} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#F0F0F0", strokeWidth: 2 }} />
+              <Line type="monotone" dataKey="leads" stroke={GOLD} strokeWidth={2.5} dot={{ fill: GOLD, r: 4, strokeWidth: 0 }} activeDot={{ r: 6, fill: GOLD, strokeWidth: 0 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-        {/* Calendar */}
-        <div style={{ background: "white", borderRadius: 16, padding: "22px 20px", border: "1px solid #EBEBEB" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Reuniões</p>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ background: "#F8F7F4", borderRadius: 20, padding: "2px 10px", fontSize: 12, color: "#888" }}>{meetings.length} agendadas</span>
-              <button onClick={() => setShowMeetingForm(true)} style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>+ Nova reunião</button>
-            </div>
-          </div>
-          {meetingsLoading
-            ? <div style={{ padding: "40px 0", textAlign: "center", color: "#999", fontSize: 13 }}>A carregar reuniões…</div>
-            : <MiniCalendar meetings={meetings} onDelete={onDeleteMeeting} />}
-        </div>
+      {/* Calendar (Google Calendar) */}
+      <div style={{ marginBottom: 20 }}>
+        <CalendarView />
       </div>
 
       {/* Recent leads */}
@@ -111,13 +92,6 @@ export default function DashboardTab({ leads, meetings, meetingsLoading, onOpenL
           </div>
         ))}
       </div>
-
-      {showMeetingForm && (
-        <MeetingModal
-          onClose={() => setShowMeetingForm(false)}
-          onCreate={(m) => { onCreateMeeting(m); setShowMeetingForm(false); }}
-        />
-      )}
     </>
   );
 }

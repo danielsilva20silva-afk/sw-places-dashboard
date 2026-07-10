@@ -31,8 +31,7 @@ export default function Dashboard({ onLogout }) {
   const [drawerLead, setDrawerLead] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [seenLeadIds, setSeenLeadIds] = useState([]);
-  const [meetings, setMeetings] = useState([]);
-  const [meetingsLoading, setMeetingsLoading] = useState(true);
+  const [upcomingEvents, setUpcomingEvents] = useState([]);
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -61,13 +60,15 @@ export default function Dashboard({ onLogout }) {
     return () => { active = false; };
   }, []);
 
-  // Load meetings from Google Sheets on mount
+  // Upcoming Google Calendar events (next 30 days) for the notifications panel.
+  // The full calendar lives on the Dashboard tab; this is just the heads-up feed.
   useEffect(() => {
     let active = true;
-    api.getMeetings()
-      .then(data => { if (active) setMeetings(data); })
-      .catch(() => { if (active) setMeetings([]); })
-      .finally(() => { if (active) setMeetingsLoading(false); });
+    const now = new Date();
+    const in30 = new Date(now.getTime() + 30 * 86400000);
+    api.getCalendarEvents(now.toISOString(), in30.toISOString())
+      .then(data => { if (active) setUpcomingEvents(data); })
+      .catch(() => { if (active) setUpcomingEvents([]); });
     return () => { active = false; };
   }, []);
 
@@ -134,7 +135,7 @@ export default function Dashboard({ onLogout }) {
 
   const newLeads = leads.filter(l => l.status === "Novo");
   const unseenNewLeads = newLeads.filter(l => !seenLeadIds.includes(l.id));
-  const upcomingMeetings = meetings.filter(m => new Date(m.date) >= new Date()).slice(0, 3);
+  const upcomingMeetings = upcomingEvents.slice(0, 3); // already future, sorted by start
   const notContacted = leads.filter(l => {
     const diff = Math.floor((new Date() - new Date(l.date)) / 86400000);
     return l.status === "Novo" && diff >= 2;
@@ -146,20 +147,6 @@ export default function Dashboard({ onLogout }) {
   const markSeen = (id) => setSeenLeadIds(prev => prev.includes(id) ? prev : [...prev, id]);
   // Mark every current "Novo" lead as seen
   const markAllSeen = () => setSeenLeadIds(prev => Array.from(new Set([...prev, ...newLeads.map(l => l.id)])));
-  // Persist new meeting to Google Sheets, then add the server-assigned row to state
-  const createMeeting = async (m) => {
-    try {
-      const res = await api.addMeeting(m);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const created = await res.json();
-      setMeetings(ms => [...ms, created]);
-    } catch { /* ignore — meeting not persisted */ }
-  };
-  // Optimistic removal + persist the delete
-  const deleteMeeting = (id) => {
-    setMeetings(ms => ms.filter(m => String(m.id) !== String(id)));
-    api.deleteMeeting(id).catch(() => {});
-  };
   // Promote a conversation into a lead, then jump to it in the Leads tab.
   const convertToLead = async (conv) => {
     try {
@@ -267,17 +254,23 @@ export default function Dashboard({ onLogout }) {
                 {upcomingMeetings.length > 0 && (
                   <div style={{ borderTop: newLeads.length > 0 ? "1px solid #F5F5F5" : "none" }}>
                     <p style={{ fontSize: 10, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, padding: "12px 18px 6px", margin: 0 }}>Próximas reuniões</p>
-                    {upcomingMeetings.map(m => (
-                      <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px" }}>
-                        <div style={{ width: 32, height: 32, background: GOLD + "20", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: GOLD, lineHeight: 1 }}>{new Date(m.date).getDate()}</span>
+                    {upcomingMeetings.map(m => {
+                      const sd = m.allDay ? new Date(m.start + "T00:00") : new Date(m.start);
+                      const when = m.allDay ? "Dia inteiro" : sd.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+                      const mon = sd.toLocaleDateString("pt-PT", { month: "short" });
+                      return (
+                        <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px" }}>
+                          <div style={{ width: 32, height: 32, background: GOLD + "20", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: GOLD, lineHeight: 1 }}>{sd.getDate()}</span>
+                            <span style={{ fontSize: 8, color: GOLD, textTransform: "uppercase" }}>{mon}</span>
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontSize: 13, fontWeight: 600, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</p>
+                            <p style={{ fontSize: 11, color: "#888", margin: "2px 0 0" }}>{when}{m.location ? ` · ${m.location}` : ""}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p style={{ fontSize: 13, fontWeight: 600, color: "#111", margin: 0 }}>{m.name}</p>
-                          <p style={{ fontSize: 11, color: "#888", margin: "2px 0 0" }}>{m.type} · {m.time}</p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -354,12 +347,8 @@ export default function Dashboard({ onLogout }) {
             {activeTab === "dashboard" && (
               <DashboardTab
                 leads={leads}
-                meetings={meetings}
-                meetingsLoading={meetingsLoading}
                 onOpenLead={setDrawerLead}
                 updateStatus={updateStatus}
-                onCreateMeeting={createMeeting}
-                onDeleteMeeting={deleteMeeting}
                 onViewAllLeads={() => setActiveTab("leads")}
               />
             )}
