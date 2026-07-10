@@ -22,6 +22,17 @@ export default {
     { email: "gmiguel@sw-places.com", password: "guga2026", role: "admin", name: "Gustavo Miguel" },
   ],
 
+  // Which dashboard modules this client has. Keys are the real navigation tab
+  // keys. All true for SW Places → identical to today.
+  features: {
+    dashboard: true,    // "Dashboard"
+    leads: true,        // "Leads"
+    conversas: true,    // "Conversas" (active Instagram conversations)
+    recuperar: true,    // "Recuperar conversas"
+    newsletter: true,   // "Newsletter"
+    ana: true,          // "Testar Ana"
+  },
+
   // Lead pipeline constants (moved from src/constants.js).
   constants: {
     STATUS_CONFIG: {
