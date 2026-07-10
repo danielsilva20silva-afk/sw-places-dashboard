@@ -182,14 +182,14 @@ export default function Dashboard({ onLogout }) {
 
   // Notifications panel: full-width sheet on mobile (never clipped), anchored dropdown on desktop
   const notifPanelStyle = isMobile
-    ? { position: "fixed", top: 60, left: 12, right: 12, zIndex: 200, background: "white", borderRadius: 16, overflow: "hidden", boxShadow: "0 12px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06)" }
+    ? { position: "fixed", top: "calc(60px + env(safe-area-inset-top))", left: 12, right: 12, zIndex: 200, background: "white", borderRadius: 16, overflow: "hidden", boxShadow: "0 12px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06)" }
     : { position: "absolute", top: "calc(100% + 10px)", right: 0, zIndex: 200, background: "white", borderRadius: 16, width: 320, overflow: "hidden", boxShadow: "0 12px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.06)" };
 
   return (
     <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", background: "#F4F4F2", minHeight: "100vh", maxWidth: "100%", overflowX: "hidden" }}>
       {/* Header */}
-      <div style={{ background: "#111", position: "sticky", top: 0, zIndex: 40 }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
+      <div style={{ background: "#111", position: "sticky", top: 0, zIndex: 40, paddingTop: "env(safe-area-inset-top)" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 calc(16px + env(safe-area-inset-right)) 0 calc(16px + env(safe-area-inset-left))", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
           <div onClick={() => setActiveTab("dashboard")} title="Ir para o Dashboard"
             onMouseEnter={e => e.currentTarget.style.opacity = "0.75"}
             onMouseLeave={e => e.currentTarget.style.opacity = "1"}
@@ -351,7 +351,7 @@ export default function Dashboard({ onLogout }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px 48px" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px calc(16px + env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))" }}>
 
         {loading && (
           <div style={{ padding: "80px 0", textAlign: "center", color: "#999", fontSize: 14 }}>A carregar leads…</div>
