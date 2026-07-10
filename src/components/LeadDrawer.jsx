@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { STATUSES, STATUS_CONFIG } from "../constants";
-import { branding } from "../config";
+import { branding, hasFeature } from "../config";
 import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber } from "../utils";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
@@ -42,7 +42,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   const igOk = igHandle.length > 0;
   const sourceContent = (cleanField(lead.source_content) || "").trim();
   const sourceOk = /^https?:\/\//i.test(sourceContent);
-  const isAnaSubscriber = lead.source === "DM · ANA" && /^\d+$/.test(String(lead.id));
+  const isAnaSubscriber = hasFeature("ana") && lead.source === "DM · ANA" && /^\d+$/.test(String(lead.id));
 
   const persist = async (patch) => {
     if (!patch || Object.keys(patch).length === 0) return;
@@ -222,7 +222,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               }}>📷 Ver publicação partilhada ↗</a>
             </div>
           )}
-          <LeadConversation lead={lead} />
+          {hasFeature("ana") && <LeadConversation lead={lead} />}
           <button onClick={handleDelete} disabled={deleting} style={{
             width: "100%", background: "#FFF1F2", color: "#DC2626",
             border: "1px solid #FECDD3", borderRadius: 10, padding: "11px",

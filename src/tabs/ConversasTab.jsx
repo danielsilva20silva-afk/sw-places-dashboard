@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { GOLD } from "../constants";
+import { hasFeature } from "../config";
 import * as api from "../api";
 import { relTime } from "../utils";
 import Avatar from "../components/Avatar";
@@ -127,7 +128,7 @@ export default function ConversasTab({ onConvert }) {
                 <div style={{ fontSize: 12, color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{c.lastMessage || "—"}</div>
               </div>
               <span style={{ fontSize: 12, color: "#CCC", flexShrink: 0, whiteSpace: "nowrap" }}>{relTime(c.lastTimestamp)}</span>
-              {!c.isLead && isSubscriber(c.contact_id) && (
+              {hasFeature("ana") && !c.isLead && isSubscriber(c.contact_id) && (
                 <button
                   onClick={(e) => { e.stopPropagation(); handleConvert(c); }}
                   disabled={convertingId === c.contact_id}

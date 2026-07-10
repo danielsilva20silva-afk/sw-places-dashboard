@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from "react";
 import { GOLD } from "../constants";
+import { hasFeature } from "../config";
 import * as api from "../api";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
@@ -254,7 +255,7 @@ export default function ConversationDrawer({ conversation: c, onClose, onConvert
             )
           )}
 
-          {!c.isLead && isSubscriber(c.contact_id) && (
+          {hasFeature("ana") && !c.isLead && isSubscriber(c.contact_id) && (
             <button onClick={convert} disabled={converting} style={{
               width: "100%", background: "#111", color: "white", border: "none", borderRadius: 12,
               padding: "12px", fontSize: 14, fontWeight: 600, cursor: converting ? "default" : "pointer", opacity: converting ? 0.7 : 1,
