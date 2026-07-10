@@ -1,10 +1,21 @@
-// Relative, human-friendly date label in pt-PT
+// Integer day index (days since epoch) of an instant, on the Europe/Lisbon
+// CALENDAR. Used so "Hoje"/"Ontem" reflect real Lisbon days, not a 24h window.
+function lisbonDayIndex(d) {
+  const s = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const [y, m, day] = s.split("-").map(Number);
+  return Math.floor(Date.UTC(y, m - 1, day) / 86400000);
+}
+
+// Relative, human-friendly day label in pt-PT, based on the Europe/Lisbon
+// calendar day (a lead from yesterday 21:48 reads "Ontem", never "Hoje").
 export function relDate(dateStr) {
-  const diff = Math.floor((new Date() - new Date(dateStr)) / 86400000);
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const diff = lisbonDayIndex(new Date()) - lisbonDayIndex(d);
   if (diff === 0) return "Hoje";
   if (diff === 1) return "Ontem";
-  if (diff < 7) return `${diff}d atrás`;
-  return new Date(dateStr).toLocaleDateString("pt-PT", { day: "numeric", month: "short" });
+  if (diff > 1 && diff < 7) return `${diff}d atrás`;
+  return d.toLocaleDateString("pt-PT", { timeZone: "Europe/Lisbon", day: "numeric", month: "short" });
 }
 
 // Contact validation. Empty values and leftover webhook placeholders
@@ -56,11 +67,24 @@ export function leadWhen(lead) {
   return `${relDate(iso)}, ${time}`;
 }
 
-// Epoch ms a lead was received — created_at if present, else the date column.
-// Used for sorting/filtering. Returns 0 when neither parses.
+// Normalised sort instant (epoch ms). Uses created_at when present; otherwise
+// the date-only column treated as the END of that day, so legacy date-only
+// leads sort at-or-after same-day timestamped ones (no interleaving). Both
+// paths yield a comparable instant. Returns 0 when neither parses.
 export function leadTime(lead) {
-  const t = new Date((lead && lead.created_at) || (lead && lead.date) || 0).getTime();
-  return isNaN(t) ? 0 : t;
+  const ca = lead && lead.created_at;
+  if (ca) {
+    const t = new Date(ca).getTime();
+    if (!isNaN(t)) return t;
+  }
+  const dt = lead && lead.date;
+  if (dt) {
+    const [y, m, day] = String(dt).split("-").map(Number);
+    if (y && m && day) return Date.UTC(y, m - 1, day, 23, 59, 59); // end of that calendar day
+    const t = new Date(dt).getTime();
+    if (!isNaN(t)) return t;
+  }
+  return 0;
 }
 
 // Chart data — leads per day, last 14 days, computed from live leads

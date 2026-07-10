@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { GOLD } from "../constants";
-import { buildChartData } from "../utils";
+import { buildChartData, leadTime } from "../utils";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
@@ -15,13 +15,10 @@ export default function DashboardTab({ leads, meetings, meetingsLoading, onOpenL
 
   const chartData = buildChartData(leads);
 
-  // Most recent first: by date desc, then id (timestamp for most leads) desc
+  // Most recent first, by the normalised lead instant (same key the Leads tab
+  // uses, so the two lists agree). Stable sort keeps source order on ties.
   const recentLeads = [...leads]
-    .sort((a, b) => {
-      const byDate = String(b.date || "").localeCompare(String(a.date || ""));
-      if (byDate !== 0) return byDate;
-      return String(b.id || "").localeCompare(String(a.id || ""), undefined, { numeric: true });
-    })
+    .sort((a, b) => leadTime(b) - leadTime(a))
     .slice(0, 10);
 
   const stats = [
