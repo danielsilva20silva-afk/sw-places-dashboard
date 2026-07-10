@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { STATUSES, STATUS_CONFIG } from "../constants";
 import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber } from "../utils";
 import Avatar from "./Avatar";
@@ -6,6 +6,8 @@ import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
 
 const WA_NO_ANSWER = "Olá! É o Gustavo, da SW Places. Tentei ligar-lhe agora mas não consegui. Quando lhe der jeito, diga-me e falamos 🙂";
+const TEXT_KEYS = ["name", "email", "phone", "budget", "intention", "notes"];
+const SAVE_DEBOUNCE = 900;
 
 const fieldInput = {
   width: "100%", boxSizing: "border-box", border: "1px solid #E5E5E5", borderRadius: 10,
@@ -22,44 +24,102 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   const [status, setStatus] = useState(lead.status);
   const [notes, setNotes] = useState(lead.notes || "");
   const [deleting, setDeleting] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [save, setSave] = useState("idle"); // idle | saving | saved | error
+
+  // Refs so the debounced/close/unmount flush always reads current values.
+  const fieldsRef = useRef({ name: lead.name || "", email: lead.email || "", phone: lead.phone || "", budget: lead.budget || "", intention: lead.intention || "", notes: lead.notes || "" });
+  const savedRef = useRef({ ...fieldsRef.current });
+  const timerRef = useRef(null);
+  const fadeRef = useRef(null);
+  const aliveRef = useRef(true);
+  const lastPatchRef = useRef(null); // for retry after a failed save
+  const flushRef = useRef(() => {});
 
   const phoneOk = isValidPhone(phone);
   const emailOk = isValidEmail(email);
-  // Instagram handle (stored bare, but tolerate a leading @). Placeholder-safe.
   const igHandle = (cleanField(lead.username) || "").replace(/^@+/, "").trim();
   const igOk = igHandle.length > 0;
-  // Shared reel/post link the person pasted (empty for most leads).
   const sourceContent = (cleanField(lead.source_content) || "").trim();
   const sourceOk = /^https?:\/\//i.test(sourceContent);
-  // Ana toggle only for leads that came from Instagram DMs (id is a ManyChat subscriber id)
   const isAnaSubscriber = lead.source === "DM · ANA" && /^\d+$/.test(String(lead.id));
 
-  const handleSave = async () => {
-    if (saving) return;
-    setSaving(true);
-    setError("");
-    const r = await onUpdate(lead.id, { name, email, phone, budget, intention, status, notes });
-    setSaving(false);
-    if (r?.ok) onClose();
-    else setError("Não foi possível guardar. Tenta novamente.");
+  const persist = async (patch) => {
+    if (!patch || Object.keys(patch).length === 0) return;
+    if (aliveRef.current) setSave("saving");
+    const r = await onUpdate(lead.id, patch);
+    if (r?.ok) {
+      Object.assign(savedRef.current, patch);
+      lastPatchRef.current = null;
+      if (aliveRef.current) {
+        setSave("saved");
+        clearTimeout(fadeRef.current);
+        fadeRef.current = setTimeout(() => { if (aliveRef.current) setSave("idle"); }, 1600);
+      }
+    } else {
+      lastPatchRef.current = patch; // keep the typed values, allow retry
+      if (aliveRef.current) setSave("error");
+    }
   };
+
+  // Save any text fields that differ from what's on the server.
+  const flushText = () => {
+    clearTimeout(timerRef.current);
+    const cur = fieldsRef.current;
+    const patch = {};
+    for (const k of TEXT_KEYS) if (cur[k] !== savedRef.current[k]) patch[k] = cur[k];
+    if (Object.keys(patch).length) persist(patch);
+  };
+  flushRef.current = flushText;
+
+  const scheduleFlush = () => {
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => flushRef.current(), SAVE_DEBOUNCE);
+  };
+
+  // Flush a pending debounced save when the drawer unmounts.
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      clearTimeout(timerRef.current);
+      clearTimeout(fadeRef.current);
+      flushRef.current();
+    };
+  }, []);
+
+  // Input binding: local state + ref update + debounced save; flush on blur.
+  const bind = (key, val, setter) => ({
+    value: val,
+    onChange: (e) => { setter(e.target.value); fieldsRef.current[key] = e.target.value; scheduleFlush(); },
+    onBlur: () => flushText(),
+  });
+
+  const pickStatus = (s) => {
+    setStatus(s);
+    // Scheduling a meeting opens the calendar form pre-filled with the lead's
+    // current (edited) details; that flow owns persisting the status.
+    if (s === "Reunião agendada" && onRequestMeeting) {
+      onRequestMeeting({ ...lead, ...fieldsRef.current });
+      return;
+    }
+    persist({ status: s }); // every other status saves immediately
+  };
+
+  const handleClose = () => { clearTimeout(timerRef.current); flushText(); onClose(); };
+
+  const retry = () => { if (lastPatchRef.current) persist(lastPatchRef.current); };
 
   const handleDelete = async () => {
     if (deleting) return;
     if (!window.confirm("Tens a certeza que queres eliminar este lead?")) return;
     setDeleting(true);
     const ok = await onDelete(lead.id);
-    if (ok) {
-      onClose();
-    } else {
-      setDeleting(false);
-      alert("Não foi possível eliminar o lead. Tenta novamente.");
-    }
+    if (ok) onClose();
+    else { setDeleting(false); alert("Não foi possível eliminar o lead. Tenta novamente."); }
   };
+
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }} onClick={onClose}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }} onClick={handleClose}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)" }} />
       <div style={{
         position: "relative", background: "white", width: "100%", maxWidth: 420,
@@ -68,7 +128,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
       }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid #F0F0F0", position: "sticky", top: 0, background: "white", zIndex: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-            <button onClick={onClose} style={{ background: "#F5F5F5", border: "none", borderRadius: 8, width: 28, height: 28, fontSize: 16, color: "#888", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+            <button onClick={handleClose} style={{ background: "#F5F5F5", border: "none", borderRadius: 8, width: 28, height: 28, fontSize: 16, color: "#888", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
             <span style={{ fontSize: 12, color: "#AAA" }}>{leadWhen(lead)}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -86,7 +146,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
                 <a href={`tel:${phone}`} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#16A34A", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📞 Ligar</a>
               )}
               {phoneOk && (
-                <a href={`https://wa.me/${phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#25D366", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>💬 WhatsApp</a>
+                <a href={`https://wa.me/${waNumber(phone)}`} target="_blank" rel="noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#25D366", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>💬 WhatsApp</a>
               )}
               {emailOk && (
                 <a href={`mailto:${email}`} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#2563EB", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>✉️ Email</a>
@@ -107,28 +167,28 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               <AnaToggle subscriberId={String(lead.id)} />
             </div>
           )}
-          {/* Editable details */}
+          {/* Editable details (auto-save) */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
               <p style={fieldLabel}>Nome</p>
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Nome do lead" style={fieldInput} />
+              <input {...bind("name", name, setName)} placeholder="Nome do lead" style={fieldInput} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
                 <p style={fieldLabel}>Email</p>
-                <input value={email} onChange={e => setEmail(e.target.value)} placeholder="email@…" style={fieldInput} />
+                <input {...bind("email", email, setEmail)} placeholder="email@…" style={fieldInput} />
               </div>
               <div>
                 <p style={fieldLabel}>Telefone</p>
-                <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="+351…" style={fieldInput} />
+                <input {...bind("phone", phone, setPhone)} placeholder="+351…" style={fieldInput} />
               </div>
               <div>
                 <p style={fieldLabel}>Orçamento</p>
-                <input value={budget} onChange={e => setBudget(e.target.value)} placeholder="ex. 300k–500k" style={fieldInput} />
+                <input {...bind("budget", budget, setBudget)} placeholder="ex. 300k–500k" style={fieldInput} />
               </div>
               <div>
                 <p style={fieldLabel}>Intenção</p>
-                <input value={intention} onChange={e => setIntention(e.target.value)} placeholder="ex. investir" style={fieldInput} />
+                <input {...bind("intention", intention, setIntention)} placeholder="ex. investir" style={fieldInput} />
               </div>
             </div>
           </div>
@@ -137,15 +197,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {STATUSES.map(s => {
                 const c = STATUS_CONFIG[s]; const active = status === s;
-                const pick = () => {
-                  setStatus(s);
-                  // Scheduling a meeting opens the calendar form pre-filled with
-                  // the lead's current (edited) details.
-                  if (s === "Reunião agendada" && onRequestMeeting) {
-                    onRequestMeeting({ ...lead, name, email, phone, budget, intention, notes });
-                  }
-                };
-                return <button key={s} onClick={pick} style={{ padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 500, border: `1.5px solid ${active ? c.dot : "#E5E5E5"}`, background: active ? c.bg : "white", color: active ? c.text : "#555", cursor: "pointer" }}>{s}</button>;
+                return <button key={s} onClick={() => pickStatus(s)} style={{ padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 500, border: `1.5px solid ${active ? c.dot : "#E5E5E5"}`, background: active ? c.bg : "white", color: active ? c.text : "#555", cursor: "pointer" }}>{s}</button>;
               })}
             </div>
             {status === "Sem resposta" && phoneOk && (
@@ -158,7 +210,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
           </div>
           <div>
             <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>Notas</p>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notas sobre este lead..." rows={4} style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#111", resize: "none", outline: "none", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit" }} />
+            <textarea {...bind("notes", notes, setNotes)} placeholder="Notas sobre este lead..." rows={4} style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#111", resize: "none", outline: "none", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit" }} />
           </div>
           {sourceOk && (
             <div>
@@ -170,9 +222,6 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             </div>
           )}
           <LeadConversation lead={lead} />
-          {error && (
-            <div style={{ background: "#FFF1F2", border: "1px solid #FECDD3", color: "#BE123C", borderRadius: 10, padding: "10px 14px", fontSize: 13 }}>{error}</div>
-          )}
           <button onClick={handleDelete} disabled={deleting} style={{
             width: "100%", background: "#FFF1F2", color: "#DC2626",
             border: "1px solid #FECDD3", borderRadius: 10, padding: "11px",
@@ -180,9 +229,18 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             opacity: deleting ? 0.6 : 1,
           }}>{deleting ? "A eliminar…" : "🗑 Eliminar lead"}</button>
         </div>
-        <div style={{ padding: "16px 24px", borderTop: "1px solid #F0F0F0", display: "flex", gap: 10, position: "sticky", bottom: 0, background: "white" }}>
-          <button onClick={handleSave} disabled={saving} style={{ flex: 1, background: "#111", color: "white", border: "none", borderRadius: 12, padding: "13px", fontSize: 14, fontWeight: 600, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1 }}>{saving ? "A guardar…" : "Guardar"}</button>
-          <button onClick={onClose} style={{ padding: "13px 18px", border: "1px solid #E5E5E5", borderRadius: 12, fontSize: 14, color: "#555", background: "white", cursor: "pointer" }}>Cancelar</button>
+        {/* Auto-save indicator (replaces the old Guardar/Cancelar buttons) */}
+        <div style={{ padding: "12px 24px", borderTop: "1px solid #F0F0F0", position: "sticky", bottom: 0, background: "white" }}>
+          {save === "error" ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <span style={{ fontSize: 12, color: "#BE123C", fontWeight: 500 }}>Não foi possível guardar.</span>
+              <button onClick={retry} style={{ fontSize: 12, fontWeight: 600, color: "#111", background: "white", border: "1px solid #E5E5E5", borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>Tentar de novo</button>
+            </div>
+          ) : (
+            <span style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, color: save === "saved" ? "#15803D" : "#AAA", transition: "color 0.2s" }}>
+              {save === "saving" ? "A guardar…" : save === "saved" ? "Guardado ✓" : "As alterações guardam-se automaticamente."}
+            </span>
+          )}
         </div>
       </div>
     </div>
