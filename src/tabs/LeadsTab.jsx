@@ -39,7 +39,7 @@ function matchContact(lead, mode) {
   return true;
 }
 
-export default function LeadsTab({ leads, onOpenLead, updateStatus, onCreateLead }) {
+export default function LeadsTab({ leads, onOpenLead, onStatusChange, onCreateLead }) {
   const [filterBudget, setFilterBudget] = useState("Todos");
   const [filterIntention, setFilterIntention] = useState("Todas");
   const [filterStatus, setFilterStatus] = useState("Todos");
@@ -137,7 +137,7 @@ export default function LeadsTab({ leads, onOpenLead, updateStatus, onCreateLead
               <LeadMeta lead={lead} />
             </div>
             <div onClick={e => e.stopPropagation()}>
-              <StatusDropdown status={lead.status} onChange={s => updateStatus(lead.id, s)} />
+              <StatusDropdown status={lead.status} onChange={s => onStatusChange(lead, s)} />
             </div>
             <div onClick={e => e.stopPropagation()}>
               <QuickActions lead={lead} />

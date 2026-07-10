@@ -8,7 +8,7 @@ import CustomTooltip from "../components/CustomTooltip";
 import CalendarView from "../components/CalendarView";
 import LeadMeta from "../components/LeadMeta";
 
-export default function DashboardTab({ leads, onOpenLead, updateStatus, onViewAllLeads }) {
+export default function DashboardTab({ leads, onOpenLead, onStatusChange, onViewAllLeads }) {
   const chartData = buildChartData(leads);
 
   // Most recent first, by the normalised lead instant (same key the Leads tab
@@ -20,7 +20,7 @@ export default function DashboardTab({ leads, onOpenLead, updateStatus, onViewAl
   const stats = [
     { label: "Total Leads", value: leads.length, color: "#111", sub: `+${leads.filter(l => { const d = new Date(l.date); const now = new Date(); return (now - d) < 7 * 86400000; }).length} esta semana` },
     { label: "Novos", value: leads.filter(l => l.status === "Novo").length, color: "#2563EB", sub: "por contactar" },
-    { label: "Em contacto", value: leads.filter(l => l.status === "Contactado" || l.status === "Reunião agendada").length, color: "#D97706", sub: "em progresso" },
+    { label: "Em contacto", value: leads.filter(l => l.status === "Contactado" || l.status === "Sem resposta" || l.status === "Reunião agendada").length, color: "#D97706", sub: "em progresso" },
     { label: "Fechados", value: leads.filter(l => l.status === "Fechado").length, color: "#16A34A", sub: "este mês" },
   ];
 
@@ -84,7 +84,7 @@ export default function DashboardTab({ leads, onOpenLead, updateStatus, onViewAl
               <LeadMeta lead={lead} />
             </div>
             <div onClick={e => e.stopPropagation()}>
-              <StatusDropdown status={lead.status} onChange={s => updateStatus(lead.id, s)} />
+              <StatusDropdown status={lead.status} onChange={s => onStatusChange(lead, s)} />
             </div>
             <div onClick={e => e.stopPropagation()}>
               <QuickActions lead={lead} />

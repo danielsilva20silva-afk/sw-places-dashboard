@@ -11,23 +11,23 @@ import { ymd, toLocalInput } from "../calendarUtils";
 const label = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, display: "block", marginBottom: 6 };
 const input = { width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", color: "#111", boxSizing: "border-box", fontFamily: "inherit", background: "white" };
 
-function defaultTimes(prefillDate) {
-  const base = prefillDate ? new Date(prefillDate) : new Date();
-  const start = new Date(base); start.setHours(10, 0, 0, 0);
-  const end = new Date(base); end.setHours(11, 0, 0, 0);
+function defaultTimes(base) {
+  const start = base ? new Date(base) : new Date();
+  if (start.getHours() === 0 && start.getMinutes() === 0) start.setHours(10, 0, 0, 0);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
   return { start, end };
 }
 
-export default function EventModal({ event, prefillDate, onClose, onSaved, onDeleted }) {
+export default function EventModal({ event, prefillDate, prefill, onClose, onSaved, onDeleted }) {
   const isNew = !event;
   const [editing, setEditing] = useState(isNew);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const seed = defaultTimes(prefillDate);
-  const [title, setTitle] = useState(event?.title || "");
-  const [description, setDescription] = useState(event?.description || "");
-  const [location, setLocation] = useState(event?.location || "");
+  const seed = defaultTimes(prefill?.start || prefillDate);
+  const [title, setTitle] = useState(event?.title || prefill?.title || "");
+  const [description, setDescription] = useState(event?.description || prefill?.description || "");
+  const [location, setLocation] = useState(event?.location || prefill?.location || "");
   const [allDay, setAllDay] = useState(event?.allDay || false);
   const [dateVal, setDateVal] = useState(event?.allDay ? event.start : (event ? ymd(new Date(event.start)) : ymd(seed.start)));
   const [startVal, setStartVal] = useState(event && !event.allDay ? toLocalInput(new Date(event.start)) : toLocalInput(seed.start));

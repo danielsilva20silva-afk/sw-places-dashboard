@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { STATUSES, STATUS_CONFIG } from "../constants";
-import { leadWhen, isValidEmail, isValidPhone, cleanField } from "../utils";
+import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber } from "../utils";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
+
+const WA_NO_ANSWER = "Olá! É o Gustavo, da SW Places. Tentei ligar-lhe agora mas não consegui. Quando lhe der jeito, diga-me e falamos 🙂";
 
 const fieldInput = {
   width: "100%", boxSizing: "border-box", border: "1px solid #E5E5E5", borderRadius: 10,
@@ -11,7 +13,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -135,9 +137,24 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete }) {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {STATUSES.map(s => {
                 const c = STATUS_CONFIG[s]; const active = status === s;
-                return <button key={s} onClick={() => setStatus(s)} style={{ padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 500, border: `1.5px solid ${active ? c.dot : "#E5E5E5"}`, background: active ? c.bg : "white", color: active ? c.text : "#555", cursor: "pointer" }}>{s}</button>;
+                const pick = () => {
+                  setStatus(s);
+                  // Scheduling a meeting opens the calendar form pre-filled with
+                  // the lead's current (edited) details.
+                  if (s === "Reunião agendada" && onRequestMeeting) {
+                    onRequestMeeting({ ...lead, name, email, phone, budget, intention, notes });
+                  }
+                };
+                return <button key={s} onClick={pick} style={{ padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 500, border: `1.5px solid ${active ? c.dot : "#E5E5E5"}`, background: active ? c.bg : "white", color: active ? c.text : "#555", cursor: "pointer" }}>{s}</button>;
               })}
             </div>
+            {status === "Sem resposta" && phoneOk && (
+              <a href={`https://wa.me/${waNumber(phone)}?text=${encodeURIComponent(WA_NO_ANSWER)}`} target="_blank" rel="noopener noreferrer" style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12,
+                background: "#25D366", color: "white", borderRadius: 10, padding: "11px", textDecoration: "none",
+                fontSize: 13, fontWeight: 600,
+              }}>💬 Enviar WhatsApp</a>
+            )}
           </div>
           <div>
             <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>Notas</p>

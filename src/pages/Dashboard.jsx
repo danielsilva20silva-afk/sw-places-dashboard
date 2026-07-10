@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { GOLD } from "../constants";
-import { relDate } from "../utils";
+import { relDate, buildMeetingPrefill } from "../utils";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
 import LeadDrawer from "../components/LeadDrawer";
+import EventModal from "../components/EventModal";
 import DashboardTab from "../tabs/DashboardTab";
 import LeadsTab from "../tabs/LeadsTab";
 import NewsletterTab from "../tabs/NewsletterTab";
@@ -32,6 +33,8 @@ export default function Dashboard({ onLogout }) {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [seenLeadIds, setSeenLeadIds] = useState([]);
   const [upcomingEvents, setUpcomingEvents] = useState([]);
+  const [calReload, setCalReload] = useState(0);
+  const [meetingFlow, setMeetingFlow] = useState(null); // { leadId, prefill } | null
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -70,7 +73,7 @@ export default function Dashboard({ onLogout }) {
       .then(data => { if (active) setUpcomingEvents(data); })
       .catch(() => { if (active) setUpcomingEvents([]); });
     return () => { active = false; };
-  }, []);
+  }, [calReload]);
 
   // Edit lead details (from the drawer). Optimistic, persists via PATCH, and
   // reconciles with the server row. Returns {ok} so the drawer can show errors
@@ -94,6 +97,18 @@ export default function Dashboard({ onLogout }) {
     setLeads(leads.map(l => l.id === id ? { ...l, status } : l));
     api.updateLead(id, { status }).catch(() => {});
   };
+  // Status change with smart actions. "Reunião agendada" first opens the
+  // calendar event form (pre-filled from the lead); the status is only applied
+  // once the event is created (or the user confirms on cancel).
+  const changeStatus = (lead, status) => {
+    if (status === "Reunião agendada") {
+      setMeetingFlow({ leadId: lead.id, prefill: buildMeetingPrefill(lead) });
+    } else {
+      updateStatus(lead.id, status);
+    }
+  };
+  // Opened from the LeadDrawer with its current edited values.
+  const requestMeeting = (leadLike) => setMeetingFlow({ leadId: leadLike.id, prefill: buildMeetingPrefill(leadLike) });
   // Delete a lead: persist, then drop it from the list on success
   const deleteLead = async (id) => {
     try {
@@ -348,13 +363,13 @@ export default function Dashboard({ onLogout }) {
               <DashboardTab
                 leads={leads}
                 onOpenLead={setDrawerLead}
-                updateStatus={updateStatus}
+                onStatusChange={changeStatus}
                 onViewAllLeads={() => setActiveTab("leads")}
               />
             )}
 
             {activeTab === "leads" && (
-              <LeadsTab leads={leads} onOpenLead={setDrawerLead} updateStatus={updateStatus} onCreateLead={addLead} />
+              <LeadsTab leads={leads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} />
             )}
 
             {activeTab === "conversas" && <ConversasTab onConvert={convertToLead} />}
@@ -368,7 +383,19 @@ export default function Dashboard({ onLogout }) {
         )}
       </div>
 
-      {drawerLead && <LeadDrawer lead={drawerLead} onClose={() => setDrawerLead(null)} onUpdate={updateLead} onDelete={deleteLead} />}
+      {drawerLead && <LeadDrawer lead={drawerLead} onClose={() => setDrawerLead(null)} onUpdate={updateLead} onDelete={deleteLead} onRequestMeeting={requestMeeting} />}
+
+      {meetingFlow && (
+        <EventModal
+          prefill={meetingFlow.prefill}
+          onSaved={() => { updateStatus(meetingFlow.leadId, "Reunião agendada"); setMeetingFlow(null); setCalReload(r => r + 1); }}
+          onClose={() => {
+            const keep = window.confirm('Não criaste o evento no calendário.\n\nMarcar mesmo assim o lead como "Reunião agendada"?');
+            if (keep) updateStatus(meetingFlow.leadId, "Reunião agendada");
+            setMeetingFlow(null);
+          }}
+        />
+      )}
     </div>
   );
 }

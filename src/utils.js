@@ -87,6 +87,48 @@ export function leadTime(lead) {
   return 0;
 }
 
+// Phone → wa.me digits (no '+'). Strips spaces/punctuation; a bare Portuguese
+// 9-digit number (starts 9/2/3) gets the 351 country code; anything with a '+',
+// '00' prefix or an existing country code is used as-is.
+export function waNumber(phone) {
+  const s = String(phone || "").trim();
+  if (!s) return "";
+  const intl = s.startsWith("+") || s.startsWith("00");
+  let d = s.replace(/\D/g, "");
+  if (s.startsWith("00")) d = d.replace(/^00/, "");
+  if (intl) return d;
+  if (d.startsWith("351")) return d;
+  if (d.length === 9 && /^[923]/.test(d)) return "351" + d; // PT mobile/landline
+  return d;
+}
+
+// Zone of interest, parsed from the notes ("Zona de interesse: X" / "Zona: X").
+function extractZone(lead) {
+  const notes = cleanField(lead && lead.notes) || "";
+  const m = notes.match(/Zona(?:\s+de\s+interesse)?:\s*([^\n]+)/i);
+  return m ? m[1].trim() : "";
+}
+
+// Build the Google Calendar event prefill for a lead's meeting: a titled event
+// with the full lead context in the description, location = zone if known, and
+// a default slot of tomorrow 10:00 (the user still picks).
+export function buildMeetingPrefill(lead) {
+  const name = (cleanField(lead.name) || "Lead").trim();
+  const lines = [];
+  if (isValidPhone(lead.phone)) lines.push(`Telefone: ${lead.phone}`);
+  if (isValidEmail(lead.email)) lines.push(`Email: ${lead.email}`);
+  const budget = cleanField(lead.budget); if (budget) lines.push(`Orçamento: ${budget}`);
+  const intention = cleanField(lead.intention); if (intention) lines.push(`Intenção: ${intention}`);
+  const source = cleanField(lead.source); if (source) lines.push(`Origem: ${source}`);
+  const notes = cleanField(lead.notes); if (notes) lines.push(`Notas: ${notes}`);
+  const handle = (cleanField(lead.username) || "").replace(/^@+/, "").trim();
+  if (handle) lines.push(`Instagram: https://instagram.com/${handle}`);
+  const start = new Date();
+  start.setDate(start.getDate() + 1);
+  start.setHours(10, 0, 0, 0);
+  return { title: `Visita — ${name}`, description: lines.join("\n"), location: extractZone(lead), start };
+}
+
 // Chart data — leads per day, last 14 days, computed from live leads
 export function buildChartData(leads) {
   const days = [];
