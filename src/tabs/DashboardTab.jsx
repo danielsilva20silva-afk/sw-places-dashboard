@@ -8,7 +8,7 @@ import CustomTooltip from "../components/CustomTooltip";
 import CalendarView from "../components/CalendarView";
 import LeadMeta from "../components/LeadMeta";
 
-export default function DashboardTab({ leads, onOpenLead, onStatusChange, onViewAllLeads }) {
+export default function DashboardTab({ leads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged }) {
   const chartData = buildChartData(leads);
 
   // Most recent first, by the normalised lead instant (same key the Leads tab
@@ -58,7 +58,7 @@ export default function DashboardTab({ leads, onOpenLead, onStatusChange, onView
 
       {/* Calendar (Google Calendar) */}
       <div style={{ marginBottom: 20 }}>
-        <CalendarView />
+        <CalendarView refreshKey={calRefreshKey} onChanged={onCalendarChanged} />
       </div>
 
       {/* Recent leads */}

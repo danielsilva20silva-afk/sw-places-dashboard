@@ -22,14 +22,15 @@ const HOUR_START = 7, HOUR_END = 22, HOUR_H = 46;
 const chipTimed = { background: GOLD + "22", borderLeft: `3px solid ${GOLD}`, color: "#3a2f16" };
 const chipAllDay = { background: "#111", color: "white" };
 
-export default function CalendarView() {
+export default function CalendarView({ refreshKey = 0, onChanged }) {
   const isMobile = useIsMobile();
   const [view, setView] = useState("month"); // month | week (week is desktop-only)
   const [anchor, setAnchor] = useState(() => new Date());
   const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [firstLoad, setFirstLoad] = useState(true); // full loading only on the very first fetch
+  const [refreshing, setRefreshing] = useState(false); // subtle indicator on later refetches
   const [error, setError] = useState("");
-  const [reload, setReload] = useState(0);
+  const [localReload, setLocalReload] = useState(0); // bumped by this calendar's own edits
   const [modal, setModal] = useState(null); // { event } | { prefillDate } | null
   const [selectedDay, setSelectedDay] = useState(() => ymd(new Date())); // mobile agenda
 
@@ -47,13 +48,13 @@ export default function CalendarView() {
 
   useEffect(() => {
     let alive = true;
-    setLoading(true); setError("");
+    setRefreshing(true); setError("");
     api.getCalendarEvents(range.start.toISOString(), range.end.toISOString())
       .then((ev) => { if (alive) setEvents(ev); })
-      .catch((e) => { if (alive) setError(e.message || "Não foi possível carregar o calendário."); })
-      .finally(() => { if (alive) setLoading(false); });
+      .catch((e) => { if (alive) setError(e.message || "Não foi possível carregar o calendário."); }) // keep existing events on failure
+      .finally(() => { if (alive) { setRefreshing(false); setFirstLoad(false); } });
     return () => { alive = false; };
-  }, [range.start, range.end, reload]);
+  }, [range.start, range.end, refreshKey, localReload]);
 
   const byDay = useMemo(() => {
     const m = {};
@@ -65,7 +66,9 @@ export default function CalendarView() {
     return m;
   }, [events]);
 
-  const refetch = () => { setModal(null); setReload((r) => r + 1); };
+  // Any create/update/delete refreshes the grid (localReload) AND notifies the
+  // parent (onChanged) so the Dashboard notifications refetch too.
+  const refetch = () => { setModal(null); setLocalReload((r) => r + 1); onChanged?.(); };
   const goToday = () => { setAnchor(new Date()); setSelectedDay(ymd(new Date())); };
   const step = (dir) => setAnchor((a) => (effView === "week" ? addDays(startOfWeekMon(a), dir * 7) : addMonths(a, dir)));
 
@@ -87,6 +90,7 @@ export default function CalendarView() {
           <button onClick={() => step(1)} style={btn({ fontWeight: 700 })} aria-label="Seguinte">›</button>
           <button onClick={goToday} style={btn()}>Hoje</button>
           <span style={{ fontSize: 15, fontWeight: 700, color: "#111", textTransform: "capitalize", marginLeft: 4 }}>{title}</span>
+          {refreshing && !firstLoad && <span style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginLeft: 2 }}>a atualizar…</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {!isMobile && (
@@ -100,18 +104,27 @@ export default function CalendarView() {
         </div>
       </div>
 
-      {error ? (
+      {firstLoad && refreshing ? (
+        <div style={{ padding: "60px 0", textAlign: "center", color: "#999", fontSize: 14 }}>A carregar calendário…</div>
+      ) : error && events.length === 0 ? (
         <div style={{ background: "#FFF1F2", border: "1px solid #FECDD3", color: "#BE123C", borderRadius: 12, padding: "14px 16px", fontSize: 13 }}>
           {error}
         </div>
-      ) : loading ? (
-        <div style={{ padding: "60px 0", textAlign: "center", color: "#999", fontSize: 14 }}>A carregar calendário…</div>
-      ) : isMobile ? (
+      ) : (
+      <>
+        {error && (
+          <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 12 }}>
+            {error} A mostrar os dados anteriores.
+          </div>
+        )}
+        {isMobile ? (
         <MobileMonth anchor={anchor} byDay={byDay} todayKey={todayKey} selectedDay={selectedDay} setSelectedDay={setSelectedDay} onEvent={(ev) => setModal({ event: ev })} onCreate={(d) => setModal({ prefillDate: d })} />
       ) : effView === "week" ? (
         <WeekGrid anchor={anchor} byDay={byDay} todayKey={todayKey} onEvent={(ev) => setModal({ event: ev })} onCreate={(d) => setModal({ prefillDate: d })} />
       ) : (
         <MonthGrid anchor={anchor} byDay={byDay} todayKey={todayKey} onEvent={(ev) => setModal({ event: ev })} onCreate={(d) => setModal({ prefillDate: d })} />
+      )}
+      </>
       )}
 
       {modal && (

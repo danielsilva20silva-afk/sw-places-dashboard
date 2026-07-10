@@ -365,6 +365,8 @@ export default function Dashboard({ onLogout }) {
                 onOpenLead={setDrawerLead}
                 onStatusChange={changeStatus}
                 onViewAllLeads={() => setActiveTab("leads")}
+                calRefreshKey={calReload}
+                onCalendarChanged={() => setCalReload(r => r + 1)}
               />
             )}
 
