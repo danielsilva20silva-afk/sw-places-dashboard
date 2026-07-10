@@ -1,21 +1,34 @@
 import { useState } from "react";
 import { GOLD } from "../constants";
 import * as api from "../api";
-import { ymd, toLocalInput } from "../calendarUtils";
+import { ymd, toLocalInput, p2 } from "../calendarUtils";
+import DateTimePicker from "./DateTimePicker";
 
 // One modal for viewing, creating and editing a Google Calendar event.
 // - event: an existing event → opens in VIEW mode (with Editar / Eliminar).
-// - prefillDate: a Date → opens the CREATE form seeded to that day.
-// onSaved(event) / onDeleted(id) let the parent refetch.
+// - prefillDate / prefill: seed the CREATE form (day, or title/desc/location/start).
+// The end is start + a chosen DURATION, so it can never precede the start.
 
 const label = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, display: "block", marginBottom: 6 };
 const input = { width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", color: "#111", boxSizing: "border-box", fontFamily: "inherit", background: "white" };
 
-function defaultTimes(base) {
-  const start = base ? new Date(base) : new Date();
-  if (start.getHours() === 0 && start.getMinutes() === 0) start.setHours(10, 0, 0, 0);
-  const end = new Date(start.getTime() + 60 * 60 * 1000);
-  return { start, end };
+const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240];
+const fmtDur = (m) => { if (m < 60) return `${m} min`; const h = Math.floor(m / 60), r = m % 60; return r ? `${h}h${p2(r)}` : `${h}h`; };
+
+// Seed the start Date: existing event, else prefill/prefillDate, else now.
+// New events snap to a tidy slot (10:00 if midnight; minutes to the nearest 15).
+function seedStart({ event, prefill, prefillDate }) {
+  if (event && !event.allDay) return new Date(event.start);
+  if (event && event.allDay) return new Date(event.start + "T00:00");
+  const d = prefill?.start ? new Date(prefill.start) : prefillDate ? new Date(prefillDate) : new Date();
+  if (d.getHours() === 0 && d.getMinutes() === 0) d.setHours(10, 0, 0, 0);
+  d.setMinutes(Math.round(d.getMinutes() / 15) * 15, 0, 0);
+  return d;
+}
+function eventDurationMin(event) {
+  if (!event || event.allDay) return 60;
+  const m = Math.round((new Date(event.end || event.start) - new Date(event.start)) / 60000);
+  return m > 0 ? m : 60;
 }
 
 export default function EventModal({ event, prefillDate, prefill, onClose, onSaved, onDeleted }) {
@@ -24,25 +37,28 @@ export default function EventModal({ event, prefillDate, prefill, onClose, onSav
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const seed = defaultTimes(prefill?.start || prefillDate);
   const [title, setTitle] = useState(event?.title || prefill?.title || "");
   const [description, setDescription] = useState(event?.description || prefill?.description || "");
   const [location, setLocation] = useState(event?.location || prefill?.location || "");
   const [allDay, setAllDay] = useState(event?.allDay || false);
-  const [dateVal, setDateVal] = useState(event?.allDay ? event.start : (event ? ymd(new Date(event.start)) : ymd(seed.start)));
-  const [startVal, setStartVal] = useState(event && !event.allDay ? toLocalInput(new Date(event.start)) : toLocalInput(seed.start));
-  const [endVal, setEndVal] = useState(event && !event.allDay ? toLocalInput(new Date(event.end || event.start)) : toLocalInput(seed.end));
+  const [start, setStart] = useState(() => seedStart({ event, prefill, prefillDate }));
+  const [duration, setDuration] = useState(() => eventDurationMin(event));
+
+  // Options include the event's own duration if it isn't a standard step.
+  const durOptions = [...new Set([duration, ...DURATIONS])].sort((a, b) => a - b);
+  const endDate = new Date(start.getTime() + duration * 60000);
+  const endLabel = ymd(endDate) === ymd(start)
+    ? `termina às ${p2(endDate.getHours())}:${p2(endDate.getMinutes())}`
+    : `termina ${endDate.toLocaleDateString("pt-PT", { day: "numeric", month: "short" })}, ${p2(endDate.getHours())}:${p2(endDate.getMinutes())}`;
 
   const buildPayload = () => {
-    if (allDay) return { title: title.trim(), description, location, allDay: true, start: dateVal, end: dateVal };
-    return { title: title.trim(), description, location, allDay: false, start: startVal, end: endVal };
+    if (allDay) { const d = ymd(start); return { title: title.trim(), description, location, allDay: true, start: d, end: d }; }
+    return { title: title.trim(), description, location, allDay: false, start: toLocalInput(start), end: toLocalInput(endDate) };
   };
 
   const save = async () => {
     setError("");
     if (!title.trim()) { setError("O título é obrigatório."); return; }
-    if (allDay ? !dateVal : (!startVal || !endVal)) { setError("Preenche a data e as horas."); return; }
-    if (!allDay && endVal < startVal) { setError("A hora de fim é anterior à de início."); return; }
     setBusy(true);
     try {
       const payload = buildPayload();
@@ -110,19 +126,24 @@ export default function EventModal({ event, prefillDate, prefill, onClose, onSav
             {allDay ? (
               <div style={{ marginBottom: 14 }}>
                 <label style={label}>Data</label>
-                <input type="date" value={dateVal} onChange={(e) => setDateVal(e.target.value)} style={input} />
+                <DateTimePicker value={start} onChange={setStart} withTime={false} />
               </div>
             ) : (
-              <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                <div style={{ flex: 1 }}>
+              <>
+                <div style={{ marginBottom: 14 }}>
                   <label style={label}>Início</label>
-                  <input type="datetime-local" value={startVal} onChange={(e) => setStartVal(e.target.value)} style={input} />
+                  <DateTimePicker value={start} onChange={setStart} withTime />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={label}>Fim</label>
-                  <input type="datetime-local" value={endVal} onChange={(e) => setEndVal(e.target.value)} style={input} />
+                <div style={{ marginBottom: 14 }}>
+                  <label style={label}>Duração</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <select value={duration} onChange={(e) => setDuration(Number(e.target.value))} style={{ ...input, width: "auto", cursor: "pointer", paddingRight: 28 }}>
+                      {durOptions.map((m) => <option key={m} value={m}>{fmtDur(m)}</option>)}
+                    </select>
+                    <span style={{ fontSize: 12, color: "#888" }}>{endLabel}</span>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
             <div style={{ marginBottom: 14 }}>
               <label style={label}>Localização <span style={{ color: "#BBB", fontWeight: 400 }}>(opcional)</span></label>
