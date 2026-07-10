@@ -1,18 +1,21 @@
 import { google } from "googleapis";
 
 // Google Calendar is the single source of truth for scheduling.
-// Uses the same service-account credentials as Sheets, plus the calendar scope.
-// The calendar must be shared with GOOGLE_SERVICE_ACCOUNT_EMAIL with
-// "Make changes to events" permission, and GOOGLE_CALENDAR_ID set in Vercel.
-const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
+// The service account uses Domain-Wide Delegation to IMPERSONATE a Workspace
+// user (GOOGLE_IMPERSONATE_EMAIL, e.g. gmiguel@sw-places.com): it acts AS that
+// user, so it has full access to their calendar without relying on an external
+// share (which the Workspace policy limited to free/busy). Because we act as
+// the user, the calendar id defaults to their own "primary" calendar.
+const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || "primary";
 const TZ = "Europe/Lisbon";
 
 function getCalendarClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
-  if (!email || !key || !CALENDAR_ID) return null;
+  const subject = process.env.GOOGLE_IMPERSONATE_EMAIL || undefined; // DWD impersonation
+  if (!email || !key) return null;
   const auth = new google.auth.JWT({
-    email, key, scopes: ["https://www.googleapis.com/auth/calendar"],
+    email, key, scopes: ["https://www.googleapis.com/auth/calendar"], subject,
   });
   return google.calendar({ version: "v3", auth });
 }
