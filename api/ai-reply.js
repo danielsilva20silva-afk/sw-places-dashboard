@@ -221,10 +221,10 @@ export async function upsertLead(sheets, spreadsheetId, leadId, data, source, fa
     data.budget || ex[4] || "",     // budget from block, else preserved
     data.intention || ex[5] || "",
     ex[6] || source,                // source preserved
-    ex[7] || today,                 // date preserved
+    ex[7] || "",                    // date: set once at creation, never re-stamped (blank kept for legacy)
     ex[8] || "Novo",                // status preserved
     notes || ex[9] || "",           // latest AI summary preferred
-    ex[10] || "",                   // created_at preserved (blank for legacy rows)
+    ex[10] || "",                   // created_at: set once at creation, never re-stamped (blank for legacy rows)
     String(fallbackUsername || "").trim() || ex[11] || "", // username: fill from profile, else keep
     String(data.source_content || "").trim() || ex[12] || "", // source_content: new link, else keep
   ];
