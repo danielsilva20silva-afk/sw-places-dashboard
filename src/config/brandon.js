@@ -47,6 +47,8 @@ export default {
     // The meeting-scheduling status. Brandon has no calendar yet (features.calendar
     // false), so this is only used if/when calendar is enabled for Brandon.
     calendarTriggerStatus: "Viewing booked",
+    // Statuses counted by the Dashboard "Em contacto" (in progress) stat.
+    inContactStatuses: ["Contacted", "Viewing booked"],
   },
 
   dataSource: "supabase",

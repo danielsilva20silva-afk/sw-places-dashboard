@@ -49,5 +49,7 @@ export default {
     INTENTIONS: ["Todas", "Habitação própria", "Casa de férias", "Investimento"],
     // Status whose selection opens the calendar meeting-scheduling flow.
     calendarTriggerStatus: "Reunião agendada",
+    // Statuses counted by the Dashboard "Em contacto" (in progress) stat.
+    inContactStatuses: ["Contactado", "Sem resposta", "Reunião agendada"],
   },
 };
