@@ -5,8 +5,9 @@
          plugin (see vite.config.js), driven by src/config/<VITE_CLIENT>.js:
            - {{APP_TITLE}} / {{APP_APPLE_TITLE}} below
            - /manifest.json (generated: name / short_name / description / theme_color)
-         Still SHARED across clients (TODO when brand assets exist): favicon.svg,
-         apple-touch-icon.png, icon-192/512.png. -->
+           - favicon.svg + apple-touch-icon.png + icon-192/512.png (per client,
+             from branding/<client>/; see branding/generate-icons.mjs)
+         The <meta name="theme-color"> below stays shared across clients. -->
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
