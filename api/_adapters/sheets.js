@@ -1,4 +1,4 @@
-import { google } from "googleapis";
+import { getSheetsContext } from "./googleAuth.js";
 
 // Google Sheets data adapter. All Sheets access for the Leads and Conversations
 // endpoints lives here (auth, tab names, column mappings, operations) — moved
@@ -34,14 +34,7 @@ export class DataError extends Error {
 // Opaque connection handle (was getSheetsClient). Returned to the endpoint and
 // passed back into each operation; null when env is missing (endpoint maps 500).
 export function getContext() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
-  const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
-  if (!email || !key || !spreadsheetId) return null;
-  const auth = new google.auth.JWT({
-    email, key, scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
-  return { sheets: google.sheets({ version: "v4", auth }), spreadsheetId };
+  return getSheetsContext();
 }
 
 // Full ISO timestamp with the Europe/Lisbon offset, e.g. "2026-07-09T14:32:05+01:00".

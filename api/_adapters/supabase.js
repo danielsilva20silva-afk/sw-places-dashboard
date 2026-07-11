@@ -40,6 +40,10 @@ export function getContext() {
   return { supabase };
 }
 
+// Owns everything that isn't a Meta "l:" lead id (i.e. subscriber uuids). Used by
+// the composite adapter to route writes to the right source.
+export const ownsId = (id) => !String(id).startsWith("l:");
+
 // ── Read mapping: subscribers row → dashboard lead shape ──
 const s = (v) => (v == null ? "" : String(v));
 
