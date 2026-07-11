@@ -14,6 +14,7 @@ export default {
     tagline: "Costa Vicentina", // login subtitle
     primaryColor: "#C9A96E",    // gold accent
     loginPlaceholder: "email@swplaces.com",
+    emailProvider: "gmail",     // "gmail" → Gmail web compose; "system" → mailto:
   },
 
   // Login credentials (moved verbatim from src/pages/Login.jsx).

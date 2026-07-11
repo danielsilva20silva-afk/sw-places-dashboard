@@ -10,6 +10,7 @@ export default {
     tagline: "Algarve",
     primaryColor: "#C9A96E",     // same gold as SW Places for now
     loginPlaceholder: "email@brandonvanriet.com",
+    emailProvider: "system",     // "system" → mailto: (until Brandon says otherwise)
   },
 
   users: [

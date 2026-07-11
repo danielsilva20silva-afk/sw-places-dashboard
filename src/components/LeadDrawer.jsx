@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { STATUSES, STATUS_CONFIG } from "../constants";
 import { branding, hasFeature } from "../config";
-import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber } from "../utils";
+import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab } from "../utils";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
@@ -150,7 +150,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
                 <a href={`https://wa.me/${waNumber(phone)}`} target="_blank" rel="noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#25D366", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>💬 WhatsApp</a>
               )}
               {emailOk && (
-                <a href={`mailto:${email}`} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#2563EB", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>✉️ Email</a>
+                <a href={emailHref(email)} {...(emailOpensNewTab ? { target: "_blank", rel: "noopener noreferrer" } : {})} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#2563EB", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>✉️ Email</a>
               )}
               {igOk && (
                 <a href={`https://instagram.com/${igHandle}`} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📷 Instagram</a>

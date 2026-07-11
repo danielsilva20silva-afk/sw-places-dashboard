@@ -31,6 +31,29 @@ function withSeconds(s) {
   return /T\d{2}:\d{2}$/.test(s) ? `${s}:00` : s;
 }
 
+// Reminder minutes → Google reminders object. -1 = no notification; a number =
+// that many minutes before via a popup. null/undefined = leave reminders alone
+// (don't send the field), preserving whatever the event/calendar had.
+function buildReminders(minutes) {
+  if (minutes === null || minutes === undefined) return undefined;
+  if (Number(minutes) < 0) return { useDefault: false, overrides: [] };
+  return { useDefault: false, overrides: [{ method: "popup", minutes: Number(minutes) }] };
+}
+
+// Read a reminder value back for the edit form: the first override's minutes if
+// determinable, -1 when explicitly none, or null (unknown → uses calendar
+// default; the form falls back to its own default).
+function readReminderMinutes(e) {
+  const rem = e.reminders;
+  if (!rem) return null;
+  if (Array.isArray(rem.overrides) && rem.overrides.length > 0) {
+    const popup = rem.overrides.find((o) => o.method === "popup") || rem.overrides[0];
+    return typeof popup.minutes === "number" ? popup.minutes : null;
+  }
+  if (rem.useDefault === false) return -1; // overrides empty + not default → none
+  return null; // useDefault true → not determinable
+}
+
 // Google event → our shape. All-day events use `date`; timed use `dateTime`.
 // Google stores all-day end as EXCLUSIVE; we return it inclusive for display.
 function toEvent(e) {
@@ -43,6 +66,7 @@ function toEvent(e) {
     allDay,
     start: allDay ? e.start.date : (e.start?.dateTime || ""),
     end: allDay ? addDays(e.end?.date || e.start.date, -1) : (e.end?.dateTime || ""),
+    reminderMinutes: readReminderMinutes(e),
   };
 }
 
@@ -93,11 +117,13 @@ export default async function handler(req, res) {
       if (!b.title || !b.start) {
         return res.status(400).json({ error: "Faltam campos: título e início são obrigatórios." });
       }
+      const reminders = buildReminders(b.reminderMinutes);
       const r = await cal.events.insert({
         calendarId: CALENDAR_ID,
         requestBody: {
           summary: b.title, description: b.description || "", location: b.location || "",
           ...toGoogleTimes(b),
+          ...(reminders ? { reminders } : {}),
         },
       });
       return res.status(201).json(toEvent(r.data));
@@ -109,11 +135,13 @@ export default async function handler(req, res) {
       if (!b.title || !b.start) {
         return res.status(400).json({ error: "Faltam campos: título e início são obrigatórios." });
       }
+      const reminders = buildReminders(b.reminderMinutes);
       const r = await cal.events.patch({
         calendarId: CALENDAR_ID, eventId: b.id,
         requestBody: {
           summary: b.title, description: b.description || "", location: b.location || "",
           ...toGoogleTimes(b),
+          ...(reminders ? { reminders } : {}),
         },
       });
       return res.status(200).json(toEvent(r.data));

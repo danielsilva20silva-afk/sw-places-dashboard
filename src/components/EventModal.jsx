@@ -15,6 +15,19 @@ const input = { width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, pa
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240];
 const fmtDur = (m) => { if (m < 60) return `${m} min`; const h = Math.floor(m / 60), r = m % 60; return r ? `${h}h${p2(r)}` : `${h}h`; };
 
+// Reminder options (minutes before). -1 = no notification. Default: 30 min.
+const REMINDERS = [[-1, "Sem notificação"], [5, "5 min"], [10, "10 min"], [30, "30 min"], [60, "1 hora"], [1440, "1 dia antes"]];
+const DEFAULT_REMINDER = 30;
+function fmtReminder(m) {
+  if (m < 0) return "Sem notificação";
+  if (m < 60) return `${m} min`;
+  if (m === 60) return "1 hora";
+  if (m === 1440) return "1 dia antes";
+  if (m % 1440 === 0) return `${m / 1440} dias antes`;
+  if (m % 60 === 0) return `${m / 60} horas antes`;
+  return `${m} min`;
+}
+
 // Seed the start Date: existing event, else prefill/prefillDate, else now.
 // New events snap to a tidy slot (10:00 if midnight; minutes to the nearest 15).
 function seedStart({ event, prefill, prefillDate }) {
@@ -43,17 +56,24 @@ export default function EventModal({ event, prefillDate, prefill, onClose, onSav
   const [allDay, setAllDay] = useState(event?.allDay || false);
   const [start, setStart] = useState(() => seedStart({ event, prefill, prefillDate }));
   const [duration, setDuration] = useState(() => eventDurationMin(event));
+  // null/undefined from the API = not determinable → fall back to the default.
+  const [reminderMinutes, setReminderMinutes] = useState(() => {
+    const v = event?.reminderMinutes;
+    return v === null || v === undefined ? DEFAULT_REMINDER : v;
+  });
 
   // Options include the event's own duration if it isn't a standard step.
   const durOptions = [...new Set([duration, ...DURATIONS])].sort((a, b) => a - b);
+  // Include the event's current reminder if it isn't one of the presets.
+  const remOptions = REMINDERS.some(([v]) => v === reminderMinutes) ? REMINDERS : [[reminderMinutes, fmtReminder(reminderMinutes)], ...REMINDERS];
   const endDate = new Date(start.getTime() + duration * 60000);
   const endLabel = ymd(endDate) === ymd(start)
     ? `termina às ${p2(endDate.getHours())}:${p2(endDate.getMinutes())}`
     : `termina ${endDate.toLocaleDateString("pt-PT", { day: "numeric", month: "short" })}, ${p2(endDate.getHours())}:${p2(endDate.getMinutes())}`;
 
   const buildPayload = () => {
-    if (allDay) { const d = ymd(start); return { title: title.trim(), description, location, allDay: true, start: d, end: d }; }
-    return { title: title.trim(), description, location, allDay: false, start: toLocalInput(start), end: toLocalInput(endDate) };
+    if (allDay) { const d = ymd(start); return { title: title.trim(), description, location, allDay: true, start: d, end: d, reminderMinutes }; }
+    return { title: title.trim(), description, location, allDay: false, start: toLocalInput(start), end: toLocalInput(endDate), reminderMinutes };
   };
 
   const save = async () => {
@@ -145,6 +165,12 @@ export default function EventModal({ event, prefillDate, prefill, onClose, onSav
                 </div>
               </>
             )}
+            <div style={{ marginBottom: 14 }}>
+              <label style={label}>Notificação</label>
+              <select value={reminderMinutes} onChange={(e) => setReminderMinutes(Number(e.target.value))} style={{ ...input, cursor: "pointer" }}>
+                {remOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
             <div style={{ marginBottom: 14 }}>
               <label style={label}>Localização <span style={{ color: "#BBB", fontWeight: 400 }}>(opcional)</span></label>
               <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Ex. Escritório, Aljezur" style={input} />
