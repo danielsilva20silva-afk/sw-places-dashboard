@@ -1,12 +1,13 @@
 <!doctype html>
 <html lang="pt">
   <head>
-    <!-- TODO (multi-client): these static strings are client-specific and are
-         NOT yet driven by src/config (they load before the app / can't read
-         import.meta.env here easily). Templatize per-client in a later step:
-           - <title>SW Places Dashboard</title>
-           - <meta name="apple-mobile-web-app-title" content="SW Places">
-           - public/manifest.json → name / short_name / description -->
+    <!-- Per-client branding is injected at build time by the client-branding Vite
+         plugin (see vite.config.js), driven by src/config/<VITE_CLIENT>.js:
+           - {{APP_TITLE}} / {{APP_APPLE_TITLE}} below
+           - /manifest.json (generated: name / short_name / description / theme_color)
+           - favicon.svg + apple-touch-icon.png + icon-192/512.png (per client,
+             from branding/<client>/; see branding/generate-icons.mjs)
+         The <meta name="theme-color"> below stays shared across clients. -->
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -15,8 +16,8 @@
     <meta name="theme-color" content="#111111" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="SW Places" />
-    <title>SW Places Dashboard</title>
+    <meta name="apple-mobile-web-app-title" content="{{APP_APPLE_TITLE}}" />
+    <title>{{APP_TITLE}}</title>
   </head>
   <body>
     <div id="root"></div>
