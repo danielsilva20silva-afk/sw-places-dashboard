@@ -1,4 +1,4 @@
-import { isValidEmail, isValidPhone } from "../utils";
+import { isValidEmail, isValidPhone, emailHref, emailOpensNewTab } from "../utils";
 
 const btnBase = {
   width: 32, height: 32, borderRadius: 8,
@@ -27,7 +27,7 @@ export default function QuickActions({ lead }) {
           style={{ ...btnBase, background: "#F0FDF4", border: "1px solid #BBF7D0" }}>💬</a>
       )}
       {emailOk && (
-        <a href={`mailto:${lead.email}`} onClick={e => e.stopPropagation()} title="Email"
+        <a href={emailHref(lead.email)} {...(emailOpensNewTab ? { target: "_blank", rel: "noopener noreferrer" } : {})} onClick={e => e.stopPropagation()} title="Email"
           style={{ ...btnBase, background: "#EFF6FF", border: "1px solid #BFDBFE" }}>✉️</a>
       )}
     </div>
