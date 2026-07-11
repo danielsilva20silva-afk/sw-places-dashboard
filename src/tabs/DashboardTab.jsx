@@ -1,5 +1,6 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { GOLD } from "../constants";
+import { GOLD, inContactStatuses, statusRoles } from "../constants";
+import { hasFeature } from "../config";
 import { buildChartData, leadTime } from "../utils";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
@@ -19,9 +20,9 @@ export default function DashboardTab({ leads, onOpenLead, onStatusChange, onView
 
   const stats = [
     { label: "Total Leads", value: leads.length, color: "#111", sub: `+${leads.filter(l => { const d = new Date(l.date); const now = new Date(); return (now - d) < 7 * 86400000; }).length} esta semana` },
-    { label: "Novos", value: leads.filter(l => l.status === "Novo").length, color: "#2563EB", sub: "por contactar" },
-    { label: "Em contacto", value: leads.filter(l => l.status === "Contactado" || l.status === "Sem resposta" || l.status === "Reunião agendada").length, color: "#D97706", sub: "em progresso" },
-    { label: "Fechados", value: leads.filter(l => l.status === "Fechado").length, color: "#16A34A", sub: "este mês" },
+    { label: "Novos", value: leads.filter(l => l.status === statusRoles.new).length, color: "#2563EB", sub: "por contactar" },
+    { label: "Em contacto", value: leads.filter(l => inContactStatuses.includes(l.status)).length, color: "#D97706", sub: "em progresso" },
+    { label: "Fechados", value: leads.filter(l => l.status === statusRoles.closed).length, color: "#16A34A", sub: "este mês" },
   ];
 
   return (
@@ -56,10 +57,12 @@ export default function DashboardTab({ leads, onOpenLead, onStatusChange, onView
         </div>
       </div>
 
-      {/* Calendar (Google Calendar) */}
-      <div style={{ marginBottom: 20 }}>
-        <CalendarView refreshKey={calRefreshKey} onChanged={onCalendarChanged} />
-      </div>
+      {/* Calendar (Google Calendar) — only for clients with the calendar feature */}
+      {hasFeature("calendar") && (
+        <div style={{ marginBottom: 20 }}>
+          <CalendarView refreshKey={calRefreshKey} onChanged={onCalendarChanged} />
+        </div>
+      )}
 
       {/* Recent leads */}
       {/* No overflow:hidden — it would clip the StatusDropdown menu on the last rows.

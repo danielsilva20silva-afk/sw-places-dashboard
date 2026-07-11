@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { STATUSES, STATUS_CONFIG } from "../constants";
+import { STATUSES, STATUS_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab } from "../utils";
 import Avatar from "./Avatar";
@@ -97,9 +97,10 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
 
   const pickStatus = (s) => {
     setStatus(s);
-    // Scheduling a meeting opens the calendar form pre-filled with the lead's
-    // current (edited) details; that flow owns persisting the status.
-    if (s === "Reunião agendada" && onRequestMeeting) {
+    // When calendar is enabled, selecting the client's meeting status opens the
+    // calendar form pre-filled with the lead's current (edited) details; that
+    // flow owns persisting the status. Calendar-less clients skip straight to save.
+    if (hasFeature("calendar") && s === calendarTriggerStatus && onRequestMeeting) {
       onRequestMeeting({ ...lead, ...fieldsRef.current });
       return;
     }
@@ -201,7 +202,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
                 return <button key={s} onClick={() => pickStatus(s)} style={{ padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 500, border: `1.5px solid ${active ? c.dot : "#E5E5E5"}`, background: active ? c.bg : "white", color: active ? c.text : "#555", cursor: "pointer" }}>{s}</button>;
               })}
             </div>
-            {status === "Sem resposta" && phoneOk && (
+            {statusRoles.noAnswer && status === statusRoles.noAnswer && phoneOk && (
               <a href={`https://wa.me/${waNumber(phone)}?text=${encodeURIComponent(WA_NO_ANSWER)}`} target="_blank" rel="noopener noreferrer" style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12,
                 background: "#25D366", color: "white", borderRadius: 10, padding: "11px", textDecoration: "none",

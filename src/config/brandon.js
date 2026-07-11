@@ -25,6 +25,7 @@ export default {
     recuperar: false,
     newsletter: false,
     ana: false,
+    calendar: false,    // no Google Calendar for Brandon yet (own calendar TBD)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour
@@ -44,6 +45,14 @@ export default {
     // options follow. Prepended to keep the filter dropdowns functional.
     BUDGETS: ["Todos", "Under €1M", "€1M – €2M", "€2M – €5M", "Over €5M"],
     INTENTIONS: ["Todas", "A primary residence", "A second home / holiday property", "An investment / rental property"],
+    // The meeting-scheduling status. Brandon has no calendar yet (features.calendar
+    // false), so this is only used if/when calendar is enabled for Brandon.
+    calendarTriggerStatus: "Viewing booked",
+    // Statuses counted by the Dashboard "Em contacto" (in progress) stat.
+    inContactStatuses: ["Contacted", "Viewing booked"],
+    // Named statuses used by dashboard logic. noAnswer null → Brandon has no
+    // "no answer" status, so the WhatsApp "no answer" button never shows.
+    statusRoles: { new: "New", closed: "Closed", noAnswer: null },
   },
 
   dataSource: "supabase",

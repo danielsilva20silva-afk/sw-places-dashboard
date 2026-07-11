@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { GOLD } from "../constants";
+import { GOLD, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { relDate, buildMeetingPrefill } from "../utils";
 import * as api from "../api";
@@ -36,6 +36,7 @@ export default function Dashboard({ onLogout }) {
   const [upcomingEvents, setUpcomingEvents] = useState([]);
   const [calReload, setCalReload] = useState(0);
   const [meetingFlow, setMeetingFlow] = useState(null); // { leadId, prefill } | null
+  const calendarOn = hasFeature("calendar"); // false clients skip the whole calendar flow
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -67,6 +68,7 @@ export default function Dashboard({ onLogout }) {
   // Upcoming Google Calendar events (next 30 days) for the notifications panel.
   // The full calendar lives on the Dashboard tab; this is just the heads-up feed.
   useEffect(() => {
+    if (!calendarOn) { setUpcomingEvents([]); return; } // no calendar → no fetch
     let active = true;
     const now = new Date();
     const in30 = new Date(now.getTime() + 30 * 86400000);
@@ -74,7 +76,7 @@ export default function Dashboard({ onLogout }) {
       .then(data => { if (active) setUpcomingEvents(data); })
       .catch(() => { if (active) setUpcomingEvents([]); });
     return () => { active = false; };
-  }, [calReload]);
+  }, [calReload, calendarOn]);
 
   // Edit lead details (from the drawer). Optimistic, persists via PATCH, and
   // reconciles with the server row. Returns {ok} so the drawer can show errors
@@ -98,11 +100,12 @@ export default function Dashboard({ onLogout }) {
     setLeads(leads.map(l => l.id === id ? { ...l, status } : l));
     api.updateLead(id, { status }).catch(() => {});
   };
-  // Status change with smart actions. "Reunião agendada" first opens the
-  // calendar event form (pre-filled from the lead); the status is only applied
-  // once the event is created (or the user confirms on cancel).
+  // Status change with smart actions. When calendar is enabled, selecting the
+  // client's meeting status (config: calendarTriggerStatus) first opens the event
+  // form (pre-filled from the lead); the status is only applied once the event is
+  // created (or the user confirms on cancel). Calendar-less clients just set it.
   const changeStatus = (lead, status) => {
-    if (status === "Reunião agendada") {
+    if (calendarOn && status === calendarTriggerStatus) {
       setMeetingFlow({ leadId: lead.id, prefill: buildMeetingPrefill(lead) });
     } else {
       updateStatus(lead.id, status);
@@ -134,7 +137,7 @@ export default function Dashboard({ onLogout }) {
       budget: (f.budget || "").trim(),
       intention: (f.intention || "").trim(),
       source: "Manual",
-      status: "Novo",
+      status: statusRoles.new,
       date: new Date().toISOString().slice(0, 10),
       notes,
     };
@@ -149,19 +152,19 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
-  const newLeads = leads.filter(l => l.status === "Novo");
+  const newLeads = leads.filter(l => l.status === statusRoles.new);
   const unseenNewLeads = newLeads.filter(l => !seenLeadIds.includes(l.id));
   const upcomingMeetings = upcomingEvents.slice(0, 3); // already future, sorted by start
   const notContacted = leads.filter(l => {
     const diff = Math.floor((new Date() - new Date(l.date)) / 86400000);
-    return l.status === "Novo" && diff >= 2;
+    return l.status === statusRoles.new && diff >= 2;
   });
 
   // Opening the popup no longer auto-marks notifications as seen.
   const toggleNotifications = () => setNotifOpen(o => !o);
   // Mark a single lead notification as seen
   const markSeen = (id) => setSeenLeadIds(prev => prev.includes(id) ? prev : [...prev, id]);
-  // Mark every current "Novo" lead as seen
+  // Mark every current new lead as seen
   const markAllSeen = () => setSeenLeadIds(prev => Array.from(new Set([...prev, ...newLeads.map(l => l.id)])));
   // Promote a conversation into a lead, then jump to it in the Leads tab.
   const convertToLead = async (conv) => {
@@ -396,10 +399,10 @@ export default function Dashboard({ onLogout }) {
       {meetingFlow && (
         <EventModal
           prefill={meetingFlow.prefill}
-          onSaved={() => { updateStatus(meetingFlow.leadId, "Reunião agendada"); setMeetingFlow(null); setCalReload(r => r + 1); }}
+          onSaved={() => { updateStatus(meetingFlow.leadId, calendarTriggerStatus); setMeetingFlow(null); setCalReload(r => r + 1); }}
           onClose={() => {
-            const keep = window.confirm('Não criaste o evento no calendário.\n\nMarcar mesmo assim o lead como "Reunião agendada"?');
-            if (keep) updateStatus(meetingFlow.leadId, "Reunião agendada");
+            const keep = window.confirm(`Não criaste o evento no calendário.\n\nMarcar mesmo assim o lead como "${calendarTriggerStatus}"?`);
+            if (keep) updateStatus(meetingFlow.leadId, calendarTriggerStatus);
             setMeetingFlow(null);
           }}
         />
