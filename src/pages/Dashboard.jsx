@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { GOLD, calendarTriggerStatus } from "../constants";
+import { GOLD, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { relDate, buildMeetingPrefill } from "../utils";
 import * as api from "../api";
@@ -137,7 +137,7 @@ export default function Dashboard({ onLogout }) {
       budget: (f.budget || "").trim(),
       intention: (f.intention || "").trim(),
       source: "Manual",
-      status: "Novo",
+      status: statusRoles.new,
       date: new Date().toISOString().slice(0, 10),
       notes,
     };
@@ -152,19 +152,19 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
-  const newLeads = leads.filter(l => l.status === "Novo");
+  const newLeads = leads.filter(l => l.status === statusRoles.new);
   const unseenNewLeads = newLeads.filter(l => !seenLeadIds.includes(l.id));
   const upcomingMeetings = upcomingEvents.slice(0, 3); // already future, sorted by start
   const notContacted = leads.filter(l => {
     const diff = Math.floor((new Date() - new Date(l.date)) / 86400000);
-    return l.status === "Novo" && diff >= 2;
+    return l.status === statusRoles.new && diff >= 2;
   });
 
   // Opening the popup no longer auto-marks notifications as seen.
   const toggleNotifications = () => setNotifOpen(o => !o);
   // Mark a single lead notification as seen
   const markSeen = (id) => setSeenLeadIds(prev => prev.includes(id) ? prev : [...prev, id]);
-  // Mark every current "Novo" lead as seen
+  // Mark every current new lead as seen
   const markAllSeen = () => setSeenLeadIds(prev => Array.from(new Set([...prev, ...newLeads.map(l => l.id)])));
   // Promote a conversation into a lead, then jump to it in the Leads tab.
   const convertToLead = async (conv) => {

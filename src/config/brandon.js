@@ -49,6 +49,9 @@ export default {
     calendarTriggerStatus: "Viewing booked",
     // Statuses counted by the Dashboard "Em contacto" (in progress) stat.
     inContactStatuses: ["Contacted", "Viewing booked"],
+    // Named statuses used by dashboard logic. noAnswer null → Brandon has no
+    // "no answer" status, so the WhatsApp "no answer" button never shows.
+    statusRoles: { new: "New", closed: "Closed", noAnswer: null },
   },
 
   dataSource: "supabase",

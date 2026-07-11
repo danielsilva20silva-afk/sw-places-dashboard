@@ -51,5 +51,8 @@ export default {
     calendarTriggerStatus: "Reunião agendada",
     // Statuses counted by the Dashboard "Em contacto" (in progress) stat.
     inContactStatuses: ["Contactado", "Sem resposta", "Reunião agendada"],
+    // Named statuses used by dashboard logic (stats, defaults, the WhatsApp
+    // "no answer" button). noAnswer null → that button is hidden for the client.
+    statusRoles: { new: "Novo", closed: "Fechado", noAnswer: "Sem resposta" },
   },
 };
