@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { STATUSES, STATUS_CONFIG } from "../constants";
+import { STATUSES, STATUS_CONFIG, calendarTriggerStatus } from "../constants";
 import { branding, hasFeature } from "../config";
 import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber } from "../utils";
 import Avatar from "./Avatar";
@@ -97,9 +97,10 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
 
   const pickStatus = (s) => {
     setStatus(s);
-    // Scheduling a meeting opens the calendar form pre-filled with the lead's
-    // current (edited) details; that flow owns persisting the status.
-    if (s === "Reunião agendada" && onRequestMeeting) {
+    // When calendar is enabled, selecting the client's meeting status opens the
+    // calendar form pre-filled with the lead's current (edited) details; that
+    // flow owns persisting the status. Calendar-less clients skip straight to save.
+    if (hasFeature("calendar") && s === calendarTriggerStatus && onRequestMeeting) {
       onRequestMeeting({ ...lead, ...fieldsRef.current });
       return;
     }

@@ -31,6 +31,7 @@ export default {
     recuperar: true,    // "Recuperar conversas"
     newsletter: true,   // "Newsletter"
     ana: true,          // "Testar Ana"
+    calendar: true,     // Google Calendar: mini-calendar + meeting-scheduling flow
   },
 
   // Lead pipeline constants (moved from src/constants.js).
@@ -46,5 +47,7 @@ export default {
     STATUSES: ["Novo", "Contactado", "Sem resposta", "Reunião agendada", "Fechado", "Perdido"],
     BUDGETS: ["Todos", "Até 300k", "300k–500k", "+500k", "+1M"],
     INTENTIONS: ["Todas", "Habitação própria", "Casa de férias", "Investimento"],
+    // Status whose selection opens the calendar meeting-scheduling flow.
+    calendarTriggerStatus: "Reunião agendada",
   },
 };

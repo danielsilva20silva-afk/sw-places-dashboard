@@ -4,7 +4,7 @@
 import config from "./config";
 
 export const GOLD = config.branding.primaryColor;
-export const { STATUS_CONFIG, STATUSES, BUDGETS, INTENTIONS } = config.constants;
+export const { STATUS_CONFIG, STATUSES, BUDGETS, INTENTIONS, calendarTriggerStatus } = config.constants;
 
 // Initial mock meetings (in-memory)
 export const MEETINGS = [

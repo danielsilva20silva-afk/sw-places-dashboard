@@ -1,5 +1,6 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { GOLD } from "../constants";
+import { hasFeature } from "../config";
 import { buildChartData, leadTime } from "../utils";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
@@ -56,10 +57,12 @@ export default function DashboardTab({ leads, onOpenLead, onStatusChange, onView
         </div>
       </div>
 
-      {/* Calendar (Google Calendar) */}
-      <div style={{ marginBottom: 20 }}>
-        <CalendarView refreshKey={calRefreshKey} onChanged={onCalendarChanged} />
-      </div>
+      {/* Calendar (Google Calendar) — only for clients with the calendar feature */}
+      {hasFeature("calendar") && (
+        <div style={{ marginBottom: 20 }}>
+          <CalendarView refreshKey={calRefreshKey} onChanged={onCalendarChanged} />
+        </div>
+      )}
 
       {/* Recent leads */}
       {/* No overflow:hidden — it would clip the StatusDropdown menu on the last rows.
