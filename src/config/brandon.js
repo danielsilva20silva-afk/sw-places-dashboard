@@ -12,10 +12,9 @@ export default {
     loginPlaceholder: "email@brandonvanriet.com",
   },
 
-  // Real passwords filled in by Daniel before go-live (placeholders for now).
   users: [
-    { email: "daniel@brandonvanriet.com", password: "XXXX", role: "admin", name: "Daniel" },
-    { email: "brandon@brandonvanriet.com", password: "XXXX", role: "admin", name: "Brandon" },
+    { email: "daniel.silva20@hotmail.com", password: "daniel2026", role: "admin", name: "Daniel" },
+    { email: "brandon@brandonvanriet.com", password: "brandon2026", role: "admin", name: "Brandon" },
   ],
 
   features: {
