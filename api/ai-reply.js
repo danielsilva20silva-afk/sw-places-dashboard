@@ -4,9 +4,15 @@ import { waitUntil } from "@vercel/functions";
 import { ANA_PROMPT } from "./_ana-prompt.js";
 import * as mc from "./_manychat.js";
 
-// Let the background delivery work (Claude + ManyChat calls) finish after we
-// return the immediate 200 to ManyChat.
+// Let the background debounce + delivery (wait + Claude + ManyChat calls) finish
+// after we return the immediate 200 to ManyChat. Budget with maxDuration=60:
+// DEBOUNCE_MS (40s) + Claude (~8s) + delivery/sheets (~4s) ≈ 52s < 60s.
+// If the Vercel plan allows maxDuration 90, DEBOUNCE_MS can be raised to 45000.
 export const config = { maxDuration: 60 };
+
+// Debounce window for bursts of consecutive user messages (ManyChat path only).
+const DEBOUNCE_MS = 40000;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ManyChat delivery config (overridable via env)
 const MC_FIELD_ID = Number(process.env.MANYCHAT_ANA_FIELD_ID || 14760048);
@@ -238,7 +244,7 @@ export async function upsertLead(sheets, spreadsheetId, leadId, data, source, fa
 // Generate Ana's reply: read history → Claude → strip <lead>. Does NOT persist
 // anything. Shared by the live flow and the "Recuperar conversas" tool (which
 // needs the reply before Gustavo confirms he sent it).
-export async function generateReply({ sheets, spreadsheetId, apiKey, contactId, message, profileFirstName }) {
+export async function generateReply({ sheets, spreadsheetId, apiKey, contactId, message, profileFirstName, includeNewMessage = true }) {
   await ensureTab(sheets, spreadsheetId);
 
   const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: DATA_RANGE });
@@ -263,16 +269,66 @@ export async function generateReply({ sheets, spreadsheetId, apiKey, contactId, 
   }
   const system = `${ANA_PROMPT}\n\n## Contexto (injetado automaticamente)\n${ctx.join("\n")}`;
 
+  // includeNewMessage=false when the user turn is already in the history (the
+  // ManyChat debounce path writes it up-front). Coalesce adjacent same-role
+  // turns so a burst of consecutive user messages doesn't violate the Anthropic
+  // alternation requirement (no-op for normal alternating histories).
+  const raw = includeNewMessage
+    ? [...history, { role: "user", content: `[${nowStamp}] ${message}` }]
+    : [...history];
+  const messages = [];
+  for (const m of raw) {
+    const last = messages[messages.length - 1];
+    if (last && last.role === m.role) last.content += `\n${m.content}`;
+    else messages.push({ role: m.role, content: m.content });
+  }
+
   const client = new Anthropic({ apiKey });
   const aiRes = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1000,
     system,
-    messages: [...history, { role: "user", content: `[${nowStamp}] ${message}` }],
+    messages,
   });
   const rawReply = aiRes.content.find((b) => b.type === "text")?.text?.trim() || "";
   const { clean: reply, data: leadData } = extractLead(rawReply);
   return { reply, leadData };
+}
+
+// Append ONE user turn immediately (ManyChat debounce path). Returns the row it
+// landed on (parsed from the append response) + its timestamp, so the invocation
+// can later tell whether a newer burst message superseded it.
+async function appendUserMessage(sheets, spreadsheetId, contactId, message) {
+  const ts = new Date().toISOString();
+  const res = await sheets.spreadsheets.values.append({
+    spreadsheetId, range: `${SHEET_NAME}!A:D`, valueInputOption: "RAW",
+    requestBody: { values: [[contactId, "user", message, ts]] },
+  });
+  const updatedRange = res?.data?.updates?.updatedRange || "";
+  const m = updatedRange.match(/![A-Z]+(\d+)/); // e.g. "Conversations!A6:D6" → 6
+  return { timestamp: ts, row: m ? parseInt(m[1], 10) : null };
+}
+
+// Append ONE assistant turn (the user turn was already written up-front).
+async function appendAssistantMessage(sheets, spreadsheetId, contactId, reply) {
+  await sheets.spreadsheets.values.append({
+    spreadsheetId, range: `${SHEET_NAME}!A:D`, valueInputOption: "RAW",
+    requestBody: { values: [[contactId, "assistant", reply, new Date().toISOString()]] },
+  });
+}
+
+// The most recent role=user row for a contact (append order → highest row).
+// Returns { row, timestamp } or null.
+async function latestUserRow(sheets, spreadsheetId, contactId) {
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: DATA_RANGE });
+  const rows = resp.data.values || [];
+  let latest = null;
+  rows.forEach((r, i) => {
+    if (!r || String(r[0]) !== String(contactId) || r[1] !== "user") return;
+    const row = i + 2; // data starts at sheet row 2
+    if (!latest || row > latest.row) latest = { row, timestamp: r[3] || "" };
+  });
+  return latest;
 }
 
 // Append a user turn + an assistant turn to the Conversations tab, keyed by
@@ -310,29 +366,37 @@ async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, me
   return { reply, leadData };
 }
 
-// ManyChat async flow: human-takeover check FIRST, then generate + deliver.
+// ManyChat async flow with burst debounce: record the incoming message right
+// away, wait for a silence window, then only the LAST message of the burst
+// generates + delivers (with the full history). Parallel invocations coordinate
+// purely through the Conversations sheet.
 async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName }) {
+  const cid = String(subscriberId);
   try {
-    // a. Fetch subscriber info: human-takeover check + profile name/username.
-    //    The API is the PRIMARY source of the name; webhook-body values (if any)
-    //    are only a fallback.
-    let apiFullName = "";   // real name only (no username fallback)
-    let apiUsername = "";
-    let apiFirst = "";
+    await ensureTab(sheets, spreadsheetId);
+
+    // 1. Record the incoming user message IMMEDIATELY (before any wait), so the
+    //    burst is captured and parallel invocations see one another.
+    const mine = await appendUserMessage(sheets, spreadsheetId, cid, message);
+    console.log(`[ana] recorded user msg ${cid} row=${mine.row} @${mine.timestamp}`);
+
+    // 2. Human-takeover check + profile — BEFORE the debounce wait. If Ana is
+    //    muted there's no point waiting (the message is already recorded).
+    let apiFullName = "", apiUsername = "", apiFirst = "";
     try {
       const info = await mc.getSubscriberInfo(subscriberId);
       if (mc.subscriberHasTag(info, MC_HUMAN_TAG)) {
-        console.log(`[ana] subscriber ${subscriberId} has '${MC_HUMAN_TAG}' tag — staying silent.`);
+        console.log(`[ana] subscriber ${cid} has '${MC_HUMAN_TAG}' tag — staying silent.`);
         return;
       }
       const p = mc.subscriberProfile(info);
       apiFullName = p.name || [p.first, p.last].filter(Boolean).join(" ");
       apiUsername = p.username || "";
       apiFirst = p.first || (p.name ? p.name.split(/\s+/)[0] : "");
-      console.log(`[ana] getInfo profile ${subscriberId}:`, JSON.stringify({ name: p.name, first_name: p.first, last_name: p.last, username: p.username, resolvedName: apiFullName || apiUsername }));
+      console.log(`[ana] getInfo profile ${cid}:`, JSON.stringify({ name: p.name, first_name: p.first, last_name: p.last, username: p.username, resolvedName: apiFullName || apiUsername }));
     } catch (e) {
       // Can't confirm takeover / fetch profile; proceed (bias toward answering).
-      console.error(`[ana] getInfo failed for ${subscriberId}, proceeding:`, e?.message);
+      console.error(`[ana] getInfo failed for ${cid}, proceeding:`, e?.message);
     }
 
     // Full name (API primary, webhook body as fallback) and username kept
@@ -340,30 +404,46 @@ async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, me
     const effFullName = apiFullName || profileName || "";
     const effUsername = apiUsername || "";
     const effFirst = apiFirst || profileFirstName || "";
+    await upsertSubscriber(sheets, spreadsheetId, cid, effFullName, effUsername);
 
-    // Persist the display identity so active conversations (no lead yet) show
-    // who's talking. Prefer the real name; keep username as a separate column.
-    await upsertSubscriber(
-      sheets, spreadsheetId, String(subscriberId),
-      effFullName, effUsername,
-    );
-
-    // b–e. Generate reply + persist turns + upsert lead
-    const { reply } = await generateAndPersist({
-      sheets, spreadsheetId, apiKey,
-      contactId: String(subscriberId), message, source: "DM · ANA",
-      profileName: effFullName, profileUsername: effUsername, profileFirstName: effFirst,
-    });
-    if (!reply) {
-      console.error(`[ana] empty reply for ${subscriberId}, nothing to deliver.`);
+    // 3. Debounce: wait a silence window, then bail if a newer user message
+    //    arrived (a later invocation owns the reply).
+    await sleep(DEBOUNCE_MS);
+    const latest = await latestUserRow(sheets, spreadsheetId, cid);
+    if (!latest || latest.row !== mine.row) {
+      console.log(`[ana] ${cid} superseded by newer message (mine row=${mine.row}, latest row=${latest?.row ?? "none"}) — staying silent.`);
       return;
     }
 
-    // f. Deliver: set the ana_response field, then fire the delivery flow
+    // 4. I'm the last message of the burst → generate from the FULL history
+    //    (which now includes every burst message). includeNewMessage=false: the
+    //    user turn(s) are already in the sheet, so don't append another.
+    const { reply, leadData } = await generateReply({
+      sheets, spreadsheetId, apiKey, contactId: cid,
+      profileFirstName: effFirst, includeNewMessage: false,
+    });
+    if (!reply) {
+      console.error(`[ana] empty reply for ${cid}, nothing to deliver.`);
+      return;
+    }
+
+    // 5. Persist Ana's reply (assistant turn only — user turns already written).
+    await appendAssistantMessage(sheets, spreadsheetId, cid, reply);
+
+    // 6. Upsert lead from the block (same rules as before).
+    if (leadData && (String(leadData.phone || "").trim() || String(leadData.email || "").trim())) {
+      try {
+        await upsertLead(sheets, spreadsheetId, cid, leadData, "DM · ANA", effFullName, effUsername);
+      } catch (e) {
+        console.error("upsertLead failed:", e?.message);
+      }
+    }
+
+    // 7. Deliver: set the ana_response field, then fire the delivery flow.
     await mc.setCustomField(subscriberId, MC_FIELD_ID, reply);
     await mc.sendFlow(subscriberId, MC_FLOW_NS);
   } catch (e) {
-    console.error(`[ana] processManyChat failed for ${subscriberId}:`, e?.message);
+    console.error(`[ana] processManyChat failed for ${cid}:`, e?.message);
   }
 }
 
