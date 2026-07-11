@@ -12,9 +12,14 @@ export default function LeadMeta({ lead }) {
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
       {meta && <span style={{ fontSize: 12, color: "#888" }}>{meta}</span>}
       {source && (
-        <span style={{
+        <span title={source} style={{
           fontSize: 10, fontWeight: 600, color: "#8A6D2F", background: GOLD + "22",
           borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap",
+          // Long sources (e.g. "Meta Ads · …") truncate instead of overflowing
+          // the row and colliding with the status badge / action buttons.
+          // minWidth:0 defeats the flex-item min-width:auto that would otherwise
+          // keep the nowrap text at full width and break the ellipsis.
+          minWidth: 0, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", boxSizing: "border-box",
         }}>{source}</span>
       )}
       {(meta || source) && <span style={{ color: "#DDD", fontSize: 10 }}>•</span>}

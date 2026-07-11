@@ -83,13 +83,13 @@ export default function DashboardTab({ leads, onOpenLead, onStatusChange, onView
           >
             <Avatar name={lead.name} size={34} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#111" }}>{lead.name}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#111", display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</span>
               <LeadMeta lead={lead} />
             </div>
-            <div onClick={e => e.stopPropagation()}>
+            <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
               <StatusDropdown status={lead.status} onChange={s => onStatusChange(lead, s)} />
             </div>
-            <div onClick={e => e.stopPropagation()}>
+            <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
               <QuickActions lead={lead} />
             </div>
           </div>
