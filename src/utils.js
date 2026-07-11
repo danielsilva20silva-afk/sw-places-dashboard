@@ -1,3 +1,20 @@
+import { branding } from "./config";
+
+// Email link for a lead, honouring the client's emailProvider:
+//  - "gmail"  → Gmail web compose in a new tab
+//  - "system" → mailto: (default; opens the OS default mail app)
+// `subject` is optional; only appended when present.
+export function emailHref(email, subject) {
+  const addr = String(email || "").trim();
+  if (branding.emailProvider === "gmail") {
+    let url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(addr)}`;
+    if (subject) url += `&su=${encodeURIComponent(subject)}`;
+    return url;
+  }
+  return `mailto:${addr}${subject ? `?subject=${encodeURIComponent(subject)}` : ""}`;
+}
+export const emailOpensNewTab = branding.emailProvider === "gmail";
+
 // Integer day index (days since epoch) of an instant, on the Europe/Lisbon
 // CALENDAR. Used so "Hoje"/"Ontem" reflect real Lisbon days, not a 24h window.
 function lisbonDayIndex(d) {
