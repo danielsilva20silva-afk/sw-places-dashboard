@@ -5,7 +5,7 @@ import adapter from "./_adapters/index.js";
 export default async function handler(req, res) {
   const ctx = adapter.getContext();
   if (!ctx) {
-    return res.status(500).json({ error: "Google Sheets não configurado." });
+    return res.status(500).json({ error: "Fonte de dados não configurada." });
   }
 
   try {

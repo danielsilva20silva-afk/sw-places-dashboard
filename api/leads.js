@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   const ctx = adapter.getContext();
   if (!ctx) {
     return res.status(500).json({
-      error: "Google Sheets não configurado (GOOGLE_SHEETS_ID / GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY).",
+      error: "Fonte de dados não configurada.",
     });
   }
 
@@ -49,6 +49,6 @@ export default async function handler(req, res) {
     const code = typeof err?.code === "number" ? err.code : err?.response?.status;
     return res
       .status(code >= 400 && code < 600 ? code : 502)
-      .json({ error: "Erro a comunicar com o Google Sheets.", detail });
+      .json({ error: "Erro a comunicar com a fonte de dados.", detail });
   }
 }

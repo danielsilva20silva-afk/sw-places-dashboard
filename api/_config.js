@@ -6,7 +6,7 @@ const CLIENT = process.env.CLIENT || "swplaces";
 
 const CONFIGS = {
   swplaces: { dataSource: "sheets" },
-  brandon: { dataSource: "sheets" },
+  brandon: { dataSource: "supabase" },
 };
 
 const serverConfig = CONFIGS[CLIENT];

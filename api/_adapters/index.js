@@ -3,9 +3,11 @@
 // interface and register it here; endpoints need zero changes.
 import serverConfig from "../_config.js";
 import * as sheets from "./sheets.js";
+import * as supabase from "./supabase.js";
 
 const ADAPTERS = {
   sheets,
+  supabase,
 };
 
 const adapter = ADAPTERS[serverConfig.dataSource];
