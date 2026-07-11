@@ -136,10 +136,10 @@ export default function LeadsTab({ leads, onOpenLead, onStatusChange, onCreateLe
               </div>
               <LeadMeta lead={lead} />
             </div>
-            <div onClick={e => e.stopPropagation()}>
+            <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
               <StatusDropdown status={lead.status} onChange={s => onStatusChange(lead, s)} />
             </div>
-            <div onClick={e => e.stopPropagation()}>
+            <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
               <QuickActions lead={lead} />
             </div>
           </div>
