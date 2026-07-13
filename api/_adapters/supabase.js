@@ -16,7 +16,7 @@ import { createClient } from "@supabase/supabase-js";
 // Only the columns the dashboard maps are selected.
 const TABLE = process.env.SUPABASE_LEADS_TABLE || "subscribers";
 const SELECT_COLS =
-  "id, email, created_at, source, notes, budget_range, purpose, area, comment, property_type, status";
+  "id, email, created_at, source, notes, budget_range, purpose, area, comment, property_type, status, manual_notes";
 
 // Domain error the endpoints surface directly (status + message preserved).
 // Duck-typed via `.expose` so endpoints need no import of this class — mirrors
@@ -92,6 +92,7 @@ function rowToLead(row) {
     created_at: s(row.created_at),
     username: "", // no column
     source_content: "", // no column
+    manual_notes: s(row.manual_notes), // the consultant's own notes (raw, uncomposed)
   };
 }
 
@@ -103,6 +104,7 @@ const WRITE_MAP = {
   intention: "purpose",
   notes: "notes", // raw user text only — never the composed prefix
   status: "status",
+  manual_notes: "manual_notes", // consultant's notes — stored verbatim
 };
 
 // Build the column patch from an incoming body, mapping only keys that were

@@ -7,10 +7,12 @@ import { getSheetsContext } from "./googleAuth.js";
 // live path stays frozen), so some helpers are intentionally duplicated there.
 
 // ── Tabs / ranges ──
-// Leads columns A–M: id | name | email | phone | budget | intention | source |
-//                    date | status | notes | created_at | username | source_content
+// Leads columns A–N: id | name | email | phone | budget | intention | source |
+//   date | status | notes | created_at | username | source_content | manual_notes
+// notes (J) = Ana's auto conversation summary (written by ai-reply.js, frozen).
+// manual_notes (N) = the consultant's own notes; only the dashboard writes it.
 const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
-const LEADS_RANGE = `${LEADS_TAB}!A2:M`;
+const LEADS_RANGE = `${LEADS_TAB}!A2:N`;
 const LEADS_ID_RANGE = `${LEADS_TAB}!A2:A`;
 // Conversations columns A–D: contact_id | role | message | timestamp
 const CONV_TAB = process.env.GOOGLE_CONVERSATIONS_TAB || "Conversations";
@@ -85,6 +87,7 @@ function rowToLead(r) {
     created_at: r[10] ?? "",
     username: r[11] ?? "",
     source_content: r[12] ?? "",
+    manual_notes: r[13] ?? "",
   };
 }
 
@@ -103,10 +106,10 @@ export async function addLead(ctx, b) {
   const createdAt = b.created_at || lisbonISO();
   const row = [
     id, b.name || "", b.email || "", b.phone || "", b.budget || "",
-    b.intention || "", b.source || "", date, b.status || "Novo", b.notes || "", createdAt, b.username || "", b.source_content || "",
+    b.intention || "", b.source || "", date, b.status || "Novo", b.notes || "", createdAt, b.username || "", b.source_content || "", b.manual_notes || "",
   ];
   await sheets.spreadsheets.values.append({
-    spreadsheetId, range: `${LEADS_TAB}!A:M`, valueInputOption: "RAW", requestBody: { values: [row] },
+    spreadsheetId, range: `${LEADS_TAB}!A:N`, valueInputOption: "RAW", requestBody: { values: [row] },
   });
   return rowToLead(row);
 }
@@ -130,10 +133,12 @@ export async function updateLead(ctx, id, b) {
     intention: b.intention ?? ex.intention,
     status: b.status ?? ex.status,
     notes: b.notes ?? ex.notes,
+    manual_notes: b.manual_notes ?? ex.manual_notes,
   };
   const rowNumber = idx + 2; // +1 header, +1 for 1-based indexing
-  // NOTE: writes A:K only — username (L) and source_content (M) are intentionally
-  // left untouched by PATCH (preserved from the sheet).
+  // Write A:K only — username (L) and source_content (M) are intentionally left
+  // untouched by PATCH (preserved from the sheet). notes (J, Ana's summary) is
+  // rewritten with its preserved value; the dashboard no longer edits it.
   const rowVals = [
     merged.id, merged.name, merged.email, merged.phone, merged.budget,
     merged.intention, merged.source, merged.date, merged.status, merged.notes, merged.created_at,
@@ -141,6 +146,13 @@ export async function updateLead(ctx, id, b) {
   await sheets.spreadsheets.values.update({
     spreadsheetId, range: `${LEADS_TAB}!A${rowNumber}:K${rowNumber}`, valueInputOption: "RAW", requestBody: { values: [rowVals] },
   });
+  // manual_notes (N) written in a SEPARATE targeted cell update, only when
+  // provided — so username/source_content (L/M) are never in the write range.
+  if (b.manual_notes !== undefined) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: `${LEADS_TAB}!N${rowNumber}`, valueInputOption: "RAW", requestBody: { values: [[String(b.manual_notes ?? "")]] },
+    });
+  }
   return merged;
 }
 

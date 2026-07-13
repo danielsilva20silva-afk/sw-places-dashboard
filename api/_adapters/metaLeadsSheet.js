@@ -123,6 +123,7 @@ function rowToLead(row, idx) {
     created_at: createdTime,
     username: "", // no column
     source_content: "", // no column
+    manual_notes: "", // Meta-owned sheet; manual notes not supported here
   };
 }
 
