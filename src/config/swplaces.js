@@ -15,6 +15,17 @@ export default {
     primaryColor: "#C9A96E",    // gold accent
     loginPlaceholder: "email@swplaces.com",
     emailProvider: "gmail",     // "gmail" → Gmail web compose; "system" → mailto:
+    // WhatsApp message for the "Sem resposta" button (LeadDrawer). Newlines are
+    // preserved in the wa.me URL via encodeURIComponent.
+    noAnswerMessage: `Olá! O meu nome é Gustavo Miguel e sou Consultor Imobiliário na SW-Places.
+
+Tentei entrar em contacto consigo por telefone, mas, infelizmente, não foi possível falar consigo.
+
+Agradecia que me indicasse qual o horário que lhe é mais conveniente para eu voltar a ligar.
+
+Fico a aguardar o seu contacto.
+
+Obrigado e até breve!`,
   },
 
   // Login credentials (moved verbatim from src/pages/Login.jsx).

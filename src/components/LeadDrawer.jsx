@@ -6,7 +6,9 @@ import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
 
-const WA_NO_ANSWER = `Olá! É o Gustavo, da ${branding.name}. Tentei ligar-lhe agora mas não consegui. Quando lhe der jeito, diga-me e falamos 🙂`;
+// Per-client WhatsApp message for the "Sem resposta" button (empty when the
+// client hasn't configured one → the button is hidden).
+const WA_NO_ANSWER = branding.noAnswerMessage || "";
 const TEXT_KEYS = ["name", "email", "phone", "budget", "intention", "notes"];
 const SAVE_DEBOUNCE = 900;
 
@@ -202,7 +204,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
                 return <button key={s} onClick={() => pickStatus(s)} style={{ padding: "7px 14px", borderRadius: 20, fontSize: 12, fontWeight: 500, border: `1.5px solid ${active ? c.dot : "#E5E5E5"}`, background: active ? c.bg : "white", color: active ? c.text : "#555", cursor: "pointer" }}>{s}</button>;
               })}
             </div>
-            {statusRoles.noAnswer && status === statusRoles.noAnswer && phoneOk && (
+            {statusRoles.noAnswer && status === statusRoles.noAnswer && phoneOk && WA_NO_ANSWER && (
               <a href={`https://wa.me/${waNumber(phone)}?text=${encodeURIComponent(WA_NO_ANSWER)}`} target="_blank" rel="noopener noreferrer" style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12,
                 background: "#25D366", color: "white", borderRadius: 10, padding: "11px", textDecoration: "none",
