@@ -124,6 +124,7 @@ function rowToLead(row, idx) {
     username: "", // no column
     source_content: "", // no column
     manual_notes: "", // Meta-owned sheet; manual notes not supported here
+    manual_notes_editable: false, // Meta sync owns this sheet — no manual_notes column
   };
 }
 

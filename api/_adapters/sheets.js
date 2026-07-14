@@ -88,6 +88,7 @@ function rowToLead(r) {
     username: r[11] ?? "",
     source_content: r[12] ?? "",
     manual_notes: r[13] ?? "",
+    manual_notes_editable: true, // this source has a manual_notes column
   };
 }
 

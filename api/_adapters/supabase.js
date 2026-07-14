@@ -93,6 +93,7 @@ function rowToLead(row) {
     username: "", // no column
     source_content: "", // no column
     manual_notes: s(row.manual_notes), // the consultant's own notes (raw, uncomposed)
+    manual_notes_editable: true, // subscribers table has a manual_notes column
   };
 }
 
