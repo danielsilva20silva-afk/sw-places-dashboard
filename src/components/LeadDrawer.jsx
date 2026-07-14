@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { STATUSES, STATUS_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab } from "../utils";
@@ -28,6 +29,15 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   const [manualNotes, setManualNotes] = useState(lead.manual_notes || "");
   const [deleting, setDeleting] = useState(false);
   const [save, setSave] = useState("idle"); // idle | saving | saved | error
+
+  // Lock background scroll while the drawer is open. In an iOS standalone PWA an
+  // unlocked body keeps the page scroller "attached" and steals touches from the
+  // fixed overlay, which is what makes the drawer feel frozen. Restore on close.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
   // notes (Ana's auto conversation summary) is READ-ONLY here.
   const summary = (cleanField(lead.notes) || "").trim();
@@ -129,15 +139,21 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
     else { setDeleting(false); alert("Não foi possível eliminar o lead. Tenta novamente."); }
   };
 
-  return (
+  // Portaled to <body> so the fixed overlay escapes the Dashboard root, which has
+  // `overflow-x: hidden`. In an iOS standalone PWA a position:fixed descendant of
+  // an overflow-clipped ancestor gets detached from the touch layer — the whole
+  // drawer (scroll + × button) goes dead — while normal Safari/Chrome composite it
+  // fine. Rendering at the body level removes that ancestor entirely.
+  return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }} onClick={handleClose}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)" }} />
       <div style={{
         position: "relative", background: "white", width: "100%", maxWidth: 420,
-        height: "100vh", overflowY: "auto", boxShadow: "-8px 0 40px rgba(0,0,0,0.1)",
+        height: "100%", overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain",
+        boxShadow: "-8px 0 40px rgba(0,0,0,0.1)",
         display: "flex", flexDirection: "column",
       }} onClick={e => e.stopPropagation()}>
-        <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid #F0F0F0", position: "sticky", top: 0, background: "white", zIndex: 10 }}>
+        <div style={{ padding: "calc(20px + env(safe-area-inset-top)) 24px 16px", borderBottom: "1px solid #F0F0F0", position: "sticky", top: 0, background: "white", zIndex: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
             <button onClick={handleClose} style={{ background: "#F5F5F5", border: "none", borderRadius: 8, width: 28, height: 28, fontSize: 16, color: "#888", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
             <span style={{ fontSize: 12, color: "#AAA" }}>{leadWhen(lead)}</span>
@@ -254,7 +270,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
           }}>{deleting ? "A eliminar…" : "🗑 Eliminar lead"}</button>
         </div>
         {/* Auto-save indicator (replaces the old Guardar/Cancelar buttons) */}
-        <div style={{ padding: "12px 24px", borderTop: "1px solid #F0F0F0", position: "sticky", bottom: 0, background: "white" }}>
+        <div style={{ padding: "12px 24px calc(12px + env(safe-area-inset-bottom))", borderTop: "1px solid #F0F0F0", position: "sticky", bottom: 0, background: "white" }}>
           {save === "error" ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <span style={{ fontSize: 12, color: "#BE123C", fontWeight: 500 }}>Não foi possível guardar.</span>
@@ -267,6 +283,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
