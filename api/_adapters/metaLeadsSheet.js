@@ -1,20 +1,30 @@
 import { getSheetsContext } from "./googleAuth.js";
 
-// Meta Ads Instant Forms → Google Sheet adapter (READ + status write-back only).
-// The Meta Ads sync owns this sheet; its column layout is FIXED by Meta — never
-// rename/reorder. Used only INSIDE the brandon composite adapter, alongside the
-// Supabase (landing-page) source — never selected on its own.
+// Meta Ads Instant Forms → Google Sheet(s) adapter (READ + status write-back).
+// The Meta Ads sync owns these sheets; their column layout is FIXED by Meta —
+// never rename/reorder. Used only INSIDE the brandon composite adapter, alongside
+// the Supabase (landing-page) source — never selected on its own.
+//
+// MULTIPLE SHEETS: each Meta Instant Form writes to its own Google Sheet, so
+// GOOGLE_SHEETS_ID accepts a comma-separated list (id1,id2,…). A single id keeps
+// working unchanged. getLeads reads all sheets in parallel and merges (one sheet
+// failing doesn't sink the others); writes locate the lead's origin sheet by id.
 //
 // Reuses the shared service-account auth (googleAuth.js) and the same env as
-// sheets.js: GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_SHEETS_ID
-// (for the brandon project, GOOGLE_SHEETS_ID points at the Meta leads sheet).
+// sheets.js: GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_SHEETS_ID.
 
-// Fixed Meta columns on the first tab (row 1 = header):
-//   id | created_time | ad_id | ad_name | adset_id | adset_name | campaign_id |
-//   campaign_name | form_id | form_name | is_organic | platform |
-//   what_would_you_like_to_do_next? | email | full_name | phone | lead_status
-const READ_RANGE = "A1:Z"; // header + data; Z is comfortably past the 17 columns
+// Read a generous window: base Meta columns + however many form-question columns.
+const READ_RANGE = "A1:AZ";
 const STATUS_COL = "lead_status";
+
+// The FIXED Meta columns. Any header NOT in this set is treated as a form
+// question (they differ per Instant Form, e.g. "what_would_you_like_to_do_next?"
+// vs "which_areas_are_you_interested_in?").
+const STANDARD_COLS = new Set([
+  "id", "created_time", "ad_id", "ad_name", "adset_id", "adset_name",
+  "campaign_id", "campaign_name", "form_id", "form_name", "is_organic",
+  "platform", "email", "full_name", "phone", "lead_status",
+]);
 
 // Dashboard statuses (brandon). Meta writes CREATED/OK/empty for fresh leads.
 const DASHBOARD_STATUSES = ["New", "Contacted", "Viewing booked", "Closed", "Lost"];
@@ -28,8 +38,17 @@ export class DataError extends Error {
   }
 }
 
+// Context carries the shared Sheets client + the list of spreadsheet ids. The
+// comma-list is parsed here so googleAuth.js / sheets.js stay single-id.
 export function getContext() {
-  return getSheetsContext();
+  const base = getSheetsContext();
+  if (!base) return null;
+  const spreadsheetIds = String(base.spreadsheetId)
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (!spreadsheetIds.length) return null;
+  return { sheets: base.sheets, spreadsheetIds };
 }
 
 // This adapter owns the Meta lead ids, which keep Meta's "l:" prefix.
@@ -37,7 +56,7 @@ export const ownsId = (id) => String(id).startsWith("l:");
 
 const s = (v) => (v == null ? "" : String(v));
 
-// 0-based column index → A1 letter (0→A, 16→Q).
+// 0-based column index → A1 letter (0→A, 16→Q, 26→AA).
 function colLetter(n) {
   let out = "";
   let i = n + 1;
@@ -61,10 +80,9 @@ async function firstSheetTitle(sheets, spreadsheetId) {
   return list.length ? list[0].properties.title : "Sheet1";
 }
 
-// Read the first tab: returns { title, header, idx, rows } where idx maps a
-// column name → its 0-based index and rows are the data rows (header excluded).
-async function readSheet(ctx) {
-  const { sheets, spreadsheetId } = ctx;
+// Read one sheet's first tab: returns { title, header, idx, rows } where idx maps
+// a column name → its 0-based index and rows are the data rows (header excluded).
+async function readSheet(sheets, spreadsheetId) {
   const title = await firstSheetTitle(sheets, spreadsheetId);
   const resp = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -82,7 +100,8 @@ function cell(row, idx, name) {
   return i == null ? "" : s(row[i]);
 }
 
-// Meta test leads: dummy rows with test@meta.com or "<test lead:" placeholders.
+// Meta test leads: dummy rows with test@meta.com or "<test lead:" placeholders
+// (the placeholder can land in any question column, so scan the whole row).
 function isTestRow(row, idx) {
   if (cell(row, idx, "email").trim().toLowerCase() === "test@meta.com") return true;
   return (row || []).some((c) => s(c).includes("<test lead:"));
@@ -96,15 +115,28 @@ function mapStatus(raw) {
   return DASHBOARD_STATUSES.includes(v) ? v : "New";
 }
 
-function composeNotes(row, idx) {
-  const campaign = cell(row, idx, "campaign_name").trim();
-  const want = cell(row, idx, "what_would_you_like_to_do_next?")
-    .replace(/_/g, " ")
-    .trim();
-  return [campaign, want].filter(Boolean).join("\n\n");
+// "which_areas_are_you_interested_in?" → "Which areas are you interested in".
+function humanizeQuestion(q) {
+  const t = s(q).replace(/\?/g, "").replace(/_/g, " ").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
 }
 
-function rowToLead(row, idx) {
+// Notes = campaign name, then every answered form question ("Question: answer"),
+// with the question label humanized and the answer's underscores spaced out.
+function composeNotes(row, idx, header) {
+  const parts = [];
+  const campaign = cell(row, idx, "campaign_name").trim();
+  if (campaign) parts.push(campaign);
+  for (const col of header) {
+    if (!col || STANDARD_COLS.has(col)) continue; // skip the fixed Meta columns
+    const answer = cell(row, idx, col).replace(/_/g, " ").trim();
+    if (!answer) continue;
+    parts.push(`${humanizeQuestion(col)}: ${answer}`);
+  }
+  return parts.join("\n\n");
+}
+
+function rowToLead(row, idx, header) {
   const adName = cell(row, idx, "ad_name").trim();
   const formName = cell(row, idx, "form_name").trim();
   const label = adName || formName;
@@ -119,7 +151,7 @@ function rowToLead(row, idx) {
     source: label ? `Meta Ads · ${label}` : "Meta Ads",
     date: createdTime.slice(0, 10), // YYYY-MM-DD
     status: mapStatus(cell(row, idx, STATUS_COL)),
-    notes: composeNotes(row, idx),
+    notes: composeNotes(row, idx, header),
     created_at: createdTime,
     username: "", // no column
     source_content: "", // no column
@@ -128,41 +160,74 @@ function rowToLead(row, idx) {
   };
 }
 
-// ────────────────────────────── Leads ──────────────────────────────
-export async function getLeads(ctx) {
-  const { idx, rows } = await readSheet(ctx);
+// Read one sheet → its non-test leads. Throws on read failure (caller decides).
+async function leadsFromSheet(sheets, spreadsheetId) {
+  const { header, idx, rows } = await readSheet(sheets, spreadsheetId);
   if (idx.id == null) return []; // no header / empty sheet
-  const leads = [];
+  const out = [];
   for (const row of rows) {
     if (!row || !s(row[idx.id])) continue;
     if (isTestRow(row, idx)) continue;
-    leads.push(rowToLead(row, idx));
+    out.push(rowToLead(row, idx, header));
   }
-  return leads;
+  return out;
+}
+
+// ────────────────────────────── Leads ──────────────────────────────
+// Read every configured sheet in parallel and merge. A sheet that fails logs and
+// yields [] so the others still render (same resilience as the composite).
+export async function getLeads(ctx) {
+  const { sheets, spreadsheetIds } = ctx;
+  const perSheet = await Promise.all(
+    spreadsheetIds.map(async (spreadsheetId) => {
+      try {
+        return await leadsFromSheet(sheets, spreadsheetId);
+      } catch (err) {
+        console.error(`metaLeadsSheet getLeads: sheet ${spreadsheetId} failed:`, err?.message || err);
+        return [];
+      }
+    })
+  );
+  return perSheet.flat();
 }
 
 // Only `status` is writable — it maps to the lead_status column of the matching
-// row (located by id). Every other field is ignored silently. The Meta sync owns
-// all other columns.
+// row. The lead may live in any of the configured sheets, so locate its origin
+// sheet by id and write there. Other fields are ignored silently.
 export async function updateLead(ctx, id, b) {
-  const { sheets, spreadsheetId } = ctx;
-  const { title, idx, rows } = await readSheet(ctx);
-  const dataIdx = rows.findIndex((r) => r && s(r[idx.id]) === s(id));
-  if (dataIdx === -1) throw new DataError(404, "Lead não encontrado.");
+  const { sheets, spreadsheetIds } = ctx;
+  const reads = await Promise.all(
+    spreadsheetIds.map(async (spreadsheetId) => {
+      try {
+        return { spreadsheetId, ...(await readSheet(sheets, spreadsheetId)) };
+      } catch (err) {
+        console.error(`metaLeadsSheet updateLead: read ${spreadsheetId} failed:`, err?.message || err);
+        return null;
+      }
+    })
+  );
 
-  const current = rowToLead(rows[dataIdx], idx);
-  if (b.status === undefined) return current; // nothing writable changed
+  for (const r of reads) {
+    if (!r) continue;
+    const dataIdx = r.rows.findIndex((row) => row && s(row[r.idx.id]) === s(id));
+    if (dataIdx === -1) continue;
 
-  const statusColIdx = idx[STATUS_COL];
-  if (statusColIdx == null) throw new DataError(500, `Coluna "${STATUS_COL}" não encontrada no Sheet.`);
-  const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: `${title}!${colLetter(statusColIdx)}${sheetRow}`,
-    valueInputOption: "RAW",
-    requestBody: { values: [[b.status]] },
-  });
-  return { ...current, status: mapStatus(b.status) };
+    const current = rowToLead(r.rows[dataIdx], r.idx, r.header);
+    if (b.status === undefined) return current; // nothing writable changed
+
+    const statusColIdx = r.idx[STATUS_COL];
+    if (statusColIdx == null) throw new DataError(500, `Coluna "${STATUS_COL}" não encontrada no Sheet.`);
+    const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: r.spreadsheetId,
+      range: `${r.title}!${colLetter(statusColIdx)}${sheetRow}`,
+      valueInputOption: "RAW",
+      requestBody: { values: [[b.status]] },
+    });
+    return { ...current, status: mapStatus(b.status) };
+  }
+
+  throw new DataError(404, "Lead não encontrado.");
 }
 
 // Not supported: the Meta sync owns these rows.
