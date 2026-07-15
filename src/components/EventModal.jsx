@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { GOLD } from "../constants";
 import * as api from "../api";
 import { ymd, toLocalInput, p2 } from "../calendarUtils";
@@ -46,6 +47,16 @@ function eventDurationMin(event) {
 
 export default function EventModal({ event, prefillDate, prefill, onClose, onSaved, onDeleted }) {
   const isNew = !event;
+
+  // Lock background scroll while the modal is open. In an iOS standalone PWA an
+  // unlocked body keeps the page scroller "attached" and steals touches from the
+  // fixed overlay, which is what makes it feel frozen. Restore on close.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   const [editing, setEditing] = useState(isNew);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -112,9 +123,15 @@ export default function EventModal({ event, prefillDate, prefill, onClose, onSav
     return `${day} · ${t(s)}–${t(e)}`;
   };
 
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "'Inter', -apple-system, sans-serif" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", borderRadius: 16, width: "100%", maxWidth: 400, maxHeight: "90vh", overflowY: "auto", padding: 24, boxShadow: "0 12px 48px rgba(0,0,0,0.18)" }}>
+  // Portaled to <body> so the fixed overlay escapes the Dashboard root, which has
+  // `overflow-x: hidden`. In an iOS standalone PWA a position:fixed descendant of
+  // an overflow-clipped ancestor gets detached from the touch layer and goes dead,
+  // while normal Safari/Chrome composite it fine. Body-level render avoids that.
+  // Safe-area insets in the overlay padding keep the centered card clear of the
+  // notch / home indicator; the card itself scrolls with momentum.
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))", fontFamily: "'Inter', -apple-system, sans-serif" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "white", borderRadius: 16, width: "100%", maxWidth: 400, maxHeight: "90vh", overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", padding: 24, boxShadow: "0 12px 48px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: 0 }}>
             {isNew ? "Novo evento" : editing ? "Editar evento" : "Evento"}
@@ -187,6 +204,7 @@ export default function EventModal({ event, prefillDate, prefill, onClose, onSav
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

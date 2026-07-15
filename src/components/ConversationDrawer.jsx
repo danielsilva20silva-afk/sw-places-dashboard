@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { GOLD } from "../constants";
 import { hasFeature } from "../config";
 import * as api from "../api";
@@ -61,6 +62,15 @@ export default function ConversationDrawer({ conversation: c, onClose, onConvert
   const [addText, setAddText] = useState("");
   const [addNow, setAddNow] = useState(true);
   const [addWhen, setAddWhen] = useState("");
+
+  // Lock background scroll while the drawer is open. In an iOS standalone PWA an
+  // unlocked body keeps the page scroller "attached" and steals touches from the
+  // fixed overlay, which is what makes the drawer feel frozen. Restore on close.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
   const scrollToBottom = () => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -138,16 +148,21 @@ export default function ConversationDrawer({ conversation: c, onClose, onConvert
     if (!r?.ok) alert("Não foi possível converter em lead. Tenta novamente.");
   };
 
-  return (
+  // Portaled to <body> so the fixed overlay escapes the Dashboard root, which has
+  // `overflow-x: hidden`. In an iOS standalone PWA a position:fixed descendant of
+  // an overflow-clipped ancestor gets detached from the touch layer — the whole
+  // drawer (scroll + × button) goes dead — while normal Safari/Chrome composite it
+  // fine. Rendering at the body level removes that ancestor entirely.
+  return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end" }} onClick={onClose}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)" }} />
       <div style={{
         position: "relative", background: "white", width: "100%", maxWidth: 460,
-        height: "100vh", boxShadow: "-8px 0 40px rgba(0,0,0,0.1)",
+        height: "100%", boxShadow: "-8px 0 40px rgba(0,0,0,0.1)",
         display: "flex", flexDirection: "column",
       }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid #F0F0F0", background: "white" }}>
+        <div style={{ padding: "calc(20px + env(safe-area-inset-top)) 24px 16px", borderBottom: "1px solid #F0F0F0", background: "white" }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
             <button onClick={onClose} style={{ background: "#F5F5F5", border: "none", borderRadius: 8, width: 28, height: 28, fontSize: 16, color: "#888", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
             {c.isLead
@@ -181,7 +196,7 @@ export default function ConversationDrawer({ conversation: c, onClose, onConvert
         </div>
 
         {/* Messages */}
-        <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 12, background: "#FAFAF9" }}>
+        <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 12, background: "#FAFAF9" }}>
           {loading ? (
             <p style={{ textAlign: "center", color: "#BBB", fontSize: 13, margin: "auto 0" }}>A carregar…</p>
           ) : msgs.length === 0 ? (
@@ -227,7 +242,7 @@ export default function ConversationDrawer({ conversation: c, onClose, onConvert
         </div>
 
         {/* Footer */}
-        <div style={{ padding: "12px 24px", borderTop: "1px solid #F0F0F0", background: "white", display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ padding: "12px 24px calc(12px + env(safe-area-inset-bottom))", borderTop: "1px solid #F0F0F0", background: "white", display: "flex", flexDirection: "column", gap: 10 }}>
           {edit && (
             adding ? (
               <div style={{ border: "1px solid #EBEBEB", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -272,6 +287,7 @@ export default function ConversationDrawer({ conversation: c, onClose, onConvert
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
