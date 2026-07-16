@@ -41,10 +41,6 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
 
   // notes (Ana's auto conversation summary) is READ-ONLY here.
   const summary = (cleanField(lead.notes) || "").trim();
-  // Some sources (e.g. Meta Ads leads) have no manual_notes column — the adapter
-  // flags them; default true when the flag is absent. Disabled → the field can't
-  // accept text that would be silently discarded.
-  const manualNotesEditable = lead.manual_notes_editable !== false;
 
   // Refs so the debounced/close/unmount flush always reads current values.
   const fieldsRef = useRef({ name: lead.name || "", email: lead.email || "", phone: lead.phone || "", budget: lead.budget || "", intention: lead.intention || "", manual_notes: lead.manual_notes || "" });
@@ -243,14 +239,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
           )}
           <div>
             <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>Notas</p>
-            {manualNotesEditable ? (
-              <textarea {...bind("manual_notes", manualNotes, setManualNotes)} placeholder="As tuas notas sobre este lead..." rows={4} style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#111", resize: "none", outline: "none", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit" }} />
-            ) : (
-              <>
-                <textarea value="" disabled rows={4} placeholder="Notas não disponíveis" style={{ width: "100%", border: "1px solid #EEE", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#AAA", resize: "none", outline: "none", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit", background: "#F8F7F4", cursor: "not-allowed" }} />
-                <p style={{ fontSize: 11, color: "#AAA", margin: "6px 0 0" }}>Notas não disponíveis para leads de Meta Ads.</p>
-              </>
-            )}
+            <textarea {...bind("manual_notes", manualNotes, setManualNotes)} placeholder="As tuas notas sobre este lead..." rows={4} style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#111", resize: "none", outline: "none", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit" }} />
           </div>
           {sourceOk && (
             <div>

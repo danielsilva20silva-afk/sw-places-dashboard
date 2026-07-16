@@ -1,4 +1,5 @@
 import { getSheetsContext } from "./googleAuth.js";
+import { getContext as getSupabaseContext } from "./supabase.js";
 
 // Meta Ads Instant Forms → Google Sheet(s) adapter (READ + status write-back).
 // The Meta Ads sync owns these sheets; their column layout is FIXED by Meta —
@@ -16,6 +17,12 @@ import { getSheetsContext } from "./googleAuth.js";
 // Read a generous window: base Meta columns + however many form-question columns.
 const READ_RANGE = "A1:AZ";
 const STATUS_COL = "lead_status";
+
+// Manual (human) notes for Meta leads live in a side table in the SAME Supabase
+// project as the brandon subscribers — the Meta Ads sync owns the Sheet and has
+// no column of ours. One row per Meta lead id:
+//   meta_lead_notes(lead_id text PK, manual_notes text, updated_at timestamptz)
+const NOTES_TABLE = "meta_lead_notes";
 
 // The FIXED Meta columns. Any header NOT in this set is treated as a form
 // question (they differ per Instant Form, e.g. "what_would_you_like_to_do_next?"
@@ -38,8 +45,11 @@ export class DataError extends Error {
   }
 }
 
-// Context carries the shared Sheets client + the list of spreadsheet ids. The
-// comma-list is parsed here so googleAuth.js / sheets.js stay single-id.
+// Context carries the shared Sheets client + the list of spreadsheet ids, plus a
+// Supabase client (same project as the brandon subscribers) for the manual-notes
+// side table. The comma-list is parsed here so googleAuth.js / sheets.js stay
+// single-id. A missing/broken Supabase env leaves supabase=null → notes degrade
+// gracefully (leads still load, just without manual notes).
 export function getContext() {
   const base = getSheetsContext();
   if (!base) return null;
@@ -48,7 +58,54 @@ export function getContext() {
     .map((x) => x.trim())
     .filter(Boolean);
   if (!spreadsheetIds.length) return null;
-  return { sheets: base.sheets, spreadsheetIds };
+  let supabase = null;
+  try {
+    supabase = getSupabaseContext()?.supabase || null;
+  } catch (err) {
+    console.error("metaLeadsSheet: Supabase context unavailable for notes:", err?.message || err);
+  }
+  return { sheets: base.sheets, spreadsheetIds, supabase };
+}
+
+// ── Manual notes side table (meta_lead_notes) ──
+// Read: one batched select for a set of lead ids → { id: notes }. Best-effort;
+// any failure logs and yields {} so the leads list never breaks.
+async function fetchNotes(ctx, ids) {
+  if (!ctx.supabase || !ids.length) return {};
+  try {
+    const { data, error } = await ctx.supabase
+      .from(NOTES_TABLE)
+      .select("lead_id, manual_notes")
+      .in("lead_id", ids);
+    if (error) {
+      console.error("metaLeadsSheet fetchNotes:", error.message);
+      return {};
+    }
+    const map = {};
+    for (const r of data || []) map[s(r.lead_id)] = s(r.manual_notes);
+    return map;
+  } catch (err) {
+    console.error("metaLeadsSheet fetchNotes threw:", err?.message || err);
+    return {};
+  }
+}
+
+// Write: upsert one lead's notes (bumping updated_at). Unlike reads, a write
+// failure is surfaced so the drawer can show an error / retry.
+async function upsertNote(ctx, id, notes) {
+  if (!ctx.supabase) throw new DataError(500, "Armazenamento de notas indisponível.");
+  const value = s(notes);
+  const { error } = await ctx.supabase
+    .from(NOTES_TABLE)
+    .upsert(
+      { lead_id: s(id), manual_notes: value, updated_at: new Date().toISOString() },
+      { onConflict: "lead_id" }
+    );
+  if (error) {
+    console.error("metaLeadsSheet upsertNote:", error.message);
+    throw new DataError(500, "Não foi possível guardar a nota.");
+  }
+  return value;
 }
 
 // This adapter owns the Meta lead ids, which keep Meta's "l:" prefix.
@@ -155,8 +212,8 @@ function rowToLead(row, idx, header) {
     created_at: createdTime,
     username: "", // no column
     source_content: "", // no column
-    manual_notes: "", // Meta-owned sheet; manual notes not supported here
-    manual_notes_editable: false, // Meta sync owns this sheet — no manual_notes column
+    manual_notes: "", // filled from the meta_lead_notes side table in getLeads
+    manual_notes_editable: true, // notes live in our Supabase side table now
   };
 }
 
@@ -188,12 +245,19 @@ export async function getLeads(ctx) {
       }
     })
   );
-  return perSheet.flat();
+  const leads = perSheet.flat();
+  // Join the human notes from the side table (best-effort — no notes on failure).
+  const notes = await fetchNotes(ctx, leads.map((l) => l.id));
+  for (const l of leads) l.manual_notes = notes[l.id] || "";
+  return leads;
 }
 
-// Only `status` is writable — it maps to the lead_status column of the matching
-// row. The lead may live in any of the configured sheets, so locate its origin
-// sheet by id and write there. Other fields are ignored silently.
+// Two writable fields, to two different stores:
+//   • status       → the lead_status column of the matching Sheet row
+//   • manual_notes  → the meta_lead_notes side table (our Supabase)
+// They're independent and can arrive in the same request; a status write never
+// touches the note and vice-versa. The lead may live in any configured sheet, so
+// locate its origin sheet by id first. Other fields are ignored silently.
 export async function updateLead(ctx, id, b) {
   const { sheets, spreadsheetIds } = ctx;
   const reads = await Promise.all(
@@ -213,18 +277,29 @@ export async function updateLead(ctx, id, b) {
     if (dataIdx === -1) continue;
 
     const current = rowToLead(r.rows[dataIdx], r.idx, r.header);
-    if (b.status === undefined) return current; // nothing writable changed
 
-    const statusColIdx = r.idx[STATUS_COL];
-    if (statusColIdx == null) throw new DataError(500, `Coluna "${STATUS_COL}" não encontrada no Sheet.`);
-    const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: r.spreadsheetId,
-      range: `${r.title}!${colLetter(statusColIdx)}${sheetRow}`,
-      valueInputOption: "RAW",
-      requestBody: { values: [[b.status]] },
-    });
-    return { ...current, status: mapStatus(b.status) };
+    // manual_notes → side table (independent of the Sheet, surfaced on failure).
+    let manualNotes = current.manual_notes;
+    if (b.manual_notes !== undefined) {
+      manualNotes = await upsertNote(ctx, id, b.manual_notes);
+    }
+
+    // status → the Sheet's lead_status cell.
+    let status = current.status;
+    if (b.status !== undefined) {
+      const statusColIdx = r.idx[STATUS_COL];
+      if (statusColIdx == null) throw new DataError(500, `Coluna "${STATUS_COL}" não encontrada no Sheet.`);
+      const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: r.spreadsheetId,
+        range: `${r.title}!${colLetter(statusColIdx)}${sheetRow}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [[b.status]] },
+      });
+      status = mapStatus(b.status);
+    }
+
+    return { ...current, status, manual_notes: manualNotes };
   }
 
   throw new DataError(404, "Lead não encontrado.");
