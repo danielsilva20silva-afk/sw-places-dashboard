@@ -214,6 +214,7 @@ function rowToLead(row, idx, header) {
     source_content: "", // no column
     manual_notes: "", // filled from the meta_lead_notes side table in getLeads
     manual_notes_editable: true, // notes live in our Supabase side table now
+    source_url: "", // no reel-link column for brandon (uniform shape only)
   };
 }
 

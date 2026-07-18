@@ -7,12 +7,15 @@ import { getSheetsContext } from "./googleAuth.js";
 // live path stays frozen), so some helpers are intentionally duplicated there.
 
 // ── Tabs / ranges ──
-// Leads columns A–N: id | name | email | phone | budget | intention | source |
-//   date | status | notes | created_at | username | source_content | manual_notes
+// Leads columns A–O: id | name | email | phone | budget | intention | source |
+//   date | status | notes | created_at | username | source_content |
+//   manual_notes | source_url
 // notes (J) = Ana's auto conversation summary (written by ai-reply.js, frozen).
 // manual_notes (N) = the consultant's own notes; only the dashboard writes it.
+// source_url (O) = link to the originating reel; written by api/log-flow-message.js
+//   (and preservable here). ai-reply.js writes only A:M, so N/O survive its writes.
 const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
-const LEADS_RANGE = `${LEADS_TAB}!A2:N`;
+const LEADS_RANGE = `${LEADS_TAB}!A2:O`;
 const LEADS_ID_RANGE = `${LEADS_TAB}!A2:A`;
 // Conversations columns A–D: contact_id | role | message | timestamp
 const CONV_TAB = process.env.GOOGLE_CONVERSATIONS_TAB || "Conversations";
@@ -89,6 +92,7 @@ function rowToLead(r) {
     source_content: r[12] ?? "",
     manual_notes: r[13] ?? "",
     manual_notes_editable: true, // this source has a manual_notes column
+    source_url: r[14] ?? "", // link to the originating reel (col O)
   };
 }
 
@@ -107,10 +111,10 @@ export async function addLead(ctx, b) {
   const createdAt = b.created_at || lisbonISO();
   const row = [
     id, b.name || "", b.email || "", b.phone || "", b.budget || "",
-    b.intention || "", b.source || "", date, b.status || "Novo", b.notes || "", createdAt, b.username || "", b.source_content || "", b.manual_notes || "",
+    b.intention || "", b.source || "", date, b.status || "Novo", b.notes || "", createdAt, b.username || "", b.source_content || "", b.manual_notes || "", b.source_url || "",
   ];
   await sheets.spreadsheets.values.append({
-    spreadsheetId, range: `${LEADS_TAB}!A:N`, valueInputOption: "RAW", requestBody: { values: [row] },
+    spreadsheetId, range: `${LEADS_TAB}!A:O`, valueInputOption: "RAW", requestBody: { values: [row] },
   });
   return rowToLead(row);
 }
@@ -135,6 +139,7 @@ export async function updateLead(ctx, id, b) {
     status: b.status ?? ex.status,
     notes: b.notes ?? ex.notes,
     manual_notes: b.manual_notes ?? ex.manual_notes,
+    source_url: b.source_url ?? ex.source_url,
   };
   const rowNumber = idx + 2; // +1 header, +1 for 1-based indexing
   // Write A:K only — username (L) and source_content (M) are intentionally left
@@ -152,6 +157,12 @@ export async function updateLead(ctx, id, b) {
   if (b.manual_notes !== undefined) {
     await sheets.spreadsheets.values.update({
       spreadsheetId, range: `${LEADS_TAB}!N${rowNumber}`, valueInputOption: "RAW", requestBody: { values: [[String(b.manual_notes ?? "")]] },
+    });
+  }
+  // source_url (O) — same targeted single-cell pattern, only when provided.
+  if (b.source_url !== undefined) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: `${LEADS_TAB}!O${rowNumber}`, valueInputOption: "RAW", requestBody: { values: [[String(b.source_url ?? "")]] },
     });
   }
   return merged;
