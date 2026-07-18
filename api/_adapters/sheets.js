@@ -17,6 +17,9 @@ import { getSheetsContext } from "./googleAuth.js";
 const LEADS_TAB = process.env.GOOGLE_SHEETS_TAB || "Leads";
 const LEADS_RANGE = `${LEADS_TAB}!A2:O`;
 const LEADS_ID_RANGE = `${LEADS_TAB}!A2:A`;
+// id | name | email | phone — enough to tell whether a Leads row is a real lead
+// (has a contact) for the Conversas "isLead" flag.
+const LEADS_CONTACT_RANGE = `${LEADS_TAB}!A2:D`;
 // Conversations columns A–D: contact_id | role | message | timestamp
 const CONV_TAB = process.env.GOOGLE_CONVERSATIONS_TAB || "Conversations";
 const CONV_RANGE = `${CONV_TAB}!A2:D`;
@@ -204,17 +207,46 @@ async function readConvRow(sheets, spreadsheetId, row) {
   }
 }
 
+// Contact validation — kept in sync with the frontend (src/utils.js): a
+// placeholder ("{{…}}"), empty value, or a phone with < 7 digits doesn't count.
+function isPlaceholder(v) {
+  if (typeof v !== "string") return true;
+  const s = v.trim();
+  return s === "" || s.startsWith("{{");
+}
+function hasValidEmail(v) {
+  if (isPlaceholder(v)) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+}
+function hasValidPhone(v) {
+  if (isPlaceholder(v)) return false;
+  return v.replace(/[^0-9]/g, "").length >= 7;
+}
+
 // All conversations grouped by contact_id, tagged with isLead + full thread.
+// isLead follows the client's definition (matches the frontend isRealLead): a
+// record is a LEAD only once its Leads row has a valid phone OR email. Rows that
+// exist without a contact (reel-flow / logged-DM entries created early by
+// log-flow-message to preserve the source) are flagged `pendingLead` instead —
+// they show as awaiting contact, not as leads, and keep the "→ Lead" button.
 export async function listConversations(ctx) {
   const { sheets, spreadsheetId } = ctx;
   const [conv, leadRows, mutedRows, subRows] = await Promise.all([
     getValues(sheets, spreadsheetId, CONV_RANGE),
-    getValues(sheets, spreadsheetId, LEADS_ID_RANGE),
+    getValues(sheets, spreadsheetId, LEADS_CONTACT_RANGE),
     getValues(sheets, spreadsheetId, MUTED_RANGE),
     getValues(sheets, spreadsheetId, SUBS_RANGE),
   ]);
 
-  const leadIds = new Set(leadRows.map((r) => String(r[0])).filter(Boolean));
+  // id | name | email(2) | phone(3): a row is a real lead only with a contact.
+  const leadIdsWithContact = new Set();
+  const leadRowIds = new Set();
+  for (const r of leadRows) {
+    const id = r && r[0];
+    if (!id) continue;
+    leadRowIds.add(String(id));
+    if (hasValidPhone(r[3]) || hasValidEmail(r[2])) leadIdsWithContact.add(String(id));
+  }
   const muted = new Set(mutedRows.map((r) => String(r[0])).filter(Boolean));
   const profiles = new Map();
   for (const r of subRows) {
@@ -249,7 +281,9 @@ export async function listConversations(ctx) {
       lastMessage: e.lastMessage,
       lastTimestamp: e.lastTimestamp,
       active: !muted.has(String(id)),
-      isLead: leadIds.has(String(id)),
+      isLead: leadIdsWithContact.has(String(id)),
+      // Row exists but has no contact yet → awaiting contact, not a lead.
+      pendingLead: leadRowIds.has(String(id)) && !leadIdsWithContact.has(String(id)),
       messages: e.messages,
     });
   }

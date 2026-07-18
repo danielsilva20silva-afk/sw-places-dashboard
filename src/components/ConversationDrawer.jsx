@@ -167,7 +167,9 @@ export default function ConversationDrawer({ conversation: c, onClose, onConvert
             <button onClick={onClose} style={{ background: "#F5F5F5", border: "none", borderRadius: 8, width: 28, height: 28, fontSize: 16, color: "#888", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
             {c.isLead
               ? <span style={{ fontSize: 11, fontWeight: 600, color: "#15803D", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 20, padding: "3px 10px" }}>✅ Lead</span>
-              : <span style={{ fontSize: 11, color: "#AAA", background: "#F5F5F5", borderRadius: 20, padding: "3px 10px" }}>Em curso</span>}
+              : c.pendingLead
+                ? <span title="Veio de um reel / DM registada — ainda sem telefone ou email" style={{ fontSize: 11, fontWeight: 600, color: "#92400E", background: "#FEF3C7", borderRadius: 20, padding: "3px 10px" }}>Aguarda contacto</span>
+                : <span style={{ fontSize: 11, color: "#AAA", background: "#F5F5F5", borderRadius: 20, padding: "3px 10px" }}>Em curso</span>}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Avatar name={name} size={44} />

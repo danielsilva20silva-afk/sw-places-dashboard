@@ -123,7 +123,9 @@ export default function ConversasTab({ onConvert }) {
                   <span style={{ fontSize: 14, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={`ID: ${c.contact_id}`}>{label(c)}</span>
                   {c.isLead
                     ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 600, color: "#15803D", background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "1px 8px" }}>✅ Lead</span>
-                    : <span style={{ flexShrink: 0, fontSize: 10, color: "#AAA", background: "#F5F5F5", borderRadius: 12, padding: "1px 8px" }}>Em curso</span>}
+                    : c.pendingLead
+                      ? <span title="Veio de um reel / DM registada — ainda sem telefone ou email" style={{ flexShrink: 0, fontSize: 10, fontWeight: 600, color: "#92400E", background: "#FEF3C7", borderRadius: 12, padding: "1px 8px" }}>Aguarda contacto</span>
+                      : <span style={{ flexShrink: 0, fontSize: 10, color: "#AAA", background: "#F5F5F5", borderRadius: 12, padding: "1px 8px" }}>Em curso</span>}
                 </div>
                 <div style={{ fontSize: 12, color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{c.lastMessage || "—"}</div>
               </div>
