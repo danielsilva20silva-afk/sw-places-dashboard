@@ -1,7 +1,7 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { GOLD, inContactStatuses, statusRoles } from "../constants";
 import { hasFeature } from "../config";
-import { buildChartData, leadTime } from "../utils";
+import { buildChartData, leadTime, isRealLead } from "../utils";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
@@ -9,7 +9,10 @@ import CustomTooltip from "../components/CustomTooltip";
 import CalendarView from "../components/CalendarView";
 import LeadMeta from "../components/LeadMeta";
 
-export default function DashboardTab({ leads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged }) {
+export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged }) {
+  // Hide contact-less "DM · ANA" entries (reel-flow / logged DMs) from the leads
+  // views + stats until they have a phone/email — they live in Conversas.
+  const leads = allLeads.filter(isRealLead);
   const chartData = buildChartData(leads);
 
   // Most recent first, by the normalised lead instant (same key the Leads tab

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { STATUSES, BUDGETS, INTENTIONS, GOLD } from "../constants";
-import { cleanField, isValidPhone, isValidEmail, leadTime } from "../utils";
+import { cleanField, isValidPhone, isValidEmail, leadTime, isRealLead } from "../utils";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
@@ -39,7 +39,11 @@ function matchContact(lead, mode) {
   return true;
 }
 
-export default function LeadsTab({ leads, onOpenLead, onStatusChange, onCreateLead }) {
+export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, onCreateLead }) {
+  // Contact-less "DM · ANA" entries (reel-flow / logged DMs) aren't leads yet —
+  // hide them here (they show in Conversas). They reappear once Ana captures a
+  // phone/email. Every other source stays visible, contact or not.
+  const leads = allLeads.filter(isRealLead);
   const [filterBudget, setFilterBudget] = useState("Todos");
   const [filterIntention, setFilterIntention] = useState("Todas");
   const [filterStatus, setFilterStatus] = useState("Todos");

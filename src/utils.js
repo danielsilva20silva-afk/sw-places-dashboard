@@ -60,6 +60,19 @@ export function cleanField(value) {
   return isPlaceholder(value) ? null : value.trim();
 }
 
+// A record counts as a real LEAD once it has any contact (phone OR email).
+// Reel-flow / manually-logged DM entries (source "DM · ANA") are written to the
+// Sheet early — on purpose, to preserve source_content/source_url until Ana
+// enriches the same row (upsert by contact_id) — but until a phone or email is
+// captured they're still just a conversation, so they're hidden from the Leads
+// views and stats (they live in the Conversas tab). Any OTHER source is always a
+// lead, even without contact (manual entries, ALGARVE, Meta Ads…). Once Ana
+// extracts a phone/email the row appears in Leads automatically — no extra code.
+export function isRealLead(lead) {
+  if (isValidPhone(lead.phone) || isValidEmail(lead.email)) return true;
+  return lead.source !== "DM · ANA";
+}
+
 // Relative time with minute/hour granularity (for conversation freshness)
 export function relTime(dateStr) {
   const then = new Date(dateStr).getTime();
