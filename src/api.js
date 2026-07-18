@@ -175,6 +175,27 @@ export async function recoverSave({ subscriberId, message, reply, name, username
   return data;
 }
 
+// POST /api/log-flow-message → record a manually-sent DM (or flow message) as an
+// assistant turn in the conversation history (and stamp the reel origin on the
+// lead), so live Ana has context when the person replies. Returns { status:"ok" }.
+export async function logFlowMessage({ subscriberId, message, name, username, sourceContent, sourceUrl }) {
+  const res = await fetch("/api/log-flow-message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      subscriber_id: subscriberId,
+      message,
+      name,
+      username,
+      source_content: sourceContent,
+      source_url: sourceUrl,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 // POST /api/convert-lead → promote a conversation into a lead (id = contact_id).
 // Returns { status: "created" | "exists", lead }.
 export async function convertToLead({ contactId, name, username }) {
