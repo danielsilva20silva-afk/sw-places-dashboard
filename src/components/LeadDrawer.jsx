@@ -59,6 +59,9 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   const sourceOk = /^https?:\/\//i.test(sourceContent);
   const reelUrl = (cleanField(lead.source_url) || "").trim();
   const reelOk = /^https?:\/\//i.test(reelUrl);
+  // source_content used as a human label (e.g. "REEL 300K MAR"). When it's itself
+  // a URL it's a legacy "shared publication" shown lower down, not a label here.
+  const sourceContentLabel = sourceOk ? "" : sourceContent;
   const isAnaSubscriber = hasFeature("ana") && lead.source === "DM · ANA" && /^\d+$/.test(String(lead.id));
 
   const persist = async (patch) => {
@@ -161,9 +164,16 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             <div style={{ minWidth: 0 }}>
               <h2 style={{ fontSize: 17, fontWeight: 700, color: "#111", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name || "Sem nome"}</h2>
               <p style={{ fontSize: 12, color: "#888", margin: "3px 0 0" }}>{lead.source}</p>
-              {reelOk && (
-                <a href={reelUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8A6D2F", fontWeight: 600, textDecoration: "none", margin: "5px 0 0" }}>🎬 Ver reel ↗</a>
-              )}
+              {/* Reel origin: if there's a link, the label (or "Ver reel") is the
+                  clickable text; otherwise show the label as discreet text. */}
+              {reelOk ? (
+                <a href={reelUrl} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8A6D2F", fontWeight: 600, textDecoration: "none", margin: "5px 0 0", minWidth: 0, maxWidth: "100%" }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🎬 {sourceContentLabel || "Ver reel"}</span>
+                  <span style={{ flexShrink: 0 }}>↗</span>
+                </a>
+              ) : sourceContentLabel ? (
+                <p title={sourceContentLabel} style={{ fontSize: 12, color: "#8A6D2F", fontWeight: 600, margin: "5px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>🎬 {sourceContentLabel}</p>
+              ) : null}
             </div>
           </div>
         </div>
