@@ -160,16 +160,56 @@ export function buildMeetingPrefill(lead) {
 }
 
 // Chart data — leads per day, last 14 days, computed from live leads
+const LISBON_TZ = "Europe/Lisbon";
+
+// Calendar date (YYYY-MM-DD) of an instant, in Lisbon local time. en-CA formats
+// as YYYY-MM-DD.
+function lisbonDateStr(ms) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: LISBON_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date(ms));
+}
+
+// The Lisbon-local day a lead belongs to. Prefer the full created_at timestamp,
+// so a lead created just after midnight in Lisbon lands on the correct local day
+// even if its source timezone still reads the previous date (e.g. Meta stamps at
+// -05:00). Fall back to the plain date string when there's no timestamp (it's
+// already a calendar date — don't reinterpret it and risk a midnight shift).
+function leadLisbonDay(l) {
+  const ca = l && l.created_at;
+  if (ca) {
+    const t = new Date(ca).getTime();
+    if (!isNaN(t)) return lisbonDateStr(t);
+  }
+  const dt = l && l.date ? String(l.date) : "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(dt)) return dt.slice(0, 10);
+  if (dt) {
+    const t = new Date(dt).getTime();
+    if (!isNaN(t)) return lisbonDateStr(t);
+  }
+  return null;
+}
+
+// Daily lead counts for the "Leads over time" chart, over the last 14 Lisbon
+// calendar days. Buckets are keyed by each lead's Lisbon-local day (see
+// leadLisbonDay), so leads near midnight land on the correct local day.
 export function buildChartData(leads) {
+  const byDay = new Map();
+  for (const l of leads) {
+    const key = leadLisbonDay(l);
+    if (key) byDay.set(key, (byDay.get(key) || 0) + 1);
+  }
+  // Axis: the last 14 Lisbon calendar days, oldest → today. Anchor on the UTC
+  // midnight of today's Lisbon date so stepping back a day at a time is DST-safe.
+  const [ty, tm, td] = lisbonDateStr(Date.now()).split("-").map(Number);
+  const anchor = Date.UTC(ty, tm - 1, td);
   const days = [];
   for (let i = 13; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split("T")[0];
-    const count = leads.filter(l => l.date === dateStr).length;
+    const d = new Date(anchor - i * 86400000);
+    const dateStr = d.toISOString().slice(0, 10);
     days.push({
-      day: d.toLocaleDateString("pt-PT", { day: "numeric", month: "short" }),
-      leads: count,
+      day: d.toLocaleDateString("pt-PT", { timeZone: "UTC", day: "numeric", month: "short" }),
+      leads: byDay.get(dateStr) || 0,
     });
   }
   return days;
