@@ -6,10 +6,13 @@ import { getContext as getSupabaseContext } from "./supabase.js";
 // never rename/reorder. Used only INSIDE the brandon composite adapter, alongside
 // the Supabase (landing-page) source — never selected on its own.
 //
-// MULTIPLE SHEETS: each Meta Instant Form writes to its own Google Sheet, so
-// GOOGLE_SHEETS_ID accepts a comma-separated list (id1,id2,…). A single id keeps
-// working unchanged. getLeads reads all sheets in parallel and merges (one sheet
-// failing doesn't sink the others); writes locate the lead's origin sheet by id.
+// MULTIPLE SHEETS + MULTIPLE TABS: Meta writes each Instant Form's leads to its
+// own TAB inside a master spreadsheet (e.g. "Folha1", "Quadradinhos Nº8", …), and
+// adds new tabs over time — so we enumerate and read EVERY tab, never a hardcoded
+// name. GOOGLE_SHEETS_ID still accepts a comma-separated list of spreadsheets
+// (id1,id2,…); a single id keeps working. getLeads reads every tab of every
+// spreadsheet in parallel and merges (a failing spreadsheet doesn't sink the
+// others), de-dupes by id; writes locate the lead's origin tab by id.
 //
 // Reuses the shared service-account auth (googleAuth.js) and the same env as
 // sheets.js: GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_SHEETS_ID.
@@ -113,6 +116,12 @@ export const ownsId = (id) => String(id).startsWith("l:");
 
 const s = (v) => (v == null ? "" : String(v));
 
+// Quote a tab title for A1 notation. Meta tab names contain spaces/accents
+// (e.g. "Quadradinhos Nº8"), which MUST be single-quoted; embedded quotes double.
+function a1Tab(title) {
+  return `'${s(title).replace(/'/g, "''")}'`;
+}
+
 // 0-based column index → A1 letter (0→A, 16→Q, 26→AA).
 function colLetter(n) {
   let out = "";
@@ -125,31 +134,39 @@ function colLetter(n) {
   return out;
 }
 
-// Resolve the first tab's title (Meta names it e.g. "Folha1"/"Sheet1").
-async function firstSheetTitle(sheets, spreadsheetId) {
+// Enumerate ALL tab titles in a spreadsheet, in tab order. Meta creates one tab
+// per Instant Form and adds more over time, so nothing is hardcoded.
+async function allTabTitles(sheets, spreadsheetId) {
   const meta = await sheets.spreadsheets.get({
     spreadsheetId,
     fields: "sheets.properties(title,index)",
   });
-  const list = (meta.data.sheets || [])
+  return (meta.data.sheets || [])
     .slice()
-    .sort((a, b) => (a.properties?.index ?? 0) - (b.properties?.index ?? 0));
-  return list.length ? list[0].properties.title : "Sheet1";
+    .sort((a, b) => (a.properties?.index ?? 0) - (b.properties?.index ?? 0))
+    .map((sh) => sh.properties?.title)
+    .filter(Boolean);
 }
 
-// Read one sheet's first tab: returns { title, header, idx, rows } where idx maps
-// a column name → its 0-based index and rows are the data rows (header excluded).
-async function readSheet(sheets, spreadsheetId) {
-  const title = await firstSheetTitle(sheets, spreadsheetId);
-  const resp = await sheets.spreadsheets.values.get({
+// Read EVERY tab of a spreadsheet in one batched call. Returns one entry per tab:
+// { spreadsheetId, title, header, idx, rows } where idx maps a column name → its
+// 0-based index. Each tab carries its OWN header/idx, so tabs whose forms have
+// slightly different question columns are handled per-tab (missing → blank).
+async function readAllTabs(sheets, spreadsheetId) {
+  const titles = await allTabTitles(sheets, spreadsheetId);
+  if (!titles.length) return [];
+  const resp = await sheets.spreadsheets.values.batchGet({
     spreadsheetId,
-    range: `${title}!${READ_RANGE}`,
+    ranges: titles.map((t) => `${a1Tab(t)}!${READ_RANGE}`),
   });
-  const values = resp.data.values || [];
-  const header = (values[0] || []).map((h) => s(h).trim());
-  const idx = {};
-  header.forEach((h, i) => { idx[h] = i; });
-  return { title, header, idx, rows: values.slice(1) };
+  const valueRanges = resp.data.valueRanges || [];
+  return titles.map((title, i) => {
+    const values = valueRanges[i]?.values || [];
+    const header = (values[0] || []).map((h) => s(h).trim());
+    const idx = {};
+    header.forEach((h, k) => { idx[h] = k; });
+    return { spreadsheetId, title, header, idx, rows: values.slice(1) };
+  });
 }
 
 function cell(row, idx, name) {
@@ -218,35 +235,53 @@ function rowToLead(row, idx, header) {
   };
 }
 
-// Read one sheet → its non-test leads. Throws on read failure (caller decides).
-async function leadsFromSheet(sheets, spreadsheetId) {
-  const { header, idx, rows } = await readSheet(sheets, spreadsheetId);
-  if (idx.id == null) return []; // no header / empty sheet
+// De-dupe leads by the Meta id column (ids are globally unique; a lead should
+// live in exactly one tab, but this guards against accidental duplicates).
+function dedupeById(leads) {
+  const seen = new Set();
   const out = [];
-  for (const row of rows) {
-    if (!row || !s(row[idx.id])) continue;
-    if (isTestRow(row, idx)) continue;
-    out.push(rowToLead(row, idx, header));
+  for (const l of leads) {
+    const key = s(l.id);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(l);
+  }
+  return out;
+}
+
+// All non-test leads across EVERY tab of one spreadsheet. Throws on read failure
+// (the caller decides how to degrade).
+async function leadsFromSpreadsheet(sheets, spreadsheetId) {
+  const tabs = await readAllTabs(sheets, spreadsheetId);
+  const out = [];
+  for (const tab of tabs) {
+    if (tab.idx.id == null) continue; // non-lead tab (no id header) — skip
+    for (const row of tab.rows) {
+      if (!row || !s(row[tab.idx.id])) continue;
+      if (isTestRow(row, tab.idx)) continue;
+      out.push(rowToLead(row, tab.idx, tab.header));
+    }
   }
   return out;
 }
 
 // ────────────────────────────── Leads ──────────────────────────────
-// Read every configured sheet in parallel and merge. A sheet that fails logs and
-// yields [] so the others still render (same resilience as the composite).
+// Read every tab of every configured spreadsheet in parallel and merge. A
+// spreadsheet that fails logs and yields [] so the others still render (same
+// resilience as the composite). Results are de-duped by lead id.
 export async function getLeads(ctx) {
   const { sheets, spreadsheetIds } = ctx;
-  const perSheet = await Promise.all(
+  const perSpreadsheet = await Promise.all(
     spreadsheetIds.map(async (spreadsheetId) => {
       try {
-        return await leadsFromSheet(sheets, spreadsheetId);
+        return await leadsFromSpreadsheet(sheets, spreadsheetId);
       } catch (err) {
-        console.error(`metaLeadsSheet getLeads: sheet ${spreadsheetId} failed:`, err?.message || err);
+        console.error(`metaLeadsSheet getLeads: spreadsheet ${spreadsheetId} failed:`, err?.message || err);
         return [];
       }
     })
   );
-  const leads = perSheet.flat();
+  const leads = dedupeById(perSpreadsheet.flat());
   // Join the human notes from the side table (best-effort — no notes on failure).
   const notes = await fetchNotes(ctx, leads.map((l) => l.id));
   for (const l of leads) l.manual_notes = notes[l.id] || "";
@@ -261,23 +296,25 @@ export async function getLeads(ctx) {
 // locate its origin sheet by id first. Other fields are ignored silently.
 export async function updateLead(ctx, id, b) {
   const { sheets, spreadsheetIds } = ctx;
-  const reads = await Promise.all(
+  // Read every tab of every configured spreadsheet; a failed spreadsheet
+  // contributes nothing (the lead may still be found in another).
+  const tabGroups = await Promise.all(
     spreadsheetIds.map(async (spreadsheetId) => {
       try {
-        return { spreadsheetId, ...(await readSheet(sheets, spreadsheetId)) };
+        return await readAllTabs(sheets, spreadsheetId);
       } catch (err) {
         console.error(`metaLeadsSheet updateLead: read ${spreadsheetId} failed:`, err?.message || err);
-        return null;
+        return [];
       }
     })
   );
 
-  for (const r of reads) {
-    if (!r) continue;
-    const dataIdx = r.rows.findIndex((row) => row && s(row[r.idx.id]) === s(id));
+  for (const tab of tabGroups.flat()) {
+    if (tab.idx.id == null) continue;
+    const dataIdx = tab.rows.findIndex((row) => row && s(row[tab.idx.id]) === s(id));
     if (dataIdx === -1) continue;
 
-    const current = rowToLead(r.rows[dataIdx], r.idx, r.header);
+    const current = rowToLead(tab.rows[dataIdx], tab.idx, tab.header);
 
     // manual_notes → side table (independent of the Sheet, surfaced on failure).
     let manualNotes = current.manual_notes;
@@ -285,15 +322,15 @@ export async function updateLead(ctx, id, b) {
       manualNotes = await upsertNote(ctx, id, b.manual_notes);
     }
 
-    // status → the Sheet's lead_status cell.
+    // status → the lead_status cell of the exact TAB where the lead lives.
     let status = current.status;
     if (b.status !== undefined) {
-      const statusColIdx = r.idx[STATUS_COL];
+      const statusColIdx = tab.idx[STATUS_COL];
       if (statusColIdx == null) throw new DataError(500, `Coluna "${STATUS_COL}" não encontrada no Sheet.`);
       const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
       await sheets.spreadsheets.values.update({
-        spreadsheetId: r.spreadsheetId,
-        range: `${r.title}!${colLetter(statusColIdx)}${sheetRow}`,
+        spreadsheetId: tab.spreadsheetId,
+        range: `${a1Tab(tab.title)}!${colLetter(statusColIdx)}${sheetRow}`,
         valueInputOption: "RAW",
         requestBody: { values: [[b.status]] },
       });
