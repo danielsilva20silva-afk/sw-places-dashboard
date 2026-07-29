@@ -6,6 +6,7 @@ import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, 
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
+import NotesHistory from "./NotesHistory";
 
 // Per-client WhatsApp message for the "Sem resposta" button (empty when the
 // client hasn't configured one → the button is hidden).
@@ -125,6 +126,15 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
       return;
     }
     persist({ status: s }); // every other status saves immediately
+  };
+
+  // NotesHistory commits the whole re-serialized notes value on each add/edit/
+  // delete. Persist immediately (these are discrete actions, not typing), and
+  // keep the refs in sync so the close/unmount flush sees no phantom diff.
+  const commitNotes = (next) => {
+    setManualNotes(next);
+    fieldsRef.current.manual_notes = next;
+    persist({ manual_notes: next });
   };
 
   const handleClose = () => { clearTimeout(timerRef.current); flushText(); onClose(); };
@@ -252,10 +262,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               <div style={{ background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#666", fontStyle: "italic", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{summary}</div>
             </div>
           )}
-          <div>
-            <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>Notas</p>
-            <textarea {...bind("manual_notes", manualNotes, setManualNotes)} placeholder="As tuas notas sobre este lead..." rows={4} style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#111", resize: "none", outline: "none", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit" }} />
-          </div>
+          <NotesHistory value={manualNotes} onChange={commitNotes} busy={save === "saving"} />
           {sourceOk && (
             <div>
               <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 6px" }}>Publicação de origem</p>
