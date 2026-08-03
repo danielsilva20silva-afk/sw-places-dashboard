@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { GOLD, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
+import { t } from "../labels";
 import { relDate, buildMeetingPrefill } from "../utils";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
@@ -238,16 +239,16 @@ export default function Dashboard({ onLogout }) {
             {notifOpen && (
               <div style={notifPanelStyle}>
                 <div style={{ padding: "16px 18px 12px", borderBottom: "1px solid #F0F0F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Notificações</p>
-                  <span style={{ fontSize: 11, color: "#888" }}>{newLeads.length + upcomingMeetings.length} novas</span>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>{t("notif_title")}</p>
+                  <span style={{ fontSize: 11, color: "#888" }}>{newLeads.length + upcomingMeetings.length} {t("notif_new_suffix")}</span>
                 </div>
 
                 {/* New leads */}
                 {newLeads.length > 0 && (
                   <div>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px 6px" }}>
-                      <p style={{ fontSize: 10, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, margin: 0 }}>Novos leads</p>
-                      <button onClick={markAllSeen} style={{ fontSize: 11, color: "#888", cursor: "pointer", background: "none", border: "none", padding: 0 }}>Marcar todas como vistas</button>
+                      <p style={{ fontSize: 10, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, margin: 0 }}>{t("notif_new_leads")}</p>
+                      <button onClick={markAllSeen} style={{ fontSize: 11, color: "#888", cursor: "pointer", background: "none", border: "none", padding: 0 }}>{t("notif_mark_all")}</button>
                     </div>
                     <div style={{ maxHeight: 280, overflowY: "auto" }}>
                       {newLeads.map(lead => {
@@ -277,11 +278,11 @@ export default function Dashboard({ onLogout }) {
                 {/* Upcoming meetings */}
                 {upcomingMeetings.length > 0 && (
                   <div style={{ borderTop: newLeads.length > 0 ? "1px solid #F5F5F5" : "none" }}>
-                    <p style={{ fontSize: 10, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, padding: "12px 18px 6px", margin: 0 }}>Próximas reuniões</p>
+                    <p style={{ fontSize: 10, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 600, padding: "12px 18px 6px", margin: 0 }}>{t("notif_upcoming")}</p>
                     {upcomingMeetings.map(m => {
                       const sd = m.allDay ? new Date(m.start + "T00:00") : new Date(m.start);
-                      const when = m.allDay ? "Dia inteiro" : sd.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
-                      const mon = sd.toLocaleDateString("pt-PT", { month: "short" });
+                      const when = m.allDay ? t("notif_allday") : sd.toLocaleTimeString(t("date_locale"), { hour: "2-digit", minute: "2-digit" });
+                      const mon = sd.toLocaleDateString(t("date_locale"), { month: "short" });
                       return (
                         <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px" }}>
                           <div style={{ width: 32, height: 32, background: GOLD + "20", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -302,7 +303,7 @@ export default function Dashboard({ onLogout }) {
                 {notContacted.length > 0 && (
                   <div style={{ borderTop: "1px solid #F5F5F5", padding: "12px 18px", background: "#FFFBEB" }}>
                     <p style={{ fontSize: 12, color: "#92400E", margin: 0, fontWeight: 500 }}>
-                      ⚠️ {notContacted.length} lead{notContacted.length > 1 ? "s" : ""} sem contacto há mais de 2 dias
+                      ⚠️ {notContacted.length} lead{notContacted.length > 1 ? "s" : ""} {t("notif_stale_suffix")}
                     </p>
                   </div>
                 )}
@@ -311,17 +312,17 @@ export default function Dashboard({ onLogout }) {
                   <button onClick={() => { setActiveTab("leads"); setNotifOpen(false); }} style={{
                     width: "100%", background: "#111", color: "white", border: "none",
                     borderRadius: 10, padding: "10px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                  }}>Ver todos os leads</button>
+                  }}>{t("notif_view_all")}</button>
                 </div>
               </div>
             )}
             </div>
             {!isMobile && (
-              <button onClick={onLogout} title="Sair da conta" style={{
+              <button onClick={onLogout} title={t("logout_title")} style={{
                 background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.7)",
                 border: "none", borderRadius: 8, padding: "5px 12px",
                 fontSize: 13, fontWeight: 500, cursor: "pointer",
-              }}>Sair</button>
+              }}>{t("logout")}</button>
             )}
             {isMobile && (
               <div ref={menuRef} style={{ position: "relative" }}>
@@ -351,7 +352,7 @@ export default function Dashboard({ onLogout }) {
                       display: "block", width: "100%", textAlign: "left", padding: "12px 16px",
                       border: "none", borderTop: "1px solid #F0F0F0", background: "white",
                       color: "#DC2626", fontSize: 14, fontWeight: 500, cursor: "pointer",
-                    }}>Sair</button>
+                    }}>{t("logout")}</button>
                   </div>
                 )}
               </div>
@@ -363,7 +364,7 @@ export default function Dashboard({ onLogout }) {
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px calc(16px + env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))" }}>
 
         {loading && (
-          <div style={{ padding: "80px 0", textAlign: "center", color: "#999", fontSize: 14 }}>A carregar leads…</div>
+          <div style={{ padding: "80px 0", textAlign: "center", color: "#999", fontSize: 14 }}>{t("loading_leads")}</div>
         )}
 
         {!loading && (

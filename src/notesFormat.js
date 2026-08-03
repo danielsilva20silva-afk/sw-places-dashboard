@@ -14,15 +14,12 @@
 //
 // Timestamps are Europe/Lisbon wall-clock, generated client-side at save time.
 
+import { t } from "./labels";
+
 const LISBON_TZ = "Europe/Lisbon";
 
-// Portuguese 3-letter month labels (the UI is pt-PT; capitalised for display).
-const MONTHS_PT = [
-  "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
-  "Jul", "Ago", "Set", "Out", "Nov", "Dez",
-];
-
 // Start-of-line marker: [DD/MM/YYYY HH:mm] with an optional " · editada" flag.
+// This STORAGE token is language-independent — never translated (see labels.js).
 const MARKER_RE = /^\[(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2})( · editada)?\]\s?/;
 
 // "DD/MM/YYYY HH:mm" in Lisbon local time for a given instant (default: now).
@@ -45,7 +42,7 @@ export function formatStampDisplay(stamp) {
   const m = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})$/.exec(stamp || "");
   if (!m) return stamp || "";
   const [, dd, mm, yyyy, hh, min] = m;
-  const mon = MONTHS_PT[parseInt(mm, 10) - 1] || mm;
+  const mon = t("months_short")[parseInt(mm, 10) - 1] || mm; // display only
   return `${parseInt(dd, 10)} ${mon} ${yyyy}, ${hh}:${min}`;
 }
 

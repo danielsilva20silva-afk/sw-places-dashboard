@@ -1,4 +1,5 @@
 import { isValidEmail, isValidPhone, emailHref, emailOpensNewTab } from "../utils";
+import { t } from "../labels";
 
 const btnBase = {
   width: 32, height: 32, borderRadius: 8,
@@ -18,16 +19,16 @@ export default function QuickActions({ lead }) {
   return (
     <div style={{ display: "flex", gap: 6 }}>
       {phoneOk && (
-        <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} title="Ligar"
+        <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()} title={t("act_call")}
           style={{ ...btnBase, background: "#F0FDF4", border: "1px solid #BBF7D0" }}>📞</a>
       )}
       {phoneOk && (
         <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer"
-          onClick={e => e.stopPropagation()} title="WhatsApp"
+          onClick={e => e.stopPropagation()} title={t("act_whatsapp")}
           style={{ ...btnBase, background: "#F0FDF4", border: "1px solid #BBF7D0" }}>💬</a>
       )}
       {emailOk && (
-        <a href={emailHref(lead.email)} {...(emailOpensNewTab ? { target: "_blank", rel: "noopener noreferrer" } : {})} onClick={e => e.stopPropagation()} title="Email"
+        <a href={emailHref(lead.email)} {...(emailOpensNewTab ? { target: "_blank", rel: "noopener noreferrer" } : {})} onClick={e => e.stopPropagation()} title={t("act_email")}
           style={{ ...btnBase, background: "#EFF6FF", border: "1px solid #BFDBFE" }}>✉️</a>
       )}
     </div>

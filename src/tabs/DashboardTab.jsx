@@ -1,6 +1,7 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { GOLD, inContactStatuses, statusRoles } from "../constants";
 import { hasFeature } from "../config";
+import { t } from "../labels";
 import { buildChartData, leadTime, isRealLead } from "../utils";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
@@ -23,10 +24,10 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
     .slice(0, 10);
 
   const stats = [
-    { label: "Total Leads", value: leads.length, color: "#111", sub: `+${leads.filter(l => { const d = new Date(l.date); const now = new Date(); return (now - d) < 7 * 86400000; }).length} esta semana` },
-    { label: "Novos", value: leads.filter(l => l.status === statusRoles.new).length, color: "#2563EB", sub: "por contactar" },
-    { label: "Em contacto", value: leads.filter(l => inContactStatuses.includes(l.status)).length, color: "#D97706", sub: "em progresso" },
-    { label: "Fechados", value: leads.filter(l => l.status === statusRoles.closed).length, color: "#16A34A", sub: "este mês" },
+    { label: t("stat_total"), value: leads.length, color: "#111", sub: `+${leads.filter(l => { const d = new Date(l.date); const now = new Date(); return (now - d) < 7 * 86400000; }).length} ${t("week_suffix")}` },
+    { label: t("stat_new"), value: leads.filter(l => l.status === statusRoles.new).length, color: "#2563EB", sub: t("stat_new_sub") },
+    { label: t("stat_incontact"), value: leads.filter(l => inContactStatuses.includes(l.status)).length, color: "#D97706", sub: t("stat_incontact_sub") },
+    { label: t("stat_closed"), value: leads.filter(l => l.status === statusRoles.closed).length, color: "#16A34A", sub: t("stat_closed_sub") },
   ];
 
   return (
@@ -45,8 +46,8 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
       {/* Leads chart */}
       <div style={{ background: "white", borderRadius: 16, padding: "22px 24px", border: "1px solid #EBEBEB", display: "flex", flexDirection: "column", height: 280, marginBottom: 20 }}>
         <div style={{ marginBottom: 20 }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Leads ao longo do tempo</p>
-          <p style={{ fontSize: 12, color: "#888", margin: "3px 0 0" }}>Últimos 14 dias</p>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>{t("chart_title")}</p>
+          <p style={{ fontSize: 12, color: "#888", margin: "3px 0 0" }}>{t("chart_sub")}</p>
         </div>
         <div style={{ flex: 1, minHeight: 0 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -73,8 +74,8 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
           The card look is kept via border + borderRadius; edge rows round their own corners. */}
       <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB" }}>
         <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid #F0F0F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>Leads recentes</p>
-          <button onClick={onViewAllLeads} style={{ fontSize: 12, color: GOLD, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Ver todos →</button>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>{t("recent_title")}</p>
+          <button onClick={onViewAllLeads} style={{ fontSize: 12, color: GOLD, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>{t("view_all")}</button>
         </div>
         {recentLeads.map((lead, i, arr) => (
           <div key={lead.id} onClick={() => onOpenLead(lead)} style={{

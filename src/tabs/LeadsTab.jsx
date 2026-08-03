@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { STATUSES, BUDGETS, INTENTIONS, GOLD, CLASSIFICATION_CONFIG } from "../constants";
+import { STATUSES, BUDGETS, INTENTIONS, GOLD } from "../constants";
 import { cleanField, isValidPhone, isValidEmail, leadTime, isRealLead, normalizeText } from "../utils";
+import { t } from "../labels";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
@@ -13,9 +14,21 @@ const NO_CLASSIFICATION = "Sem classificação";
 
 const selectStyle = { border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 32px 9px 12px", fontSize: 13, color: "#111", background: "white", cursor: "pointer", outline: "none" };
 
-const PERIODS = [["all", "Tudo"], ["today", "Hoje"], ["7d", "Últimos 7 dias"], ["30d", "Últimos 30 dias"]];
-const CONTACTS = [["all", "Todos"], ["phone", "Com telemóvel"], ["email", "Com email"], ["none", "Sem contacto válido"]];
-const SORTS = [["recent", "Mais recentes primeiro"], ["old", "Mais antigos primeiro"]];
+// [value, labelKey] — value is the stable internal key, label is translated at
+// render time via t() so it follows the client's UI language.
+const PERIODS = [["all", "period_all"], ["today", "period_today"], ["7d", "period_7d"], ["30d", "period_30d"]];
+const CONTACTS = [["all", "contact_all"], ["phone", "contact_phone"], ["email", "contact_email"], ["none", "contact_none"]];
+const SORTS = [["recent", "sort_recent"], ["old", "sort_old"]];
+
+// Display label for a string-value filter option: translate the "all"/unclassified
+// sentinels (their VALUE stays PT so the predicate + defaults are unchanged);
+// real data values (statuses, budgets, sources) pass through as-is.
+function optLabel(o) {
+  if (o === "Todos") return t("all_m");
+  if (o === "Todas") return t("all_f");
+  if (o === NO_CLASSIFICATION) return t("unclassified");
+  return o;
+}
 
 function FilterLabel({ children }) {
   return (
@@ -79,7 +92,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
       const hay = normalizeText([
         l.name, l.email, l.phone, l.budget, l.intention, cleanField(l.source),
         l.status, cleanField(l.notes), l.manual_notes,
-        cls, CLASSIFICATION_CONFIG[cls]?.label,
+        cls, cls && t("cls_" + cls),
       ].filter(Boolean).join(" "));
       if (!hay.includes(q)) return false;
     }
@@ -94,34 +107,35 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
     <>
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
         <div style={{ flex: 1, minWidth: 160 }}>
-          <FilterLabel>Pesquisar</FilterLabel>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome, email, estado, notas…" style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 14px", fontSize: 13, outline: "none", color: "#111", background: "white", fontFamily: "inherit", boxSizing: "border-box" }} />
+          <FilterLabel>{t("search_label")}</FilterLabel>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t("search_ph")} style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 14px", fontSize: 13, outline: "none", color: "#111", background: "white", fontFamily: "inherit", boxSizing: "border-box" }} />
         </div>
-        {/* String-value filters (value === label) */}
+        {/* String-value filters: option VALUE stays the data/sentinel; the DISPLAY
+            is translated via optLabel (sentinels) — data values pass through. */}
         {[
-          { label: "Estado", value: filterStatus, set: setFilterStatus, opts: ["Todos", ...STATUSES] },
-          { label: "Classificação", value: filterClassification, set: setFilterClassification, opts: ["Todas", "A", "B", "C", NO_CLASSIFICATION] },
-          { label: "Orçamento", value: filterBudget, set: setFilterBudget, opts: BUDGETS },
-          { label: "Intenção", value: filterIntention, set: setFilterIntention, opts: INTENTIONS },
-          { label: "Origem", value: filterSource, set: setFilterSource, opts: ["Todas", ...sources] },
+          { label: t("f_status"), value: filterStatus, set: setFilterStatus, opts: ["Todos", ...STATUSES] },
+          { label: t("f_classification"), value: filterClassification, set: setFilterClassification, opts: ["Todas", "A", "B", "C", NO_CLASSIFICATION] },
+          { label: t("f_budget"), value: filterBudget, set: setFilterBudget, opts: BUDGETS },
+          { label: t("f_intention"), value: filterIntention, set: setFilterIntention, opts: INTENTIONS },
+          { label: t("f_source"), value: filterSource, set: setFilterSource, opts: ["Todas", ...sources] },
         ].map((f, i) => (
           <div key={i}>
             <FilterLabel>{f.label}</FilterLabel>
             <select value={f.value} onChange={e => f.set(e.target.value)} style={selectStyle}>
-              {f.opts.map(o => <option key={o}>{o}</option>)}
+              {f.opts.map(o => <option key={o} value={o}>{optLabel(o)}</option>)}
             </select>
           </div>
         ))}
-        {/* Key/label filters */}
+        {/* Key/label filters (label translated from its key) */}
         {[
-          { label: "Período", value: filterPeriod, set: setFilterPeriod, opts: PERIODS },
-          { label: "Contacto", value: filterContact, set: setFilterContact, opts: CONTACTS },
-          { label: "Ordenar", value: sortOrder, set: setSortOrder, opts: SORTS },
+          { label: t("f_period"), value: filterPeriod, set: setFilterPeriod, opts: PERIODS },
+          { label: t("f_contact"), value: filterContact, set: setFilterContact, opts: CONTACTS },
+          { label: t("f_sort"), value: sortOrder, set: setSortOrder, opts: SORTS },
         ].map((f, i) => (
           <div key={i}>
             <FilterLabel>{f.label}</FilterLabel>
             <select value={f.value} onChange={e => f.set(e.target.value)} style={selectStyle}>
-              {f.opts.map(([v, lbl]) => <option key={v} value={v}>{lbl}</option>)}
+              {f.opts.map(([v, lbl]) => <option key={v} value={v}>{t(lbl)}</option>)}
             </select>
           </div>
         ))}
@@ -129,7 +143,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
           <span style={{ fontSize: 12, color: "#AAA" }}>{sorted.length} lead{sorted.length !== 1 ? "s" : ""}</span>
         </div>
         <div style={{ alignSelf: "flex-end" }}>
-          <button onClick={() => setShowForm(true)} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>+ Novo lead</button>
+          <button onClick={() => setShowForm(true)} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{t("new_lead")}</button>
         </div>
       </div>
 
@@ -140,7 +154,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
       <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB" }}>
         {sorted.length === 0 ? (
           <div style={{ padding: "60px", textAlign: "center", color: "#CCC", fontSize: 14 }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>Nenhum lead encontrado.
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>{t("empty_leads")}
           </div>
         ) : sorted.map((lead, i) => (
           <div key={lead.id} onClick={() => onOpenLead(lead)} style={{
