@@ -6,6 +6,15 @@ import config from "./config";
 export const GOLD = config.branding.primaryColor;
 export const { STATUS_CONFIG, STATUSES, BUDGETS, INTENTIONS, calendarTriggerStatus, inContactStatuses, statusRoles } = config.constants;
 
+// Lead classification (hot/warm/cold) — a SHARED feature, identical for every
+// client (PT labels to match the current UI). Unset/blank = no classification.
+export const CLASSIFICATIONS = ["A", "B", "C"];
+export const CLASSIFICATION_CONFIG = {
+  A: { label: "A — Quente", emoji: "🔥", bg: "#FEF2F2", text: "#B91C1C", dot: "#EF4444", border: "#FECACA" },
+  B: { label: "B — Morno", emoji: "🌤️", bg: "#FFFBEB", text: "#B45309", dot: "#F59E0B", border: "#FDE68A" },
+  C: { label: "C — Frio",  emoji: "❄️", bg: "#F1F5F9", text: "#475569", dot: "#64748B", border: "#E2E8F0" },
+};
+
 // Initial mock meetings (in-memory)
 export const MEETINGS = [
   { id: 3, name: "Michael Brown", date: "2026-06-20", time: "14:00", type: "Videocall" },

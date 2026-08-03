@@ -8,6 +8,7 @@ import QuickActions from "../components/QuickActions";
 import CustomTooltip from "../components/CustomTooltip";
 import CalendarView from "../components/CalendarView";
 import LeadMeta from "../components/LeadMeta";
+import ClassificationBadge from "../components/ClassificationBadge";
 
 export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged }) {
   // Hide contact-less "DM · ANA" entries (reel-flow / logged DMs) from the leads
@@ -86,7 +87,10 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
           >
             <Avatar name={lead.name} size={34} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#111", display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</span>
+                <ClassificationBadge value={lead.classification} />
+              </div>
               <LeadMeta lead={lead} />
             </div>
             <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>

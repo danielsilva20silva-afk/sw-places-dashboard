@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { STATUSES, BUDGETS, INTENTIONS, GOLD } from "../constants";
-import { cleanField, isValidPhone, isValidEmail, leadTime, isRealLead } from "../utils";
+import { STATUSES, BUDGETS, INTENTIONS, GOLD, CLASSIFICATION_CONFIG } from "../constants";
+import { cleanField, isValidPhone, isValidEmail, leadTime, isRealLead, normalizeText } from "../utils";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
 import LeadMeta from "../components/LeadMeta";
 import LeadFormModal from "../components/LeadFormModal";
+import ClassificationBadge from "../components/ClassificationBadge";
+
+// "Sem classificação" is a sentinel for the classification filter (unset leads).
+const NO_CLASSIFICATION = "Sem classificação";
 
 const selectStyle = { border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 32px 9px 12px", fontSize: 13, color: "#111", background: "white", cursor: "pointer", outline: "none" };
 
@@ -47,6 +51,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
   const [filterBudget, setFilterBudget] = useState("Todos");
   const [filterIntention, setFilterIntention] = useState("Todas");
   const [filterStatus, setFilterStatus] = useState("Todos");
+  const [filterClassification, setFilterClassification] = useState("Todas");
   const [filterPeriod, setFilterPeriod] = useState("all");
   const [filterContact, setFilterContact] = useState("all");
   const [filterSource, setFilterSource] = useState("Todas");
@@ -57,14 +62,27 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
   // Distinct sources present in the data (e.g. ALGARVE, DM · ANA, Manual…)
   const sources = Array.from(new Set(leads.map(l => cleanField(l.source)).filter(Boolean))).sort();
 
+  const q = normalizeText(search);
   const filtered = leads.filter(l => {
     if (filterBudget !== "Todos" && l.budget !== filterBudget) return false;
     if (filterIntention !== "Todas" && l.intention !== filterIntention) return false;
     if (filterStatus !== "Todos" && l.status !== filterStatus) return false;
+    if (filterClassification === NO_CLASSIFICATION) { if (l.classification) return false; }
+    else if (filterClassification !== "Todas" && l.classification !== filterClassification) return false;
     if (filterSource !== "Todas" && cleanField(l.source) !== filterSource) return false;
     if (!inPeriod(l, filterPeriod)) return false;
     if (!matchContact(l, filterContact)) return false;
-    if (search && !l.name.toLowerCase().includes(search.toLowerCase()) && !l.email.toLowerCase().includes(search.toLowerCase())) return false;
+    // Search matches ALL displayed lead fields (name/email/phone/budget/intention/
+    // source/status/notes/classification), case- and accent-insensitive.
+    if (q) {
+      const cls = l.classification || "";
+      const hay = normalizeText([
+        l.name, l.email, l.phone, l.budget, l.intention, cleanField(l.source),
+        l.status, cleanField(l.notes), l.manual_notes,
+        cls, CLASSIFICATION_CONFIG[cls]?.label,
+      ].filter(Boolean).join(" "));
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
 
@@ -77,11 +95,12 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
         <div style={{ flex: 1, minWidth: 160 }}>
           <FilterLabel>Pesquisar</FilterLabel>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome ou email..." style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 14px", fontSize: 13, outline: "none", color: "#111", background: "white", fontFamily: "inherit", boxSizing: "border-box" }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nome, email, estado, notas…" style={{ width: "100%", border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 14px", fontSize: 13, outline: "none", color: "#111", background: "white", fontFamily: "inherit", boxSizing: "border-box" }} />
         </div>
         {/* String-value filters (value === label) */}
         {[
           { label: "Estado", value: filterStatus, set: setFilterStatus, opts: ["Todos", ...STATUSES] },
+          { label: "Classificação", value: filterClassification, set: setFilterClassification, opts: ["Todas", "A", "B", "C", NO_CLASSIFICATION] },
           { label: "Orçamento", value: filterBudget, set: setFilterBudget, opts: BUDGETS },
           { label: "Intenção", value: filterIntention, set: setFilterIntention, opts: INTENTIONS },
           { label: "Origem", value: filterSource, set: setFilterSource, opts: ["Todas", ...sources] },
@@ -136,6 +155,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</span>
+                <ClassificationBadge value={lead.classification} />
                 {cleanField(lead.notes) && <span title={cleanField(lead.notes)} style={{ fontSize: 11, color: GOLD }}>📝</span>}
               </div>
               <LeadMeta lead={lead} />

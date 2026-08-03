@@ -7,6 +7,7 @@ import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
 import NotesHistory from "./NotesHistory";
+import ClassificationSelect from "./ClassificationSelect";
 
 // Per-client WhatsApp message for the "Sem resposta" button (empty when the
 // client hasn't configured one → the button is hidden).
@@ -27,6 +28,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   const [budget, setBudget] = useState(lead.budget || "");
   const [intention, setIntention] = useState(lead.intention || "");
   const [status, setStatus] = useState(lead.status);
+  const [classification, setClassification] = useState(lead.classification || "");
   const [manualNotes, setManualNotes] = useState(lead.manual_notes || "");
   const [deleting, setDeleting] = useState(false);
   const [save, setSave] = useState("idle"); // idle | saving | saved | error
@@ -126,6 +128,11 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
       return;
     }
     persist({ status: s }); // every other status saves immediately
+  };
+
+  const pickClassification = (v) => {
+    setClassification(v);
+    persist({ classification: v }); // A/B/C or "" (cleared)
   };
 
   // NotesHistory commits the whole re-serialized notes value on each add/edit/
@@ -256,6 +263,12 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               }}>💬 Enviar WhatsApp</a>
             )}
           </div>
+          {lead.classification_editable && (
+            <div>
+              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" }}>Classificação</p>
+              <ClassificationSelect value={classification} onChange={pickClassification} />
+            </div>
+          )}
           {summary && (
             <div>
               <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>Resumo da conversa</p>
