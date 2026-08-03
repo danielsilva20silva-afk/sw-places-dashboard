@@ -97,6 +97,11 @@ export function leadWhen(lead) {
   return `${relDate(iso)}, ${time}`;
 }
 
+// Lowercase + strip diacritics, for case/accent-insensitive search matching.
+export function normalizeText(v) {
+  return String(v ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+}
+
 // Normalised sort instant (epoch ms). Uses created_at when present; otherwise
 // the date-only column treated as the END of that day, so legacy date-only
 // leads sort at-or-after same-day timestamped ones (no interleaving). Both

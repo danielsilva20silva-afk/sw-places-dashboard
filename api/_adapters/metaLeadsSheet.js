@@ -20,6 +20,9 @@ import { getContext as getSupabaseContext } from "./supabase.js";
 // Read a generous window: base Meta columns + however many form-question columns.
 const READ_RANGE = "A1:AZ";
 const STATUS_COL = "lead_status";
+// Optional column WE add to the sheet (like lead_status, written back from the
+// dashboard). Absent → classification is read-only/blank for that tab.
+const CLASS_COL = "classification";
 
 // Manual (human) notes for Meta leads live in a side table in the SAME Supabase
 // project as the brandon subscribers — the Meta Ads sync owns the Sheet and has
@@ -33,11 +36,13 @@ const NOTES_TABLE = "meta_lead_notes";
 const STANDARD_COLS = new Set([
   "id", "created_time", "ad_id", "ad_name", "adset_id", "adset_name",
   "campaign_id", "campaign_name", "form_id", "form_name", "is_organic",
-  "platform", "email", "full_name", "phone", "lead_status",
+  "platform", "email", "full_name", "phone", "lead_status", "classification",
 ]);
 
 // Dashboard statuses (brandon). Meta writes CREATED/OK/empty for fresh leads.
-const DASHBOARD_STATUSES = ["New", "Contacted", "Viewing booked", "Closed", "Lost"];
+// Kept in sync with src/config/brandon.js STATUSES (this adapter is server-side
+// and can't import the frontend config).
+const DASHBOARD_STATUSES = ["New", "Contacted — no answer", "Contacted — answered", "Viewing booked", "Closed", "Lost"];
 
 // Domain error the endpoints surface directly (duck-typed via `.expose`).
 export class DataError extends Error {
@@ -186,6 +191,8 @@ function isTestRow(row, idx) {
 // kept as-is (so a status set from the dashboard round-trips).
 function mapStatus(raw) {
   const v = s(raw).trim();
+  // Legacy single "Contacted" (pre status-split) → the conservative granular one.
+  if (v === "Contacted") return "Contacted — no answer";
   return DASHBOARD_STATUSES.includes(v) ? v : "New";
 }
 
@@ -231,6 +238,8 @@ function rowToLead(row, idx, header) {
     source_content: "", // no column
     manual_notes: "", // filled from the meta_lead_notes side table in getLeads
     manual_notes_editable: true, // notes live in our Supabase side table now
+    classification: cell(row, idx, CLASS_COL), // "" unless the tab has the column
+    classification_editable: idx[CLASS_COL] != null, // only if the sheet has the column
     source_url: "", // no reel-link column for brandon (uniform shape only)
   };
 }
@@ -337,7 +346,25 @@ export async function updateLead(ctx, id, b) {
       status = mapStatus(b.status);
     }
 
-    return { ...current, status, manual_notes: manualNotes };
+    // classification → the classification cell (same write-back pattern as
+    // status). If the tab has no such column, ignore silently — the source can't
+    // store it (classification_editable is false, so the UI won't offer it).
+    let classification = current.classification;
+    if (b.classification !== undefined) {
+      const classColIdx = tab.idx[CLASS_COL];
+      if (classColIdx != null) {
+        const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: tab.spreadsheetId,
+          range: `${a1Tab(tab.title)}!${colLetter(classColIdx)}${sheetRow}`,
+          valueInputOption: "RAW",
+          requestBody: { values: [[s(b.classification)]] },
+        });
+        classification = s(b.classification);
+      }
+    }
+
+    return { ...current, status, manual_notes: manualNotes, classification };
   }
 
   throw new DataError(404, "Lead não encontrado.");

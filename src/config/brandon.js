@@ -33,13 +33,14 @@ export default {
   // "Reunião agendada" violet, Closed→"Fechado" green, Lost→"Perdido" rose.
   constants: {
     STATUS_CONFIG: {
-      "New":            { bg: "#EFF6FF", text: "#1D4ED8", dot: "#3B82F6", border: "#BFDBFE" },
-      "Contacted":      { bg: "#FFFBEB", text: "#92400E", dot: "#F59E0B", border: "#FDE68A" },
-      "Viewing booked": { bg: "#F5F3FF", text: "#5B21B6", dot: "#8B5CF6", border: "#DDD6FE" },
-      "Closed":         { bg: "#F0FDF4", text: "#14532D", dot: "#22C55E", border: "#BBF7D0" },
-      "Lost":           { bg: "#FFF1F2", text: "#881337", dot: "#F43F5E", border: "#FECDD3" },
+      "New":                  { bg: "#EFF6FF", text: "#1D4ED8", dot: "#3B82F6", border: "#BFDBFE" },
+      "Contacted — no answer": { bg: "#FFFBEB", text: "#92400E", dot: "#F59E0B", border: "#FDE68A" }, // amber / warning
+      "Contacted — answered":  { bg: "#F0FDFA", text: "#0F766E", dot: "#14B8A6", border: "#99F6E4" }, // teal / positive
+      "Viewing booked":       { bg: "#F5F3FF", text: "#5B21B6", dot: "#8B5CF6", border: "#DDD6FE" },
+      "Closed":               { bg: "#F0FDF4", text: "#14532D", dot: "#22C55E", border: "#BBF7D0" },
+      "Lost":                 { bg: "#FFF1F2", text: "#881337", dot: "#F43F5E", border: "#FECDD3" },
     },
-    STATUSES: ["New", "Contacted", "Viewing booked", "Closed", "Lost"],
+    STATUSES: ["New", "Contacted — no answer", "Contacted — answered", "Viewing booked", "Closed", "Lost"],
     // First entry is the "show all" sentinel the shared LeadsTab filter expects
     // (it defaults filterBudget/filterIntention to "Todos"/"Todas"); the real
     // options follow. Prepended to keep the filter dropdowns functional.
@@ -49,7 +50,7 @@ export default {
     // false), so this is only used if/when calendar is enabled for Brandon.
     calendarTriggerStatus: "Viewing booked",
     // Statuses counted by the Dashboard "Em contacto" (in progress) stat.
-    inContactStatuses: ["Contacted", "Viewing booked"],
+    inContactStatuses: ["Contacted — no answer", "Contacted — answered", "Viewing booked"],
     // Named statuses used by dashboard logic. noAnswer null → Brandon has no
     // "no answer" status, so the WhatsApp "no answer" button never shows.
     statusRoles: { new: "New", closed: "Closed", noAnswer: null },

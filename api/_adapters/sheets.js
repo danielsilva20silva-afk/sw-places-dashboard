@@ -95,6 +95,10 @@ function rowToLead(r) {
     source_content: r[12] ?? "",
     manual_notes: r[13] ?? "",
     manual_notes_editable: true, // this source has a manual_notes column
+    // No classification column in this sheet — expose the field for a uniform
+    // lead shape but mark it non-editable so the UI hides the selector/badge.
+    classification: "",
+    classification_editable: false,
     source_url: r[14] ?? "", // link to the originating reel (col O)
   };
 }
