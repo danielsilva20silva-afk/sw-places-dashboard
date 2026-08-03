@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { branding } from "../config";
+import { t } from "../labels";
 import {
   parseNotes, serializeNotes, appendNote, editEntryAt, deleteEntryAt, formatStampDisplay,
 } from "../notesFormat";
@@ -40,7 +41,7 @@ export default function NotesHistory({ value, onChange, busy }) {
   };
   const removeAt = (i) => {
     if (busy) return;
-    if (!window.confirm("Eliminar esta nota?")) return;
+    if (!window.confirm(t("notes_delete_confirm"))) return;
     if (editingIndex === i) cancelEdit();
     onChange(serializeNotes(deleteEntryAt(entries, i)));
   };
@@ -49,14 +50,14 @@ export default function NotesHistory({ value, onChange, busy }) {
 
   return (
     <div>
-      <p style={label}>Notas</p>
+      <p style={label}>{t("notes_title")}</p>
 
       {/* Add a new note */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: entries.length ? 16 : 0 }}>
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Escreve uma nota…"
+          placeholder={t("notes_placeholder")}
           rows={3}
           style={areaStyle}
         />
@@ -71,7 +72,7 @@ export default function NotesHistory({ value, onChange, busy }) {
             opacity: busy || !draft.trim() ? 0.5 : 1,
           }}
         >
-          Adicionar nota
+          {t("notes_add")}
         </button>
       </div>
 
@@ -82,13 +83,13 @@ export default function NotesHistory({ value, onChange, busy }) {
             <div key={`${e.stamp || "nd"}-${i}`} style={{ background: "#F8F7F4", border: "1px solid #F0F0F0", borderRadius: 10, padding: "10px 12px" }}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
                 <span style={{ fontSize: 11, color: "#888" }}>
-                  {e.dated ? formatStampDisplay(e.stamp) : "sem data"}
-                  {e.edited && <span style={{ color: "#AAA" }}> · editada</span>}
+                  {e.dated ? formatStampDisplay(e.stamp) : t("notes_no_date")}
+                  {e.edited && <span style={{ color: "#AAA" }}> · {t("notes_edited")}</span>}
                 </span>
                 {editingIndex !== i && (
                   <span style={{ display: "flex", gap: 12, flexShrink: 0 }}>
-                    <button type="button" title="Editar" aria-label="Editar" onClick={() => startEdit(i)} style={{ ...linkBtn, color: "#8A6D2F" }}>✏️</button>
-                    <button type="button" title="Eliminar" aria-label="Eliminar" onClick={() => removeAt(i)} style={{ ...linkBtn, color: "#DC2626" }}>🗑</button>
+                    <button type="button" title={t("notes_edit")} aria-label={t("notes_edit")} onClick={() => startEdit(i)} style={{ ...linkBtn, color: "#8A6D2F" }}>✏️</button>
+                    <button type="button" title={t("notes_delete")} aria-label={t("notes_delete")} onClick={() => removeAt(i)} style={{ ...linkBtn, color: "#DC2626" }}>🗑</button>
                   </span>
                 )}
               </div>
@@ -103,8 +104,8 @@ export default function NotesHistory({ value, onChange, busy }) {
                     style={{ ...areaStyle, background: "white" }}
                   />
                   <div style={{ display: "flex", gap: 16 }}>
-                    <button type="button" onClick={() => saveEdit(i)} disabled={!editDraft.trim()} style={{ ...linkBtn, color: "#8A6D2F", opacity: editDraft.trim() ? 1 : 0.5, cursor: editDraft.trim() ? "pointer" : "not-allowed" }}>Guardar</button>
-                    <button type="button" onClick={cancelEdit} style={{ ...linkBtn, color: "#888" }}>Cancelar</button>
+                    <button type="button" onClick={() => saveEdit(i)} disabled={!editDraft.trim()} style={{ ...linkBtn, color: "#8A6D2F", opacity: editDraft.trim() ? 1 : 0.5, cursor: editDraft.trim() ? "pointer" : "not-allowed" }}>{t("notes_save")}</button>
+                    <button type="button" onClick={cancelEdit} style={{ ...linkBtn, color: "#888" }}>{t("notes_cancel")}</button>
                   </div>
                 </div>
               ) : (

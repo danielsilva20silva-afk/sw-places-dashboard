@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { branding, users as USERS } from "../config";
+import { t } from "../labels";
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -19,7 +20,7 @@ export default function Login({ onLogin }) {
         localStorage.setItem("sw_places_user", JSON.stringify(safeUser));
         onLogin(safeUser);
       } else {
-        setError("Email ou password incorretos.");
+        setError(t("login_error"));
       }
       setLoading(false);
     }, 600);
@@ -45,7 +46,7 @@ export default function Login({ onLogin }) {
 
         {/* Card */}
         <div style={{ background: "white", borderRadius: 20, border: "1px solid #EBEBEB", padding: "32px 28px", boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, color: "#111", margin: "0 0 24px" }}>Entrar na conta</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: "#111", margin: "0 0 24px" }}>{t("login_title")}</h2>
 
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div>
@@ -100,7 +101,7 @@ export default function Login({ onLogin }) {
               fontWeight: 600, cursor: loading ? "not-allowed" : "pointer",
               marginTop: 4, transition: "all 0.15s",
             }}>
-              {loading ? "A entrar..." : "Entrar"}
+              {loading ? t("login_submitting") : t("login_submit")}
             </button>
           </form>
         </div>

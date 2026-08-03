@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { STATUSES, STATUS_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
+import { t } from "../labels";
 import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab } from "../utils";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
@@ -150,11 +151,11 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
 
   const handleDelete = async () => {
     if (deleting) return;
-    if (!window.confirm("Tens a certeza que queres eliminar este lead?")) return;
+    if (!window.confirm(t("d_delete_confirm"))) return;
     setDeleting(true);
     const ok = await onDelete(lead.id);
     if (ok) onClose();
-    else { setDeleting(false); alert("Não foi possível eliminar o lead. Tenta novamente."); }
+    else { setDeleting(false); alert(t("d_delete_failed")); }
   };
 
   // Portaled to <body> so the fixed overlay escapes the Dashboard root, which has
@@ -179,7 +180,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Avatar name={name} size={48} />
             <div style={{ minWidth: 0 }}>
-              <h2 style={{ fontSize: 17, fontWeight: 700, color: "#111", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name || "Sem nome"}</h2>
+              <h2 style={{ fontSize: 17, fontWeight: 700, color: "#111", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name || t("d_no_name")}</h2>
               <p style={{ fontSize: 12, color: "#888", margin: "3px 0 0" }}>{lead.source}</p>
               {/* Reel origin: if there's a link, the label (or "Ver reel") is the
                   clickable text; otherwise show the label as discreet text. */}
@@ -198,20 +199,20 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
           {(phoneOk || emailOk || igOk) ? (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {phoneOk && (
-                <a href={`tel:${phone}`} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#16A34A", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📞 Ligar</a>
+                <a href={`tel:${phone}`} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#16A34A", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📞 {t("act_call")}</a>
               )}
               {phoneOk && (
-                <a href={`https://wa.me/${waNumber(phone)}`} target="_blank" rel="noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#25D366", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>💬 WhatsApp</a>
+                <a href={`https://wa.me/${waNumber(phone)}`} target="_blank" rel="noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#25D366", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>💬 {t("act_whatsapp")}</a>
               )}
               {emailOk && (
-                <a href={emailHref(email)} {...(emailOpensNewTab ? { target: "_blank", rel: "noopener noreferrer" } : {})} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#2563EB", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>✉️ Email</a>
+                <a href={emailHref(email)} {...(emailOpensNewTab ? { target: "_blank", rel: "noopener noreferrer" } : {})} style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "#2563EB", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>✉️ {t("act_email")}</a>
               )}
               {igOk && (
-                <a href={`https://instagram.com/${igHandle}`} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📷 Instagram</a>
+                <a href={`https://instagram.com/${igHandle}`} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 120, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)", color: "white", borderRadius: 12, padding: "12px", textDecoration: "none", fontSize: 13, fontWeight: 600 }}>📷 {t("act_instagram")}</a>
               )}
             </div>
           ) : (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "#F8F7F4", color: "#AAA", borderRadius: 12, padding: "12px", fontSize: 13, fontWeight: 500 }}>Sem contacto válido</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "#F8F7F4", color: "#AAA", borderRadius: 12, padding: "12px", fontSize: 13, fontWeight: 500 }}>{t("no_contact")}</div>
           )}
           {isAnaSubscriber && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, background: "#F8F7F4", borderRadius: 12, padding: "12px 14px" }}>
@@ -225,30 +226,30 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
           {/* Editable details (auto-save) */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
-              <p style={fieldLabel}>Nome</p>
-              <input {...bind("name", name, setName)} placeholder="Nome do lead" style={fieldInput} />
+              <p style={fieldLabel}>{t("d_name")}</p>
+              <input {...bind("name", name, setName)} placeholder={t("nl_name_ph")} style={fieldInput} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <p style={fieldLabel}>Email</p>
+                <p style={fieldLabel}>{t("d_email")}</p>
                 <input {...bind("email", email, setEmail)} placeholder="email@…" style={fieldInput} />
               </div>
               <div>
-                <p style={fieldLabel}>Telefone</p>
+                <p style={fieldLabel}>{t("d_phone")}</p>
                 <input {...bind("phone", phone, setPhone)} placeholder="+351…" style={fieldInput} />
               </div>
               <div>
-                <p style={fieldLabel}>Orçamento</p>
+                <p style={fieldLabel}>{t("d_budget")}</p>
                 <input {...bind("budget", budget, setBudget)} placeholder="ex. 300k–500k" style={fieldInput} />
               </div>
               <div>
-                <p style={fieldLabel}>Intenção</p>
+                <p style={fieldLabel}>{t("d_intention")}</p>
                 <input {...bind("intention", intention, setIntention)} placeholder="ex. investir" style={fieldInput} />
               </div>
             </div>
           </div>
           <div>
-            <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" }}>Estado</p>
+            <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" }}>{t("d_status")}</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {STATUSES.map(s => {
                 const c = STATUS_CONFIG[s]; const active = status === s;
@@ -260,29 +261,29 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12,
                 background: "#25D366", color: "white", borderRadius: 10, padding: "11px", textDecoration: "none",
                 fontSize: 13, fontWeight: 600,
-              }}>💬 Enviar WhatsApp</a>
+              }}>{t("d_send_whatsapp")}</a>
             )}
           </div>
           {lead.classification_editable && (
             <div>
-              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" }}>Classificação</p>
+              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" }}>{t("d_classification")}</p>
               <ClassificationSelect value={classification} onChange={pickClassification} />
             </div>
           )}
           {summary && (
             <div>
-              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>Resumo da conversa</p>
+              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>{t("d_summary")}</p>
               <div style={{ background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#666", fontStyle: "italic", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{summary}</div>
             </div>
           )}
           <NotesHistory value={manualNotes} onChange={commitNotes} busy={save === "saving"} />
           {sourceOk && (
             <div>
-              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 6px" }}>Publicação de origem</p>
+              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 6px" }}>{t("d_source_post")}</p>
               <a href={sourceContent} target="_blank" rel="noopener noreferrer" style={{
                 display: "flex", alignItems: "center", gap: 8, background: "#F8F7F4", borderRadius: 10,
                 padding: "10px 12px", textDecoration: "none", fontSize: 12, color: "#8A6D2F", fontWeight: 600, wordBreak: "break-all",
-              }}>📷 Ver publicação partilhada ↗</a>
+              }}>{t("d_view_shared")}</a>
             </div>
           )}
           {hasFeature("ana") && <LeadConversation lead={lead} />}
@@ -291,18 +292,18 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             border: "1px solid #FECDD3", borderRadius: 10, padding: "11px",
             fontSize: 13, fontWeight: 600, cursor: deleting ? "not-allowed" : "pointer",
             opacity: deleting ? 0.6 : 1,
-          }}>{deleting ? "A eliminar…" : "🗑 Eliminar lead"}</button>
+          }}>{deleting ? t("d_deleting") : t("d_delete")}</button>
         </div>
         {/* Auto-save indicator (replaces the old Guardar/Cancelar buttons) */}
         <div style={{ padding: "12px 24px calc(12px + env(safe-area-inset-bottom))", borderTop: "1px solid #F0F0F0", position: "sticky", bottom: 0, background: "white" }}>
           {save === "error" ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <span style={{ fontSize: 12, color: "#BE123C", fontWeight: 500 }}>Não foi possível guardar.</span>
-              <button onClick={retry} style={{ fontSize: 12, fontWeight: 600, color: "#111", background: "white", border: "1px solid #E5E5E5", borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>Tentar de novo</button>
+              <span style={{ fontSize: 12, color: "#BE123C", fontWeight: 500 }}>{t("save_failed")}</span>
+              <button onClick={retry} style={{ fontSize: 12, fontWeight: 600, color: "#111", background: "white", border: "1px solid #E5E5E5", borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>{t("save_retry")}</button>
             </div>
           ) : (
             <span style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, color: save === "saved" ? "#15803D" : "#AAA", transition: "color 0.2s" }}>
-              {save === "saving" ? "A guardar…" : save === "saved" ? "Guardado ✓" : "As alterações guardam-se automaticamente."}
+              {save === "saving" ? t("save_saving") : save === "saved" ? t("save_saved") : t("save_auto")}
             </span>
           )}
         </div>

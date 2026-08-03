@@ -1,4 +1,5 @@
 import { branding } from "./config";
+import { t } from "./labels";
 
 // Email link for a lead, honouring the client's emailProvider:
 //  - "gmail"  → Gmail web compose in a new tab
@@ -29,10 +30,10 @@ export function relDate(dateStr) {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return "";
   const diff = lisbonDayIndex(new Date()) - lisbonDayIndex(d);
-  if (diff === 0) return "Hoje";
-  if (diff === 1) return "Ontem";
-  if (diff > 1 && diff < 7) return `${diff}d atrás`;
-  return d.toLocaleDateString("pt-PT", { timeZone: "Europe/Lisbon", day: "numeric", month: "short" });
+  if (diff === 0) return t("today");
+  if (diff === 1) return t("yesterday");
+  if (diff > 1 && diff < 7) return `${diff}d ${t("days_ago_suffix")}`;
+  return d.toLocaleDateString(t("date_locale"), { timeZone: "Europe/Lisbon", day: "numeric", month: "short" });
 }
 
 // Contact validation. Empty values and leftover webhook placeholders
@@ -93,7 +94,7 @@ export function leadWhen(lead) {
   if (!iso) return relDate(lead && lead.date);
   const d = new Date(iso);
   if (isNaN(d.getTime())) return relDate(lead.date);
-  const time = d.toLocaleTimeString("pt-PT", { timeZone: "Europe/Lisbon", hour: "2-digit", minute: "2-digit" });
+  const time = d.toLocaleTimeString(t("date_locale"), { timeZone: "Europe/Lisbon", hour: "2-digit", minute: "2-digit" });
   return `${relDate(iso)}, ${time}`;
 }
 
