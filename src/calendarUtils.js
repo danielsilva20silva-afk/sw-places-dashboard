@@ -1,5 +1,6 @@
 // Date helpers for the calendar. The browser runs in the user's local zone
 // (Europe/Lisbon for this client), so local getters == Lisbon time.
+import { t } from "./labels";
 
 export const p2 = (n) => String(n).padStart(2, "0");
 
@@ -35,14 +36,17 @@ export function eventEndDate(ev) {
 // Local "YYYY-MM-DD" key of the event's start day (for placing it in a cell).
 export const eventDayKey = (ev) => (ev.allDay ? ev.start : ymd(new Date(ev.start)));
 
-// Short time label for an event ("14:30" or "Dia inteiro").
+// Short time label for an event ("14:30" or the all-day label).
 export function timeLabel(ev) {
-  if (ev.allDay) return "Dia inteiro";
-  return new Date(ev.start).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+  if (ev.allDay) return t("cal_all_day");
+  return new Date(ev.start).toLocaleTimeString(t("date_locale"), { hour: "2-digit", minute: "2-digit" });
 }
 
-export const WEEKDAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+// Monday-first short weekday headers, per the active client's language.
+export function weekdaysShort() {
+  return t("weekdays_short");
+}
 
 export function monthTitle(d) {
-  return d.toLocaleDateString("pt-PT", { month: "long", year: "numeric" });
+  return d.toLocaleDateString(t("date_locale"), { month: "long", year: "numeric" });
 }

@@ -157,6 +157,50 @@ const DEFAULTS = {
   fu_error: "Não foi possível agendar. Tenta de novo.",
   fu_upcoming_title: "Próximos seguimentos",
 
+  // ── Calendar (CalendarView / EventModal / DateTimePicker) ──
+  cal_prev: "Anterior",
+  cal_next: "Seguinte",
+  cal_updating: "a atualizar…",
+  cal_month: "Mês",
+  cal_week: "Semana",
+  cal_new_event: "+ Novo evento",
+  cal_new_event_short: "+ Evento",
+  cal_loading: "A carregar calendário…",
+  cal_not_connected: "Não foi possível carregar o calendário.",
+  cal_showing_cached: "A mostrar os dados anteriores.",
+  cal_more: "mais",                  // "+{n} mais"
+  cal_no_events: "Sem eventos neste dia.",
+  cal_all_day: "Dia inteiro",
+  cal_all_day_suffix: "dia inteiro", // "… · dia inteiro"
+  cal_hour: "Hora",
+  cal_min: "Min",
+  weekdays_short: ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"], // Monday-first
+  cal_new_title: "Novo evento",
+  cal_edit_title: "Editar evento",
+  cal_view_title: "Evento",
+  cal_edit: "Editar",
+  cal_delete: "Eliminar",
+  cal_f_title: "Título",
+  cal_title_ph: "Ex. Visita com João",
+  cal_date: "Data",
+  cal_start: "Início",
+  cal_duration: "Duração",
+  cal_reminder: "Notificação",
+  cal_location: "Localização",
+  cal_location_ph: "Ex. Escritório, Aljezur",
+  cal_description: "Descrição",
+  cal_optional: "(opcional)",
+  cal_title_required: "O título é obrigatório.",
+  cal_delete_confirm: "Eliminar este evento do calendário?",
+  cal_delete_failed: "Não foi possível eliminar.",
+  cal_ends_at_prefix: "termina às",  // "termina às 14:30"
+  cal_ends_on_prefix: "termina",     // "termina 5 ago, 14:30"
+  cal_rem_none: "Sem notificação",
+  cal_rem_hour: "1 hora",
+  cal_rem_day: "1 dia antes",
+  cal_rem_hours_suffix: "horas antes",
+  cal_rem_days_suffix: "dias antes",
+
   // ── Dates ──
   date_locale: "pt-PT",
   today: "Hoje",
