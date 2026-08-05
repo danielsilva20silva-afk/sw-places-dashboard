@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { GOLD, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { t } from "../labels";
+import { eventTitle } from "../calendarUtils";
 import { relDate, buildMeetingPrefill } from "../utils";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
@@ -290,7 +291,7 @@ export default function Dashboard({ onLogout }) {
                             <span style={{ fontSize: 8, color: GOLD, textTransform: "uppercase" }}>{mon}</span>
                           </div>
                           <div style={{ minWidth: 0 }}>
-                            <p style={{ fontSize: 13, fontWeight: 600, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</p>
+                            <p style={{ fontSize: 13, fontWeight: 600, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{eventTitle(m)}</p>
                             <p style={{ fontSize: 11, color: "#888", margin: "2px 0 0" }}>{when}{m.location ? ` · ${m.location}` : ""}</p>
                           </div>
                         </div>

@@ -5,7 +5,7 @@ import * as api from "../api";
 import EventModal from "./EventModal";
 import {
   ymd, addDays, addMonths, startOfWeekMon, eventDayKey, timeLabel,
-  weekdaysShort, monthTitle,
+  weekdaysShort, monthTitle, eventTitle,
 } from "../calendarUtils";
 
 function useIsMobile(bp = 720) {
@@ -20,8 +20,17 @@ function useIsMobile(bp = 720) {
 }
 
 const HOUR_START = 7, HOUR_END = 22, HOUR_H = 46;
+// Primary calendar keeps the gold accent; secondary (read-only) calendars use a
+// muted gray so they're visually distinguishable. Consistent across all views.
+const GRAY = "#6B7280";
 const chipTimed = { background: GOLD + "22", borderLeft: `3px solid ${GOLD}`, color: "#3a2f16" };
+const chipTimedSecondary = { background: "#F3F4F6", borderLeft: `3px solid ${GRAY}`, color: "#4B5563" };
 const chipAllDay = { background: "#111", color: "white" };
+const chipAllDaySecondary = { background: GRAY, color: "white" };
+const chipStyleFor = (ev) => ev.allDay
+  ? (ev.readOnly ? chipAllDaySecondary : chipAllDay)
+  : (ev.readOnly ? chipTimedSecondary : chipTimed);
+const accentFor = (ev) => (ev.readOnly ? GRAY : GOLD);
 
 export default function CalendarView({ refreshKey = 0, onChanged }) {
   const isMobile = useIsMobile();
@@ -106,6 +115,15 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
         </div>
       </div>
 
+      {/* Legend — only when there are secondary-calendar events to distinguish
+          (single-calendar clients like swplaces never show it). */}
+      {events.some((e) => e.readOnly) && (
+        <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 11, color: "#888" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: GOLD }} />{t("cal_legend_primary")}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: GRAY }} />{t("cal_legend_secondary")}</span>
+        </div>
+      )}
+
       {firstLoad && refreshing ? (
         <div style={{ padding: "60px 0", textAlign: "center", color: "#999", fontSize: 14 }}>{t("cal_loading")}</div>
       ) : error && events.length === 0 ? (
@@ -149,9 +167,9 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
 
 function EventChip({ ev, onClick, compact }) {
   return (
-    <div onClick={(e) => { e.stopPropagation(); onClick(ev); }} title={ev.title}
-      style={{ ...(ev.allDay ? chipAllDay : chipTimed), borderRadius: 5, padding: compact ? "1px 5px" : "2px 6px", fontSize: 11, lineHeight: 1.3, cursor: "pointer", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", marginBottom: 2 }}>
-      {!ev.allDay && <b style={{ fontWeight: 700, marginRight: 4 }}>{timeLabel(ev)}</b>}{ev.title}
+    <div onClick={(e) => { e.stopPropagation(); onClick(ev); }} title={eventTitle(ev)}
+      style={{ ...chipStyleFor(ev), borderRadius: 5, padding: compact ? "1px 5px" : "2px 6px", fontSize: 11, lineHeight: 1.3, cursor: "pointer", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", marginBottom: 2 }}>
+      {!ev.allDay && <b style={{ fontWeight: 700, marginRight: 4 }}>{timeLabel(ev)}</b>}{eventTitle(ev)}
     </div>
   );
 }
@@ -189,6 +207,37 @@ function MonthGrid({ anchor, byDay, todayKey, onEvent, onCreate }) {
       </div>
     </div>
   );
+}
+
+// Side-by-side layout for overlapping timed events. Groups events into clusters
+// (maximal runs of mutually-overlapping events), assigns each a column via greedy
+// interval-graph coloring, and returns id → { col, cols } so a cluster of N
+// concurrent events each takes 1/cols of the width. Non-overlapping events get
+// their own single-column cluster (full width). Partial overlaps split too.
+function layoutTimed(events) {
+  const items = events
+    .map((ev) => ({ ev, s: new Date(ev.start).getTime(), e: new Date(ev.end || ev.start).getTime() }))
+    .sort((a, b) => a.s - b.s || a.e - b.e);
+  const map = new Map();
+  let cluster = [], clusterEnd = -Infinity;
+  const flush = () => {
+    const colEnds = []; // last end time per column
+    for (const it of cluster) {
+      let placed = -1;
+      for (let c = 0; c < colEnds.length; c++) { if (it.s >= colEnds[c]) { colEnds[c] = it.e; placed = c; break; } }
+      if (placed < 0) { colEnds.push(it.e); placed = colEnds.length - 1; }
+      it.col = placed;
+    }
+    for (const it of cluster) map.set(it.ev.id, { col: it.col, cols: colEnds.length });
+    cluster = []; clusterEnd = -Infinity;
+  };
+  for (const it of items) {
+    if (cluster.length && it.s >= clusterEnd) flush(); // gap → new cluster
+    cluster.push(it);
+    clusterEnd = Math.max(clusterEnd, it.e);
+  }
+  if (cluster.length) flush();
+  return map;
 }
 
 // ── Desktop week time-grid ──
@@ -232,14 +281,17 @@ function WeekGrid({ anchor, byDay, todayKey, onEvent, onCreate }) {
           {days.map((d, i) => {
             const key = ymd(d);
             const timed = (byDay[key] || []).filter((e) => !e.allDay);
+            const layout = layoutTimed(timed); // side-by-side columns for overlaps
             return (
               <div key={i} onClick={() => onCreate(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 10))} style={{ position: "relative", height: gridH, border: "1px solid #F0F0F0", borderRadius: 6, background: `repeating-linear-gradient(#fff, #fff ${HOUR_H - 1}px, #F3F3F1 ${HOUR_H - 1}px, #F3F3F1 ${HOUR_H}px)`, cursor: "pointer" }}>
                 {timed.map((ev) => {
                   const { top, height } = pos(ev);
+                  const { col, cols } = layout.get(ev.id) || { col: 0, cols: 1 };
+                  const w = 100 / cols;
                   return (
-                    <div key={ev.id} onClick={(e) => { e.stopPropagation(); onEvent(ev); }} title={ev.title}
-                      style={{ position: "absolute", top, height, left: 2, right: 2, ...chipTimed, borderRadius: 5, padding: "2px 5px", fontSize: 10, lineHeight: 1.2, overflow: "hidden", cursor: "pointer" }}>
-                      <b>{timeLabel(ev)}</b> {ev.title}
+                    <div key={ev.id} onClick={(e) => { e.stopPropagation(); onEvent(ev); }} title={eventTitle(ev)}
+                      style={{ position: "absolute", top, height, left: `calc(${col * w}% + 1px)`, width: `calc(${w}% - 2px)`, ...chipStyleFor(ev), borderRadius: 5, padding: "2px 5px", fontSize: 10, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }}>
+                      <b>{timeLabel(ev)}</b> {eventTitle(ev)}
                     </div>
                   );
                 })}
@@ -293,10 +345,10 @@ function MobileMonth({ anchor, byDay, todayKey, selectedDay, setSelectedDay, onE
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {dayEvents.map((ev) => (
-              <div key={ev.id} onClick={() => onEvent(ev)} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 12px", background: "#F8F7F4", border: "1px solid #EBEBEB", borderRadius: 10, cursor: "pointer" }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: GOLD, minWidth: 52 }}>{timeLabel(ev)}</span>
+              <div key={ev.id} onClick={() => onEvent(ev)} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 12px", background: "#F8F7F4", border: "1px solid #EBEBEB", borderLeft: `3px solid ${accentFor(ev)}`, borderRadius: 10, cursor: "pointer" }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: accentFor(ev), minWidth: 52 }}>{timeLabel(ev)}</span>
                 <div style={{ minWidth: 0 }}>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</p>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{eventTitle(ev)}</p>
                   {ev.location && <p style={{ fontSize: 11, color: "#888", margin: "2px 0 0" }}>📍 {ev.location}</p>}
                 </div>
               </div>

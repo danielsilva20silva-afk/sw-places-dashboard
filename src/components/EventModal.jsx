@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { GOLD } from "../constants";
 import { t } from "../labels";
 import * as api from "../api";
-import { ymd, toLocalInput, p2 } from "../calendarUtils";
+import { ymd, toLocalInput, p2, eventTitle } from "../calendarUtils";
 import DateTimePicker from "./DateTimePicker";
 
 // One modal for viewing, creating and editing a Google Calendar event.
@@ -145,7 +145,7 @@ export default function EventModal({ event, prefillDate, prefill, onClose, onSav
 
         {!editing && event ? (
           <>
-            <p style={{ fontSize: 17, fontWeight: 700, color: "#111", margin: "0 0 6px" }}>{event.title}</p>
+            <p style={{ fontSize: 17, fontWeight: 700, color: "#111", margin: "0 0 6px" }}>{eventTitle(event)}</p>
             <p style={{ fontSize: 13, color: GOLD, fontWeight: 600, textTransform: "capitalize", margin: "0 0 14px" }}>{viewWhen()}</p>
             {event.location && <p style={{ fontSize: 13, color: "#555", margin: "0 0 10px" }}>📍 {event.location}</p>}
             {event.description && <p style={{ fontSize: 13, color: "#555", margin: "0 0 10px", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{event.description}</p>}

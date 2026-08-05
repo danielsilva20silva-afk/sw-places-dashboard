@@ -170,6 +170,10 @@ const DEFAULTS = {
   cal_showing_cached: "A mostrar os dados anteriores.",
   cal_partial: "Alguns calendários não estão ligados:", // "… {ids}"
   cal_readonly: "Só leitura (calendário secundário)",
+  cal_untitled: "Sem título",       // primary calendar, no summary
+  cal_untitled_busy: "Ocupado",     // secondary (read-only) calendar, no summary
+  cal_legend_primary: "Pessoal",    // legend dot (only shown with a secondary calendar)
+  cal_legend_secondary: "Trabalho",
   cal_more: "mais",                  // "+{n} mais"
   cal_no_events: "Sem eventos neste dia.",
   cal_all_day: "Dia inteiro",

@@ -70,7 +70,9 @@ function toEvent(e, calendarId = "", isPrimary = true) {
   const allDay = !!(e.start && e.start.date);
   return {
     id: e.id,
-    title: e.summary || "(sem título)",
+    // Empty when the event has no summary; the frontend supplies the per-client
+    // "Untitled"/"Busy" label (which also depends on primary vs secondary).
+    title: e.summary || "",
     description: e.description || "",
     location: e.location || "",
     allDay,
