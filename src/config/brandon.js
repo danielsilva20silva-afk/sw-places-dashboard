@@ -132,6 +132,17 @@ export default {
     nl_err_contact: "Enter at least one contact (email or phone).",
     nl_err_failed: "Couldn't create the lead. Please try again.",
     nl_intention_opts: ["", "live", "invest", "holiday", "sell", "land", "other"],
+    // Follow-ups (Google Calendar)
+    fu_title: "Schedule follow-up",
+    fu_date: "Date",
+    fu_time: "Time",
+    fu_note: "Note (optional)",
+    fu_note_ph: "e.g. confirm viewing details…",
+    fu_confirm: "Schedule follow-up",
+    fu_scheduling: "Scheduling…",
+    fu_success_prefix: "Follow-up scheduled for",
+    fu_error: "Couldn't schedule. Please try again.",
+    fu_upcoming_title: "Upcoming follow-ups",
     // Dates
     date_locale: "en-GB",
     today: "Today",
@@ -163,6 +174,7 @@ export default {
     newsletter: false,
     ana: false,
     calendar: false,    // no Google Calendar for Brandon yet (own calendar TBD)
+    followups: true,    // "Schedule follow-up" on leads (Google Calendar, api/follow-ups.js)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour

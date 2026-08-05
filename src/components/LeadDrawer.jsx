@@ -9,6 +9,7 @@ import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
 import NotesHistory from "./NotesHistory";
 import ClassificationSelect from "./ClassificationSelect";
+import FollowUpScheduler from "./FollowUpScheduler";
 
 // Per-client WhatsApp message for the "Sem resposta" button (empty when the
 // client hasn't configured one → the button is hidden).
@@ -270,6 +271,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               <ClassificationSelect value={classification} onChange={pickClassification} />
             </div>
           )}
+          {hasFeature("followups") && <FollowUpScheduler lead={lead} />}
           {summary && (
             <div>
               <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>{t("d_summary")}</p>

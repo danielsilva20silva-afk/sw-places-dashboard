@@ -145,6 +145,18 @@ const DEFAULTS = {
   nl_err_failed: "Não foi possível criar o lead. Tenta novamente.",
   nl_intention_opts: ["", "viver", "investir", "férias", "vender", "terreno", "outro"],
 
+  // ── Follow-ups (Google Calendar) ──
+  fu_title: "Agendar seguimento",
+  fu_date: "Data",
+  fu_time: "Hora",
+  fu_note: "Nota (opcional)",
+  fu_note_ph: "ex. confirmar detalhes da visita…",
+  fu_confirm: "Agendar seguimento",
+  fu_scheduling: "A agendar…",
+  fu_success_prefix: "Seguimento agendado para", // "… {data}"
+  fu_error: "Não foi possível agendar. Tenta de novo.",
+  fu_upcoming_title: "Próximos seguimentos",
+
   // ── Dates ──
   date_locale: "pt-PT",
   today: "Hoje",

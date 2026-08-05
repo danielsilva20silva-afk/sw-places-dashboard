@@ -1,8 +1,10 @@
+import { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { GOLD, inContactStatuses, statusRoles } from "../constants";
 import { hasFeature } from "../config";
 import { t } from "../labels";
 import { buildChartData, leadTime, isRealLead } from "../utils";
+import { getFollowUps } from "../api";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
 import QuickActions from "../components/QuickActions";
@@ -16,6 +18,16 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
   // views + stats until they have a phone/email — they live in Conversas.
   const leads = allLeads.filter(isRealLead);
   const chartData = buildChartData(leads);
+
+  // Upcoming follow-ups (Google Calendar) — only for clients with the feature.
+  // getFollowUps returns [] on any failure, so the card just stays hidden.
+  const [followUps, setFollowUps] = useState([]);
+  useEffect(() => {
+    if (!hasFeature("followups")) return;
+    let active = true;
+    getFollowUps().then((data) => { if (active) setFollowUps(Array.isArray(data) ? data : []); });
+    return () => { active = false; };
+  }, []);
 
   // Most recent first, by the normalised lead instant (same key the Leads tab
   // uses, so the two lists agree). Stable sort keeps source order on ties.
@@ -61,6 +73,32 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Upcoming follow-ups (Google Calendar) — hidden when off or empty */}
+      {hasFeature("followups") && followUps.length > 0 && (
+        <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB", marginBottom: 20 }}>
+          <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid #F0F0F0" }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>{t("fu_upcoming_title")}</p>
+          </div>
+          {followUps.map((f, i) => {
+            const lead = f.leadId ? allLeads.find(l => String(l.id) === String(f.leadId)) : null;
+            const when = new Date(f.start).toLocaleString(t("date_locale"), { timeZone: "Europe/Lisbon", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+            return (
+              <div key={f.id || i} onClick={lead ? () => onOpenLead(lead) : undefined} style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                padding: "11px 20px", borderBottom: i < followUps.length - 1 ? "1px solid #F5F5F5" : "none",
+                cursor: lead ? "pointer" : "default",
+              }}
+                onMouseEnter={lead ? (e => e.currentTarget.style.background = "#FAFAFA") : undefined}
+                onMouseLeave={lead ? (e => e.currentTarget.style.background = "transparent") : undefined}
+              >
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#111", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.leadName || "—"}</span>
+                <span style={{ fontSize: 12, color: "#888", flexShrink: 0 }}>{when}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Calendar (Google Calendar) — only for clients with the calendar feature */}
       {hasFeature("calendar") && (

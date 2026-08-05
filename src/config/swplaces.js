@@ -44,6 +44,7 @@ Obrigado e até breve!`,
     newsletter: true,   // "Newsletter"
     ana: true,          // "Testar Ana"
     calendar: true,     // Google Calendar: mini-calendar + meeting-scheduling flow
+    followups: false,   // lead "Schedule follow-up" feature — brandon only for now
   },
 
   // Lead pipeline constants (moved from src/constants.js).
