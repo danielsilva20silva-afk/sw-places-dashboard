@@ -8,6 +8,8 @@ import QuickActions from "../components/QuickActions";
 import LeadMeta from "../components/LeadMeta";
 import LeadFormModal from "../components/LeadFormModal";
 import ClassificationBadge from "../components/ClassificationBadge";
+import LeadRowMobile from "../components/LeadRowMobile";
+import useIsMobile from "../useIsMobile";
 
 // "Sem classificação" is a sentinel for the classification filter (unset leads).
 const NO_CLASSIFICATION = "Sem classificação";
@@ -61,6 +63,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
   // hide them here (they show in Conversas). They reappear once Ana captures a
   // phone/email. Every other source stays visible, contact or not.
   const leads = allLeads.filter(isRealLead);
+  const isMobile = useIsMobile();
   const [filterBudget, setFilterBudget] = useState("Todos");
   const [filterIntention, setFilterIntention] = useState("Todas");
   const [filterStatus, setFilterStatus] = useState("Todos");
@@ -157,6 +160,19 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
             <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>{t("empty_leads")}
           </div>
         ) : sorted.map((lead, i) => (
+          isMobile ? (
+            <LeadRowMobile
+              key={lead.id}
+              lead={lead}
+              onOpen={onOpenLead}
+              onStatusChange={onStatusChange}
+              showNotesIcon
+              style={{
+                borderBottom: i < sorted.length - 1 ? "1px solid #F5F5F5" : "none",
+                borderRadius: `${i === 0 ? "16px 16px" : "0 0"} ${i === sorted.length - 1 ? "16px 16px" : "0 0"}`,
+              }}
+            />
+          ) : (
           <div key={lead.id} onClick={() => onOpenLead(lead)} style={{
             display: "flex", alignItems: "center", gap: 14, padding: "14px 20px",
             borderBottom: i < sorted.length - 1 ? "1px solid #F5F5F5" : "none", cursor: "pointer",
@@ -181,6 +197,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
               <QuickActions lead={lead} />
             </div>
           </div>
+          )
         ))}
       </div>
     </>
