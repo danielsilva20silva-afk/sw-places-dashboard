@@ -74,7 +74,7 @@ export default function Dashboard({ onLogout }) {
     const now = new Date();
     const in30 = new Date(now.getTime() + 30 * 86400000);
     api.getCalendarEvents(now.toISOString(), in30.toISOString())
-      .then(data => { if (active) setUpcomingEvents(data); })
+      .then(data => { if (active) setUpcomingEvents(data.events || []); })
       .catch(() => { if (active) setUpcomingEvents([]); });
     return () => { active = false; };
   }, [calReload, calendarOn]);

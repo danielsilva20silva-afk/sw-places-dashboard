@@ -150,10 +150,16 @@ export default function EventModal({ event, prefillDate, prefill, onClose, onSav
             {event.location && <p style={{ fontSize: 13, color: "#555", margin: "0 0 10px" }}>📍 {event.location}</p>}
             {event.description && <p style={{ fontSize: 13, color: "#555", margin: "0 0 10px", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{event.description}</p>}
             {error && <div style={{ background: "#FFF1F2", border: "1px solid #FECDD3", color: "#BE123C", borderRadius: 10, padding: "10px 14px", fontSize: 13, margin: "12px 0" }}>{error}</div>}
-            <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-              <button onClick={() => setEditing(true)} style={{ flex: 1, background: "#111", color: "white", border: "none", borderRadius: 12, padding: 12, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>{t("cal_edit")}</button>
-              <button onClick={remove} disabled={busy} style={{ background: "#FFF1F2", color: "#DC2626", border: "1px solid #FECDD3", borderRadius: 12, padding: "12px 18px", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer" }}>{busy ? "…" : t("cal_delete")}</button>
-            </div>
+            {/* Read-only events live on a secondary (display-only) calendar — no
+                edit/delete (the dashboard never writes to non-primary calendars). */}
+            {event.readOnly ? (
+              <p style={{ fontSize: 12, color: "#888", fontStyle: "italic", margin: "18px 0 0" }}>🔒 {t("cal_readonly")}</p>
+            ) : (
+              <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+                <button onClick={() => setEditing(true)} style={{ flex: 1, background: "#111", color: "white", border: "none", borderRadius: 12, padding: 12, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>{t("cal_edit")}</button>
+                <button onClick={remove} disabled={busy} style={{ background: "#FFF1F2", color: "#DC2626", border: "1px solid #FECDD3", borderRadius: 12, padding: "12px 18px", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer" }}>{busy ? "…" : t("cal_delete")}</button>
+              </div>
+            )}
           </>
         ) : (
           <>

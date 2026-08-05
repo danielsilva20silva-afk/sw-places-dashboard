@@ -28,6 +28,7 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
   const [view, setView] = useState("month"); // month | week (week is desktop-only)
   const [anchor, setAnchor] = useState(() => new Date());
   const [events, setEvents] = useState([]);
+  const [calErrors, setCalErrors] = useState([]); // per-calendar failures (multi-calendar)
   const [firstLoad, setFirstLoad] = useState(true); // full loading only on the very first fetch
   const [refreshing, setRefreshing] = useState(false); // subtle indicator on later refetches
   const [error, setError] = useState("");
@@ -51,7 +52,7 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
     let alive = true;
     setRefreshing(true); setError("");
     api.getCalendarEvents(range.start.toISOString(), range.end.toISOString())
-      .then((ev) => { if (alive) setEvents(ev); })
+      .then((data) => { if (alive) { setEvents(data.events); setCalErrors(data.errors || []); } })
       .catch((e) => { if (alive) setError(e.message || t("cal_not_connected")); }) // keep existing events on failure
       .finally(() => { if (alive) { setRefreshing(false); setFirstLoad(false); } });
     return () => { alive = false; };
@@ -116,6 +117,11 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
         {error && (
           <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 12 }}>
             {t("cal_not_connected")} {t("cal_showing_cached")}
+          </div>
+        )}
+        {calErrors.length > 0 && (
+          <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 12 }}>
+            ⚠️ {t("cal_partial")} {calErrors.map((e) => e.calendarId).join(", ")}
           </div>
         )}
         {isMobile ? (
