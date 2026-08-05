@@ -6,7 +6,7 @@ import StatusPill from "./StatusPill";
 const MENU_WIDTH = 180;
 const EST_ROW_H = 37; // approximate height of one option, for flip detection
 
-export default function StatusDropdown({ status, onChange }) {
+export default function StatusDropdown({ status, onChange, compact }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState(null);
   const triggerRef = useRef(null);
@@ -59,9 +59,10 @@ export default function StatusDropdown({ status, onChange }) {
       <button ref={triggerRef} onClick={toggle} style={{
         display: "inline-flex", alignItems: "center", gap: 4,
         background: "none", border: "none", cursor: "pointer", padding: 0,
+        ...(compact ? { maxWidth: "100%", minWidth: 0 } : null),
       }}>
-        <StatusPill status={status} small />
-        <span style={{ fontSize: 9, color: "#AAA" }}>▾</span>
+        <StatusPill status={status} small compact={compact} />
+        <span style={{ fontSize: 9, color: "#AAA", flexShrink: 0 }}>▾</span>
       </button>
       {open && coords && createPortal(
         <div ref={menuRef} onClick={e => e.stopPropagation()} style={{

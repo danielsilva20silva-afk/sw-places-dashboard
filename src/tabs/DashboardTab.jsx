@@ -10,8 +10,11 @@ import CustomTooltip from "../components/CustomTooltip";
 import CalendarView from "../components/CalendarView";
 import LeadMeta from "../components/LeadMeta";
 import ClassificationBadge from "../components/ClassificationBadge";
+import LeadRowMobile from "../components/LeadRowMobile";
+import useIsMobile from "../useIsMobile";
 
 export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged }) {
+  const isMobile = useIsMobile();
   // Hide contact-less "DM · ANA" entries (reel-flow / logged DMs) from the leads
   // views + stats until they have a phone/email — they live in Conversas.
   const leads = allLeads.filter(isRealLead);
@@ -78,6 +81,18 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
           <button onClick={onViewAllLeads} style={{ fontSize: 12, color: GOLD, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>{t("view_all")}</button>
         </div>
         {recentLeads.map((lead, i, arr) => (
+          isMobile ? (
+            <LeadRowMobile
+              key={lead.id}
+              lead={lead}
+              onOpen={onOpenLead}
+              onStatusChange={onStatusChange}
+              style={{
+                borderBottom: i < arr.length - 1 ? "1px solid #F5F5F5" : "none",
+                borderRadius: i === arr.length - 1 ? "0 0 16px 16px" : 0,
+              }}
+            />
+          ) : (
           <div key={lead.id} onClick={() => onOpenLead(lead)} style={{
             display: "flex", alignItems: "center", gap: 14, padding: "12px 20px",
             borderBottom: i < arr.length - 1 ? "1px solid #F5F5F5" : "none", cursor: "pointer",
@@ -101,6 +116,7 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
               <QuickActions lead={lead} />
             </div>
           </div>
+          )
         ))}
       </div>
     </>

@@ -1,15 +1,16 @@
 import { isValidEmail, isValidPhone, emailHref, emailOpensNewTab } from "../utils";
 import { t } from "../labels";
 
-const btnBase = {
-  width: 32, height: 32, borderRadius: 8,
-  display: "flex", alignItems: "center", justifyContent: "center",
-  textDecoration: "none", fontSize: 14, flexShrink: 0,
-};
-
-export default function QuickActions({ lead }) {
+// `size` defaults to 32 (desktop, unchanged); mobile rows pass 40 for a larger
+// touch target.
+export default function QuickActions({ lead, size = 32 }) {
   const phoneOk = isValidPhone(lead.phone);
   const emailOk = isValidEmail(lead.email);
+  const btnBase = {
+    width: size, height: size, borderRadius: 8,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    textDecoration: "none", fontSize: 14, flexShrink: 0,
+  };
 
   // No valid contact — subtle disabled placeholder, never a broken button
   if (!phoneOk && !emailOk) {
