@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { GOLD } from "../constants";
-import { ymd, addMonths, startOfWeekMon, addDays, WEEKDAYS_PT, monthTitle, p2 } from "../calendarUtils";
+import { t } from "../labels";
+import { ymd, addMonths, startOfWeekMon, addDays, weekdaysShort, monthTitle, p2 } from "../calendarUtils";
 
 // Custom date (+ optional time) picker, styled to the dashboard. Expands inline
 // below its trigger (no native widget, no clipping inside the modal). Value is a
@@ -28,8 +29,8 @@ export default function DateTimePicker({ value, onChange, withTime = true }) {
   }, [open, withTime]);
 
   const label = withTime
-    ? `${value.toLocaleDateString("pt-PT", { day: "numeric", month: "short", year: "numeric" })}, ${p2(value.getHours())}:${p2(value.getMinutes())}`
-    : value.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    ? `${value.toLocaleDateString(t("date_locale"), { day: "numeric", month: "short", year: "numeric" })}, ${p2(value.getHours())}:${p2(value.getMinutes())}`
+    : value.toLocaleDateString(t("date_locale"), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   const pickDay = (d) => { const n = new Date(value); n.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); onChange(n); };
   const setH = (h) => { const n = new Date(value); n.setHours(h); onChange(n); };
@@ -54,16 +55,16 @@ export default function DateTimePicker({ value, onChange, withTime = true }) {
         <div style={{ marginTop: 8, border: "1px solid #EBEBEB", borderRadius: 12, padding: 12, background: "white", boxShadow: "0 8px 28px rgba(0,0,0,0.08)" }}>
           {/* Month header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <button type="button" onClick={() => setCursor((c) => addMonths(c, -1))} style={navBtn} aria-label="Mês anterior">‹</button>
+            <button type="button" onClick={() => setCursor((c) => addMonths(c, -1))} style={navBtn} aria-label={t("cal_prev")}>‹</button>
             <span style={{ fontSize: 13, fontWeight: 700, color: "#111", textTransform: "capitalize" }}>{monthTitle(cursor)}</span>
             <div style={{ display: "flex", gap: 6 }}>
-              <button type="button" onClick={() => { const t = new Date(); setCursor(new Date(t.getFullYear(), t.getMonth(), 1)); pickDay(t); }} style={{ ...navBtn, width: "auto", padding: "0 10px", fontSize: 12 }}>Hoje</button>
-              <button type="button" onClick={() => setCursor((c) => addMonths(c, 1))} style={navBtn} aria-label="Mês seguinte">›</button>
+              <button type="button" onClick={() => { const now = new Date(); setCursor(new Date(now.getFullYear(), now.getMonth(), 1)); pickDay(now); }} style={{ ...navBtn, width: "auto", padding: "0 10px", fontSize: 12 }}>{t("today")}</button>
+              <button type="button" onClick={() => setCursor((c) => addMonths(c, 1))} style={navBtn} aria-label={t("cal_next")}>›</button>
             </div>
           </div>
           {/* Weekday row (Mon-first) */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 2 }}>
-            {WEEKDAYS_PT.map((d) => <div key={d} style={{ fontSize: 10, color: "#AAA", fontWeight: 700, textAlign: "center" }}>{d}</div>)}
+            {weekdaysShort().map((d) => <div key={d} style={{ fontSize: 10, color: "#AAA", fontWeight: 700, textAlign: "center" }}>{d}</div>)}
           </div>
           {/* Day grid */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
@@ -87,13 +88,13 @@ export default function DateTimePicker({ value, onChange, withTime = true }) {
           {withTime && (
             <div style={{ display: "flex", gap: 10, marginTop: 10, borderTop: "1px solid #F0F0F0", paddingTop: 10 }}>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 9, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 4px", fontWeight: 700 }}>Hora</p>
+                <p style={{ fontSize: 9, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 4px", fontWeight: 700 }}>{t("cal_hour")}</p>
                 <div ref={hourRef} style={colStyle}>
                   {HOURS.map((h) => <button type="button" key={h} data-sel={h === value.getHours()} onClick={() => setH(h)} style={timeCell(h === value.getHours())}>{p2(h)}</button>)}
                 </div>
               </div>
               <div style={{ flex: 1 }}>
-                <p style={{ fontSize: 9, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 4px", fontWeight: 700 }}>Min</p>
+                <p style={{ fontSize: 9, color: "#AAA", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 4px", fontWeight: 700 }}>{t("cal_min")}</p>
                 <div style={colStyle}>
                   {MINUTES.map((m) => <button type="button" key={m} onClick={() => setM(m)} style={timeCell(m === value.getMinutes())}>{p2(m)}</button>)}
                 </div>

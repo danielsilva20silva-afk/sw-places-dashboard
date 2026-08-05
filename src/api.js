@@ -33,6 +33,31 @@ export function deleteLead(id) {
   return fetch(`/api/leads?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+// GET /api/follow-ups → upcoming lead follow-ups (our calendar events only).
+// Returns [] on any failure so the dashboard card degrades gracefully.
+export async function getFollowUps() {
+  try {
+    const res = await fetch("/api/follow-ups");
+    const data = await res.json().catch(() => []);
+    return res.ok && Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+// POST /api/follow-ups → schedule a follow-up calendar event. Throws with the
+// server's friendly message so the drawer can surface it inline.
+export async function scheduleFollowUp(payload) {
+  const res = await fetch("/api/follow-ups", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 // GET /api/calendar?start&end → events in a range (backed by Google Calendar)
 export async function getCalendarEvents(startISO, endISO) {
   const qs = new URLSearchParams();

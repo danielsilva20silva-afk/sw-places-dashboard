@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { GOLD } from "../constants";
+import { t } from "../labels";
 import * as api from "../api";
 import EventModal from "./EventModal";
 import {
   ymd, addDays, addMonths, startOfWeekMon, eventDayKey, timeLabel,
-  WEEKDAYS_PT, monthTitle,
+  weekdaysShort, monthTitle,
 } from "../calendarUtils";
 
 function useIsMobile(bp = 720) {
@@ -51,7 +52,7 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
     setRefreshing(true); setError("");
     api.getCalendarEvents(range.start.toISOString(), range.end.toISOString())
       .then((ev) => { if (alive) setEvents(ev); })
-      .catch((e) => { if (alive) setError(e.message || "Não foi possível carregar o calendário."); }) // keep existing events on failure
+      .catch((e) => { if (alive) setError(e.message || t("cal_not_connected")); }) // keep existing events on failure
       .finally(() => { if (alive) { setRefreshing(false); setFirstLoad(false); } });
     return () => { alive = false; };
   }, [range.start, range.end, refreshKey, localReload]);
@@ -76,7 +77,7 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
 
   const title = effView === "week"
     ? (() => { const s = startOfWeekMon(anchor), e = addDays(s, 6);
-        return `${s.toLocaleDateString("pt-PT", { day: "numeric", month: "short" })} – ${e.toLocaleDateString("pt-PT", { day: "numeric", month: "short" })}`; })()
+        return `${s.toLocaleDateString(t("date_locale"), { day: "numeric", month: "short" })} – ${e.toLocaleDateString(t("date_locale"), { day: "numeric", month: "short" })}`; })()
     : monthTitle(anchor);
 
   const btn = (extra) => ({ border: "1px solid #E5E5E5", background: "white", borderRadius: 8, padding: "6px 10px", fontSize: 13, cursor: "pointer", color: "#555", ...extra });
@@ -86,35 +87,35 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => step(-1)} style={btn({ fontWeight: 700 })} aria-label="Anterior">‹</button>
-          <button onClick={() => step(1)} style={btn({ fontWeight: 700 })} aria-label="Seguinte">›</button>
-          <button onClick={goToday} style={btn()}>Hoje</button>
+          <button onClick={() => step(-1)} style={btn({ fontWeight: 700 })} aria-label={t("cal_prev")}>‹</button>
+          <button onClick={() => step(1)} style={btn({ fontWeight: 700 })} aria-label={t("cal_next")}>›</button>
+          <button onClick={goToday} style={btn()}>{t("today")}</button>
           <span style={{ fontSize: 15, fontWeight: 700, color: "#111", textTransform: "capitalize", marginLeft: 4 }}>{title}</span>
-          {refreshing && !firstLoad && <span style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginLeft: 2 }}>a atualizar…</span>}
+          {refreshing && !firstLoad && <span style={{ fontSize: 12, color: GOLD, fontWeight: 600, marginLeft: 2 }}>{t("cal_updating")}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {!isMobile && (
             <div style={{ display: "flex", border: "1px solid #E5E5E5", borderRadius: 8, overflow: "hidden" }}>
-              {[["month", "Mês"], ["week", "Semana"]].map(([v, l]) => (
+              {[["month", t("cal_month")], ["week", t("cal_week")]].map(([v, l]) => (
                 <button key={v} onClick={() => setView(v)} style={{ border: "none", padding: "6px 12px", fontSize: 13, cursor: "pointer", fontWeight: 600, background: view === v ? "#111" : "white", color: view === v ? "white" : "#666" }}>{l}</button>
               ))}
             </div>
           )}
-          <button onClick={() => setModal({ prefillDate: effView === "month" ? new Date() : anchor })} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>+ Novo evento</button>
+          <button onClick={() => setModal({ prefillDate: effView === "month" ? new Date() : anchor })} style={{ background: GOLD, color: "#000", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{t("cal_new_event")}</button>
         </div>
       </div>
 
       {firstLoad && refreshing ? (
-        <div style={{ padding: "60px 0", textAlign: "center", color: "#999", fontSize: 14 }}>A carregar calendário…</div>
+        <div style={{ padding: "60px 0", textAlign: "center", color: "#999", fontSize: 14 }}>{t("cal_loading")}</div>
       ) : error && events.length === 0 ? (
         <div style={{ background: "#FFF1F2", border: "1px solid #FECDD3", color: "#BE123C", borderRadius: 12, padding: "14px 16px", fontSize: 13 }}>
-          {error}
+          {t("cal_not_connected")}
         </div>
       ) : (
       <>
         {error && (
           <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", borderRadius: 10, padding: "10px 14px", fontSize: 12, marginBottom: 12 }}>
-            {error} A mostrar os dados anteriores.
+            {t("cal_not_connected")} {t("cal_showing_cached")}
           </div>
         )}
         {isMobile ? (
@@ -158,7 +159,7 @@ function MonthGrid({ anchor, byDay, todayKey, onEvent, onCreate }) {
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 6 }}>
-        {WEEKDAYS_PT.map((d) => <div key={d} style={{ fontSize: 11, color: "#AAA", fontWeight: 700, textAlign: "center" }}>{d}</div>)}
+        {weekdaysShort().map((d) => <div key={d} style={{ fontSize: 11, color: "#AAA", fontWeight: 700, textAlign: "center" }}>{d}</div>)}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4 }}>
         {cells.map((d, i) => {
@@ -175,7 +176,7 @@ function MonthGrid({ anchor, byDay, todayKey, onEvent, onCreate }) {
                 <span style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? "white" : inMonth ? "#333" : "#BBB", background: isToday ? "#111" : "transparent", borderRadius: "50%", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center" }}>{d.getDate()}</span>
               </div>
               {evs.slice(0, 3).map((ev) => <EventChip key={ev.id} ev={ev} onClick={onEvent} compact />)}
-              {evs.length > 3 && <div style={{ fontSize: 10, color: "#888", fontWeight: 600, paddingLeft: 2 }}>+{evs.length - 3} mais</div>}
+              {evs.length > 3 && <div style={{ fontSize: 10, color: "#888", fontWeight: 600, paddingLeft: 2 }}>+{evs.length - 3} {t("cal_more")}</div>}
             </div>
           );
         })}
@@ -210,7 +211,7 @@ function WeekGrid({ anchor, byDay, todayKey, onEvent, onCreate }) {
             const allDayEvs = (byDay[key] || []).filter((e) => e.allDay);
             return (
               <div key={i} style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#AAA", fontWeight: 700 }}>{WEEKDAYS_PT[i]}</div>
+                <div style={{ fontSize: 11, color: "#AAA", fontWeight: 700 }}>{weekdaysShort()[i]}</div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: isToday ? "white" : "#333", background: isToday ? "#111" : "transparent", borderRadius: "50%", width: 24, height: 24, lineHeight: "24px", margin: "2px auto 4px" }}>{d.getDate()}</div>
                 {allDayEvs.map((ev) => <EventChip key={ev.id} ev={ev} onClick={onEvent} compact />)}
               </div>
@@ -257,7 +258,7 @@ function MobileMonth({ anchor, byDay, todayKey, selectedDay, setSelectedDay, onE
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 4 }}>
-        {WEEKDAYS_PT.map((d) => <div key={d} style={{ fontSize: 10, color: "#AAA", fontWeight: 700, textAlign: "center" }}>{d}</div>)}
+        {weekdaysShort().map((d) => <div key={d} style={{ fontSize: 10, color: "#AAA", fontWeight: 700, textAlign: "center" }}>{d}</div>)}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
         {cells.map((d, i) => {
@@ -278,11 +279,11 @@ function MobileMonth({ anchor, byDay, todayKey, selectedDay, setSelectedDay, onE
       {/* Agenda for the selected day */}
       <div style={{ marginTop: 16, borderTop: "1px solid #F0F0F0", paddingTop: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: "#111", margin: 0, textTransform: "capitalize" }}>{selDate.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" })}</p>
-          <button onClick={() => onCreate(selDate)} style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>+ Evento</button>
+          <p style={{ fontSize: 13, fontWeight: 700, color: "#111", margin: 0, textTransform: "capitalize" }}>{selDate.toLocaleDateString(t("date_locale"), { weekday: "long", day: "numeric", month: "long" })}</p>
+          <button onClick={() => onCreate(selDate)} style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{t("cal_new_event_short")}</button>
         </div>
         {dayEvents.length === 0 ? (
-          <p style={{ fontSize: 13, color: "#BBB", textAlign: "center", padding: "20px 0", margin: 0 }}>Sem eventos neste dia.</p>
+          <p style={{ fontSize: 13, color: "#BBB", textAlign: "center", padding: "20px 0", margin: 0 }}>{t("cal_no_events")}</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {dayEvents.map((ev) => (
