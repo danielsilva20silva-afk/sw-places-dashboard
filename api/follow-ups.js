@@ -64,7 +64,8 @@ export default async function handler(req, res) {
   if (!ctx) {
     return res.status(400).json({ error: "Calendar not connected yet." });
   }
-  const { calendar, calendarId } = ctx;
+  const { calendar, calendarIds } = ctx;
+  const PRIMARY = calendarIds[0]; // follow-ups are always created on the primary
 
   try {
     if (req.method === "POST") {
@@ -76,7 +77,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Data/hora inválida." });
       }
       const r = await calendar.events.insert({
-        calendarId,
+        calendarId: PRIMARY,
         requestBody: {
           summary: `Follow up: ${name}`,
           description: buildDescription(b),
@@ -101,23 +102,34 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "GET") {
-      const r = await calendar.events.list({
-        calendarId,
+      // Our follow-ups only ever live on the primary, but read across ALL
+      // configured calendars (the private-property filter returns only ours) so
+      // one unshared calendar can't break the list — allSettled skips failures.
+      const base = {
         timeMin: new Date().toISOString(),
         singleEvents: true,
         orderBy: "startTime",
         maxResults: 10,
         privateExtendedProperty: `${TAG_KEY}=${TAG_VAL}`,
-      });
-      const items = (r.data.items || [])
-        .filter((e) => e.status !== "cancelled" && e.start?.dateTime)
-        .map((e) => ({
-          id: e.id,
-          start: e.start.dateTime,
-          leadName: e.extendedProperties?.private?.leadName || (e.summary || "").replace(/^Follow up:\s*/, ""),
-          leadId: e.extendedProperties?.private?.leadId || "",
-        }));
-      return res.status(200).json(items);
+      };
+      const results = await Promise.allSettled(
+        calendarIds.map((id) => calendar.events.list({ ...base, calendarId: id }))
+      );
+      const items = [];
+      for (const r of results) {
+        if (r.status !== "fulfilled") { console.error("follow-ups GET: a calendar failed:", r.reason?.message || r.reason); continue; }
+        for (const e of r.value.data.items || []) {
+          if (e.status === "cancelled" || !e.start?.dateTime) continue;
+          items.push({
+            id: e.id,
+            start: e.start.dateTime,
+            leadName: e.extendedProperties?.private?.leadName || (e.summary || "").replace(/^Follow up:\s*/, ""),
+            leadId: e.extendedProperties?.private?.leadId || "",
+          });
+        }
+      }
+      items.sort((a, b) => new Date(a.start) - new Date(b.start));
+      return res.status(200).json(items.slice(0, 10));
     }
 
     res.setHeader("Allow", "GET, POST");

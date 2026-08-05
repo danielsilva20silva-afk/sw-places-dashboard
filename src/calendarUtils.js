@@ -4,6 +4,13 @@ import { t } from "./labels";
 
 export const p2 = (n) => String(n).padStart(2, "0");
 
+// Display title for a calendar event, per client. Untitled events show
+// "Untitled" (primary) or "Busy" (read-only secondary) — via the labels system.
+export function eventTitle(ev) {
+  if (ev && ev.title) return ev.title;
+  return t(ev && ev.readOnly ? "cal_untitled_busy" : "cal_untitled");
+}
+
 // JS Date → "YYYY-MM-DD" (local)
 export const ymd = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 

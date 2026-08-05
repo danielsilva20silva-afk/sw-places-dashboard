@@ -66,7 +66,9 @@ export async function getCalendarEvents(startISO, endISO) {
   const res = await fetch(`/api/calendar?${qs.toString()}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return Array.isArray(data) ? data : [];
+  // New shape: { events, errors } (per-calendar). Tolerate the old bare array.
+  if (Array.isArray(data)) return { events: data, errors: [] };
+  return { events: Array.isArray(data.events) ? data.events : [], errors: Array.isArray(data.errors) ? data.errors : [] };
 }
 
 // POST /api/calendar → create an event, returns the created event

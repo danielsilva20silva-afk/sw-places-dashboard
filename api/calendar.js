@@ -1,13 +1,23 @@
 import { google } from "googleapis";
+import { getCalendarIds } from "./_adapters/googleAuth.js";
 
 // Google Calendar is the single source of truth for scheduling.
-// The service account uses Domain-Wide Delegation to IMPERSONATE a Workspace
-// user (GOOGLE_IMPERSONATE_EMAIL, e.g. gmiguel@sw-places.com): it acts AS that
-// user, so it has full access to their calendar without relying on an external
-// share (which the Workspace policy limited to free/busy). Because we act as
-// the user, the calendar id defaults to their own "primary" calendar.
-const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || "primary";
+// The service account either IMPERSONATES a Workspace user (Domain-Wide
+// Delegation via GOOGLE_IMPERSONATE_EMAIL, e.g. Gustavo) or accesses calendars
+// SHARED with it directly (e.g. Brandon). GOOGLE_CALENDAR_ID may be a
+// COMMA-SEPARATED list; the FIRST id is the PRIMARY (ALL writes go there), the
+// rest are read-only secondaries merged into the view. A single id behaves
+// exactly as before.
 const TZ = "Europe/Lisbon";
+
+// Resolve the calendar list for this request. With no GOOGLE_CALENDAR_ID we keep
+// the old behaviour ONLY when impersonating (the user's own "primary"); without
+// impersonation an empty list means "not configured" → a friendly 4xx.
+function resolveCalendars() {
+  const ids = getCalendarIds();
+  if (ids.length) return ids;
+  return process.env.GOOGLE_IMPERSONATE_EMAIL ? ["primary"] : [];
+}
 
 function getCalendarClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -56,17 +66,23 @@ function readReminderMinutes(e) {
 
 // Google event → our shape. All-day events use `date`; timed use `dateTime`.
 // Google stores all-day end as EXCLUSIVE; we return it inclusive for display.
-function toEvent(e) {
+function toEvent(e, calendarId = "", isPrimary = true) {
   const allDay = !!(e.start && e.start.date);
   return {
     id: e.id,
-    title: e.summary || "(sem título)",
+    // Empty when the event has no summary; the frontend supplies the per-client
+    // "Untitled"/"Busy" label (which also depends on primary vs secondary).
+    title: e.summary || "",
     description: e.description || "",
     location: e.location || "",
     allDay,
     start: allDay ? e.start.date : (e.start?.dateTime || ""),
     end: allDay ? addDays(e.end?.date || e.start.date, -1) : (e.end?.dateTime || ""),
     reminderMinutes: readReminderMinutes(e),
+    calendarId,
+    // Events on a non-primary (secondary) calendar are display-only — the
+    // dashboard never writes to them (writes always go to the primary).
+    readOnly: !isPrimary,
   };
 }
 
@@ -97,19 +113,40 @@ export default async function handler(req, res) {
   if (!cal) {
     return res.status(500).json({ error: "Google Calendar não configurado (GOOGLE_CALENDAR_ID / GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY)." });
   }
+  const CALENDARS = resolveCalendars();
+  if (!CALENDARS.length) {
+    return res.status(400).json({ error: "Google Calendar não configurado (GOOGLE_CALENDAR_ID)." });
+  }
+  // ALL writes go to the FIRST calendar (the primary). Never write to secondaries.
+  const PRIMARY = CALENDARS[0];
 
   try {
     if (req.method === "GET") {
       const { start, end } = req.query || {};
-      const params = {
-        calendarId: CALENDAR_ID, singleEvents: true, orderBy: "startTime",
-        maxResults: 2500, timeZone: TZ,
-      };
-      if (start) params.timeMin = new Date(start).toISOString();
-      if (end) params.timeMax = new Date(end).toISOString();
-      const r = await cal.events.list(params);
-      const events = (r.data.items || []).filter((e) => e.status !== "cancelled").map(toEvent);
-      return res.status(200).json(events);
+      const base = { singleEvents: true, orderBy: "startTime", maxResults: 2500, timeZone: TZ };
+      if (start) base.timeMin = new Date(start).toISOString();
+      if (end) base.timeMax = new Date(end).toISOString();
+
+      // Fetch every calendar independently; one failing (not shared / no access)
+      // must not sink the others — collect its error and still return the rest.
+      const results = await Promise.allSettled(
+        CALENDARS.map((id) => cal.events.list({ ...base, calendarId: id }))
+      );
+      const events = [];
+      const errors = [];
+      results.forEach((r, i) => {
+        const id = CALENDARS[i];
+        if (r.status === "fulfilled") {
+          for (const e of r.value.data.items || []) {
+            if (e.status !== "cancelled") events.push(toEvent(e, id, id === PRIMARY));
+          }
+        } else {
+          const info = errorInfo(r.reason);
+          errors.push({ calendarId: id, error: info.error, detail: info.detail });
+        }
+      });
+      events.sort((a, b) => new Date(a.start) - new Date(b.start));
+      return res.status(200).json({ events, errors });
     }
 
     if (req.method === "POST") {
@@ -119,14 +156,14 @@ export default async function handler(req, res) {
       }
       const reminders = buildReminders(b.reminderMinutes);
       const r = await cal.events.insert({
-        calendarId: CALENDAR_ID,
+        calendarId: PRIMARY, // writes → primary only
         requestBody: {
           summary: b.title, description: b.description || "", location: b.location || "",
           ...toGoogleTimes(b),
           ...(reminders ? { reminders } : {}),
         },
       });
-      return res.status(201).json(toEvent(r.data));
+      return res.status(201).json(toEvent(r.data, PRIMARY, true));
     }
 
     if (req.method === "PATCH") {
@@ -136,21 +173,24 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Faltam campos: título e início são obrigatórios." });
       }
       const reminders = buildReminders(b.reminderMinutes);
+      // Edits target the primary only. A secondary (read-only) event id here
+      // yields a clear 404 rather than a silent failure (and the UI hides Edit
+      // on read-only events anyway).
       const r = await cal.events.patch({
-        calendarId: CALENDAR_ID, eventId: b.id,
+        calendarId: PRIMARY, eventId: b.id,
         requestBody: {
           summary: b.title, description: b.description || "", location: b.location || "",
           ...toGoogleTimes(b),
           ...(reminders ? { reminders } : {}),
         },
       });
-      return res.status(200).json(toEvent(r.data));
+      return res.status(200).json(toEvent(r.data, PRIMARY, true));
     }
 
     if (req.method === "DELETE") {
       const id = req.query?.id ?? req.body?.id;
       if (!id) return res.status(400).json({ error: "Parâmetro 'id' em falta." });
-      await cal.events.delete({ calendarId: CALENDAR_ID, eventId: id });
+      await cal.events.delete({ calendarId: PRIMARY, eventId: id }); // primary only
       return res.status(200).json({ id: String(id) });
     }
 

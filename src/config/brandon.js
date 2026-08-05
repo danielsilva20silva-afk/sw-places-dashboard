@@ -154,6 +154,12 @@ export default {
     cal_loading: "Loading calendar…",
     cal_not_connected: "Calendar not connected yet.",
     cal_showing_cached: "Showing the previous data.",
+    cal_partial: "Some calendars aren't connected:",
+    cal_readonly: "Read-only (secondary calendar)",
+    cal_untitled: "Untitled",
+    cal_untitled_busy: "Busy",
+    cal_legend_primary: "Personal",
+    cal_legend_secondary: "Work",
     cal_more: "more",
     cal_no_events: "No events on this day.",
     cal_all_day: "All day",
@@ -238,8 +244,8 @@ export default {
     // options follow. Prepended to keep the filter dropdowns functional.
     BUDGETS: ["Todos", "Under €1M", "€1M – €2M", "€2M – €5M", "Over €5M"],
     INTENTIONS: ["Todas", "A primary residence", "A second home / holiday property", "An investment / rental property"],
-    // The meeting-scheduling status. Brandon has no calendar yet (features.calendar
-    // false), so this is only used if/when calendar is enabled for Brandon.
+    // The status whose selection opens the calendar meeting-scheduling flow
+    // (calendar is enabled for Brandon — features.calendar true).
     calendarTriggerStatus: "Viewing booked",
     // Statuses counted by the Dashboard "Em contacto" (in progress) stat.
     inContactStatuses: ["Contacted — no answer", "Contacted — answered", "Viewing booked"],
