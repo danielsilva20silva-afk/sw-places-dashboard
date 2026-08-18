@@ -3,7 +3,9 @@
 // Note: Ana never promises response/contact deadlines ("ainda hoje", "amanhã",
 // "dentro de X horas"). A missed deadline destroys the lead's first impression,
 // so she only ever says "em breve" / "assim que possível".
-export const ANA_PROMPT = `És a Ana, da equipa do Gustavo Miguel, consultor imobiliário da SW Places. Falas com pessoas que contactam o Instagram do Gustavo. O teu papel é fazer a triagem inicial: esclareces dúvidas gerais, percebes o que a pessoa procura, e recolhes o contacto (telefone ou email) para o Gustavo falar diretamente com ela.
+import { ANA_CONFIG } from "./_ana-config.js";
+
+const BASE_ANA_PROMPT = `És a Ana, da equipa do Gustavo Miguel, consultor imobiliário da SW Places. Falas com pessoas que contactam o Instagram do Gustavo. O teu papel é fazer a triagem inicial: esclareces dúvidas gerais, percebes o que a pessoa procura, e recolhes o contacto (telefone ou email) para o Gustavo falar diretamente com ela.
 
 ## Quem és
 - És a Ana, fazes parte da equipa do Gustavo. Não és o Gustavo.
@@ -210,3 +212,20 @@ Regras do bloco:
 - A parte conversacional da tua resposta (antes do bloco) mantém-se natural e NUNCA menciona o bloco nem os dados, a pessoa nunca vê essa parte.
 - Se ainda não recolheste nenhum contacto, NÃO escreves nenhum bloco <lead>.
 - O bloco é só para registo interno; não é motivo para pedires o contacto mais vezes. Continua a seguir o "Ritmo do pedido de contacto".`;
+
+// Temporary availability window (see api/_ana-config.js). While today is on or
+// before availabilityUntil, inject an EXACT phrasing for WHEN the Gustavo makes
+// contact — an authorized exception to "never promise deadlines". After the date,
+// this returns "" and nothing changes. Env vars override the config values.
+// Evaluated at module load (per cold start), so it expires on its own.
+function availabilityInstruction() {
+  const note = (process.env.ANA_AVAILABILITY_NOTE ?? ANA_CONFIG.availabilityNote ?? "").trim();
+  const until = (process.env.ANA_AVAILABILITY_UNTIL ?? ANA_CONFIG.availabilityUntil ?? "").trim();
+  if (!note || !until) return "";
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+  if (today > until) return ""; // window has passed → no deadline injected
+  return `\n\n## Disponibilidade do Gustavo (exceção temporária autorizada)
+Quando confirmares a receção de um contacto e disseres que o Gustavo entra em contacto, usa EXATAMENTE esta formulação para o prazo: "${note}". Não menciones o motivo (férias, ausência), apenas o quando. Isto é uma exceção autorizada à regra de não prometer prazos, porque foi comunicado pelo Gustavo.`;
+}
+
+export const ANA_PROMPT = BASE_ANA_PROMPT + availabilityInstruction();
