@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { STATUSES, BUDGETS, INTENTIONS, GOLD } from "../constants";
-import { cleanField, isValidPhone, isValidEmail, leadTime, isRealLead, normalizeText } from "../utils";
+import { cleanField, isValidPhone, isValidEmail, leadTime, isRealLead, normalizeText, sourceCampaignLabel } from "../utils";
 import { t } from "../labels";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
@@ -75,8 +75,11 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
 
-  // Distinct sources present in the data (e.g. ALGARVE, DM · ANA, Manual…)
-  const sources = Array.from(new Set(leads.map(l => cleanField(l.source)).filter(Boolean))).sort();
+  // Distinct source options present in the data, each shown in short form (Meta
+  // campaign/form values collapse to their middle segment, e.g. "BUYERS REEL";
+  // every other source is left as-is). Derived dynamically, so new campaigns
+  // appear automatically. The filter matches on this same short label.
+  const sources = Array.from(new Set(leads.map(l => sourceCampaignLabel(cleanField(l.source))).filter(Boolean))).sort();
 
   const q = normalizeText(search);
   const filtered = leads.filter(l => {
@@ -85,7 +88,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
     if (filterStatus !== "Todos" && l.status !== filterStatus) return false;
     if (filterClassification === NO_CLASSIFICATION) { if (l.classification) return false; }
     else if (filterClassification !== "Todas" && l.classification !== filterClassification) return false;
-    if (filterSource !== "Todas" && cleanField(l.source) !== filterSource) return false;
+    if (filterSource !== "Todas" && sourceCampaignLabel(cleanField(l.source)) !== filterSource) return false;
     if (!inPeriod(l, filterPeriod)) return false;
     if (!matchContact(l, filterContact)) return false;
     // Search matches ALL displayed lead fields (name/email/phone/budget/intention/
