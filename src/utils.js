@@ -61,6 +61,24 @@ export function cleanField(value) {
   return isPlaceholder(value) ? null : value.trim();
 }
 
+// Short, readable label for a lead's source in the filter dropdown. Meta form
+// leads carry a source like "Brandon — BUYERS REEL — Instant Form Leads"; when a
+// value matches that "X — Y — Z" shape (three em/en-dash-separated parts) we show
+// just the middle segment ("BUYERS REEL"), so the campaign/reel is legible and
+// new campaigns appear automatically. Anything that doesn't match the pattern
+// (every current swplaces source: "ALGARVE", "DM · ANA", "Manual"…) is returned
+// unchanged — so those clients' options render exactly as before. No hardcoded
+// campaign list; derived purely from the value.
+export function sourceCampaignLabel(source) {
+  if (!source) return source;
+  const parts = source.split(/\s+[—–]\s+/);
+  if (parts.length === 3) {
+    const mid = parts[1].trim();
+    if (mid) return mid;
+  }
+  return source;
+}
+
 // A record counts as a real LEAD once it has any contact (phone OR email).
 // Reel-flow / manually-logged DM entries (source "DM · ANA") are written to the
 // Sheet early — on purpose, to preserve source_content/source_url until Ana
