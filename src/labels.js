@@ -267,6 +267,8 @@ const DEFAULTS = {
   tpl_greeting_add_ph: "Adicionar saudação…",
   tpl_greeting_add: "Adicionar",
   tpl_greeting_min: "Mantém pelo menos uma saudação.",
+  tpl_greeting_edit: "Editar",
+  tpl_greeting_cancel: "Cancelar",
   tpl_ph_name: "{name} → primeiro nome do lead",
   tpl_ph_area: "{area} → área do formulário (buyers reel)",
   tpl_ph_campaign: "{campaign} → nome curto da campanha",

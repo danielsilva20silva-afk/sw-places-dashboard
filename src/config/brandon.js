@@ -251,6 +251,8 @@ export default {
     tpl_greeting_add_ph: "Add a greeting…",
     tpl_greeting_add: "Add",
     tpl_greeting_min: "Keep at least one greeting.",
+    tpl_greeting_edit: "Edit",
+    tpl_greeting_cancel: "Cancel",
     tpl_ph_name: "{name} → lead's first name",
     tpl_ph_area: "{area} → area from the form (buyers reel)",
     tpl_ph_campaign: "{campaign} → short campaign name",

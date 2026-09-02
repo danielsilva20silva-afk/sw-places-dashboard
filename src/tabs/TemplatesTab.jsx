@@ -122,14 +122,16 @@ function PlaceholderHelp() {
   );
 }
 
-// Compact editor for the {greeting} rotation list. Edit in place, add, remove
-// (min 1 enforced), then Save persists the whole list. Server cleans + de-dupes
-// and returns the canonical list, which we adopt.
+// Collapsed-by-default editor for the {greeting} rotation list. Collapsed shows
+// the current values inline with an Edit affordance; expanded is the full editor
+// (edit in place, add, remove with min 1 enforced, Save/Cancel). Server cleans +
+// de-dupes and returns the canonical list, which we adopt.
 function GreetingsEditor({ initial, onSave }) {
   const [list, setList] = useState(initial);
   const [savedList, setSavedList] = useState(initial);
   const [newG, setNewG] = useState("");
-  const [state, setState] = useState("idle"); // idle | saving | saved | error
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState("idle"); // idle | saving | error
   const [err, setErr] = useState("");
 
   const canRemove = list.length > 1;
@@ -140,16 +142,32 @@ function GreetingsEditor({ initial, onSave }) {
   const removeAt = (i) => { if (list.length <= 1) return; setList((l) => l.filter((_, idx) => idx !== i)); };
   const add = () => { const v = newG.trim(); if (!v) return; setList((l) => [...l, v]); setNewG(""); };
 
+  const openEditor = () => { setList(savedList); setNewG(""); setErr(""); setState("idle"); setOpen(true); };
+  const cancel = () => { setList(savedList); setNewG(""); setErr(""); setState("idle"); setOpen(false); };
+
   const save = async () => {
     if (state === "saving") return;
     if (!cleaned.length) { setState("error"); setErr(t("tpl_greeting_min")); return; }
     setState("saving"); setErr("");
     const r = await onSave(cleaned);
-    if (r?.ok) { setList(r.greetings); setSavedList(r.greetings); setState("saved"); setTimeout(() => setState("idle"), 1600); }
+    if (r?.ok) { setList(r.greetings); setSavedList(r.greetings); setState("idle"); setOpen(false); }
     else { setState("error"); setErr(r?.error || t("tpl_save_failed")); }
   };
 
   const rowInput = { flex: 1, minWidth: 0, border: "1px solid #E5E5E5", borderRadius: 8, padding: "7px 10px", fontSize: 13, color: "#111", outline: "none", boxSizing: "border-box" };
+
+  // Collapsed: one compact line — "GREETINGS: Hey · Hi · Hello [Edit]".
+  if (!open) {
+    return (
+      <div style={{ ...card, padding: "12px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <p style={{ ...heading, margin: 0, flexShrink: 0 }}>{t("tpl_greetings_title")}</p>
+          <span style={{ fontSize: 13, color: "#555", flex: 1, minWidth: 120 }}>{savedList.join("  ·  ")}</span>
+          <button type="button" onClick={openEditor} style={{ ...btnGhost, padding: "5px 12px", flexShrink: 0 }}>{t("tpl_greeting_edit")}</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ ...card, padding: "14px 18px", marginBottom: 16 }}>
@@ -175,7 +193,7 @@ function GreetingsEditor({ initial, onSave }) {
         <button type="button" onClick={save} disabled={state === "saving" || !dirty} style={btnPrimary(state === "saving" || !dirty)}>
           {state === "saving" ? t("tpl_saving") : t("tpl_save")}
         </button>
-        {state === "saved" && <span style={{ fontSize: 12, color: "#15803D" }}>{t("tpl_saved")}</span>}
+        <button type="button" onClick={cancel} style={btnGhost}>{t("tpl_greeting_cancel")}</button>
         {state === "error" && <span style={{ fontSize: 12, color: "#BE123C" }}>{err}</span>}
       </div>
     </div>
