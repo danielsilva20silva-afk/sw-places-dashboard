@@ -208,6 +208,7 @@ export default {
     merged_title: "Merged records",
     merged_sources: "Sources",
     merged_answers: "Form answers",
+    dup_from: "From",
     merged_notes_title: "Notes history",
     merged_note_primary: "primary",
     merged_unmerge: "Unmerge",

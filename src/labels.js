@@ -223,6 +223,7 @@ const DEFAULTS = {
   merged_title: "Registos unidos",
   merged_sources: "Origens",                 // chips heading
   merged_answers: "Respostas do formulário", // grouped summaries heading
+  dup_from: "De",                            // origin hint: "De {origem}" on a borrowed field
   merged_notes_title: "Histórico de notas",
   merged_note_primary: "principal",          // origin tag on a note from the primary
   merged_unmerge: "Separar",

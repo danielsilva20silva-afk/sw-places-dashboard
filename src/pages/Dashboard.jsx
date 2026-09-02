@@ -451,8 +451,15 @@ export default function Dashboard({ onLogout }) {
         // as links change (and stays correct after a merge/unmerge in place).
         const id = String(drawerLead.id);
         const active = (dedupeOn && enrichedById && enrichedById.get(id)) || drawerLead;
+        // Remount the drawer when the merge composition changes (merge/unmerge) so
+        // its field state re-initialises from the new composite in place — no
+        // close/reopen. The key is stable across ordinary edits (no remount).
+        const mergeSig = (dedupeOn && active.__merged)
+          ? active.mergedSecondaries.map((s) => String(s.lead.id)).sort().join(",")
+          : "";
         return (
           <LeadDrawer
+            key={`${id}|${mergeSig}`}
             lead={active}
             onClose={() => setDrawerLead(null)}
             onUpdate={updateLead}

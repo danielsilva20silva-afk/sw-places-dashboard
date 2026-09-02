@@ -82,6 +82,18 @@ function makeRootOf(secToPrim) {
   };
 }
 
+// Contact/profile fields that fall back to a secondary when the primary's is
+// empty (display only — edits still write to the primary; every raw value stays
+// visible under "form answers grouped by source").
+const FALLBACK_FIELDS = ["phone", "email", "budget", "intention"];
+
+// A field counts as present when it's non-empty and not a webhook placeholder
+// ("{{phone}}"), matching how the UI treats real vs. empty values.
+function isPresent(v) {
+  const str = String(v == null ? "" : v).trim();
+  return str !== "" && !str.startsWith("{{");
+}
+
 // Concatenate a secondary's searchable fields so a merged primary stays findable
 // by the secondary's data (campaign, email variant, phone, name…).
 function searchTextFor(lead) {
@@ -97,7 +109,9 @@ function searchTextFor(lead) {
 //   rootOf           — id → its group's primary id
 //
 // Enriched primary objects (new objects, originals untouched) carry:
-//   __merged true, __mergedCount, mergedSecondaries [{ lead, linkId }], __dupSearch
+//   __merged true, __mergedCount, mergedSecondaries [{ lead, linkId }], __dupSearch,
+//   and __fieldOrigins { field: { id, source } } for any contact field whose value
+//   was borrowed from a secondary (the primary's was empty).
 // Leads with an unlinked candidate carry __dupCandidate true.
 export function computeDedupe(leads, links) {
   const byId = new Map(leads.map((l) => [String(l.id), l]));
@@ -173,6 +187,21 @@ export function computeDedupe(leads, links) {
         out.__mergedCount = secs.length;
         out.mergedSecondaries = secs;
         out.__dupSearch = secs.map((x) => searchTextFor(x.lead)).join(" ");
+        // Contact/profile fallback: primary wins; when its field is empty, take the
+        // first secondary that has a value. Records the origin of any borrowed value
+        // in __fieldOrigins so the drawer can show a subtle "from {source}" hint.
+        const origins = {};
+        for (const f of FALLBACK_FIELDS) {
+          if (isPresent(out[f])) continue;
+          for (const { lead: sec } of secs) {
+            if (isPresent(sec[f])) {
+              out[f] = sec[f];
+              origins[f] = { id: String(sec.id), source: sec.source };
+              break;
+            }
+          }
+        }
+        if (Object.keys(origins).length) out.__fieldOrigins = origins;
       }
       if (hasCand) out.__dupCandidate = true;
     }
