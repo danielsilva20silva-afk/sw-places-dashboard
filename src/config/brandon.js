@@ -290,8 +290,8 @@ export default {
     ana: false,
     calendar: true,     // Google Calendar (month/week views + events) via GOOGLE_CALENDAR_ID
     followups: true,    // "Schedule follow-up" on leads (Google Calendar, api/follow-ups.js)
-    dedupe: true,       // duplicate-lead detection + link-based merge (api/lead-links.js)
-    templates: true,    // WhatsApp message template manager (api/wa-templates.js)
+    dedupe: true,       // duplicate-lead detection + merge (api/brandon-store.js?resource=links)
+    templates: true,    // WhatsApp template manager (api/brandon-store.js?resource=templates)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour
