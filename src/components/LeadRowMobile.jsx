@@ -3,6 +3,7 @@ import { cleanField } from "../utils";
 import Avatar from "./Avatar";
 import LeadMeta from "./LeadMeta";
 import ClassificationBadge from "./ClassificationBadge";
+import DupBadge from "./DupBadge";
 import StatusDropdown from "./StatusDropdown";
 import QuickActions from "./QuickActions";
 
@@ -32,6 +33,7 @@ export default function LeadRowMobile({ lead, onOpen, onStatusChange, showNotesI
           {showNotesIcon && cleanField(lead.notes) && (
             <span title={cleanField(lead.notes)} style={{ fontSize: 11, color: GOLD, flexShrink: 0 }}>📝</span>
           )}
+          <DupBadge lead={lead} />
         </div>
         <div onClick={stop} style={{ flexShrink: 0, maxWidth: "45%" }}>
           <StatusDropdown status={lead.status} onChange={(s) => onStatusChange(lead, s)} compact />

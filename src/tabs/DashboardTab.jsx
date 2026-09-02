@@ -13,6 +13,7 @@ import CalendarView from "../components/CalendarView";
 import LeadMeta from "../components/LeadMeta";
 import ClassificationBadge from "../components/ClassificationBadge";
 import LeadRowMobile from "../components/LeadRowMobile";
+import DupBadge from "../components/DupBadge";
 import useIsMobile from "../useIsMobile";
 
 export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged }) {
@@ -144,6 +145,7 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
               <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</span>
                 <ClassificationBadge value={lead.classification} />
+                <DupBadge lead={lead} />
               </div>
               <LeadMeta lead={lead} />
             </div>

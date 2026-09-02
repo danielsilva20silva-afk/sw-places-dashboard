@@ -3,13 +3,17 @@ import { createPortal } from "react-dom";
 import { STATUSES, STATUS_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { t } from "../labels";
-import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab } from "../utils";
+import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab, sourceCampaignLabel } from "../utils";
+import { appendNote } from "../notesFormat";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
 import NotesHistory from "./NotesHistory";
 import ClassificationSelect from "./ClassificationSelect";
 import FollowUpScheduler from "./FollowUpScheduler";
+import DuplicateCandidates from "./DuplicateCandidates";
+import MergedRecords from "./MergedRecords";
+import MergedNotes from "./MergedNotes";
 
 // Per-client WhatsApp message for the "Sem resposta" button (empty when the
 // client hasn't configured one → the button is hidden).
@@ -23,7 +27,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -46,6 +50,33 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
 
   // notes (Ana's auto conversation summary) is READ-ONLY here.
   const summary = (cleanField(lead.notes) || "").trim();
+
+  // Dedupe (merge) — all gated on the feature; off clients see none of this.
+  const dedupeOn = hasFeature("dedupe");
+  const mergedSecondaries = dedupeOn && lead.__merged ? (lead.mergedSecondaries || []) : [];
+  const isMerged = mergedSecondaries.length > 0;
+  const dupCandidates = dedupeOn ? (candidates || []) : [];
+  // When merged, form answers ("summary") are shown grouped per record. Include a
+  // record if it has notes OR any contact/profile value, so every raw value stays
+  // visible under its source — nothing is lost when the composite shows just one.
+  const answerRecords = isMerged
+    ? [lead, ...mergedSecondaries.map((s) => s.lead)].filter((r) => {
+        const contact = [r.phone, r.email, r.budget, r.intention].some((v) => cleanField(v));
+        return (cleanField(r.notes) || "").trim() || contact;
+      })
+    : [];
+  // Origin hint for a contact field whose displayed value was borrowed from a
+  // secondary (see computeDedupe.__fieldOrigins). Null in every other case.
+  const fieldOrigins = isMerged ? (lead.__fieldOrigins || {}) : {};
+  const originHint = (key) => {
+    const o = fieldOrigins[key];
+    if (!o) return null;
+    return (
+      <span title={`${t("dup_from")} ${o.source}`} style={{ marginLeft: 6, fontSize: 9, fontWeight: 600, color: "#8A6D2F", textTransform: "none", letterSpacing: 0 }}>
+        ↳ {sourceCampaignLabel(cleanField(o.source)) || cleanField(o.source)}
+      </span>
+    );
+  };
 
   // Refs so the debounced/close/unmount flush always reads current values.
   const fieldsRef = useRef({ name: lead.name || "", email: lead.email || "", phone: lead.phone || "", budget: lead.budget || "", intention: lead.intention || "", manual_notes: lead.manual_notes || "" });
@@ -145,6 +176,9 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
     fieldsRef.current.manual_notes = next;
     persist({ manual_notes: next });
   };
+  // Merged view: new notes append to the PRIMARY's own manual_notes (writes never
+  // touch a secondary record).
+  const appendNoteToPrimary = (text) => commitNotes(appendNote(manualNotes, text));
 
   const handleClose = () => { clearTimeout(timerRef.current); flushText(); onClose(); };
 
@@ -224,6 +258,13 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               <AnaToggle subscriberId={String(lead.id)} />
             </div>
           )}
+          {/* Possible-duplicate candidates (merge) + merged-records (unmerge) */}
+          {dupCandidates.length > 0 && (
+            <DuplicateCandidates self={lead} candidates={dupCandidates} onMerge={onMerge} />
+          )}
+          {isMerged && (
+            <MergedRecords primary={lead} secondaries={mergedSecondaries} onUnmerge={onUnmerge} />
+          )}
           {/* Editable details (auto-save) */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
@@ -232,19 +273,19 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div>
-                <p style={fieldLabel}>{t("d_email")}</p>
+                <p style={fieldLabel}>{t("d_email")}{originHint("email")}</p>
                 <input {...bind("email", email, setEmail)} placeholder="email@…" style={fieldInput} />
               </div>
               <div>
-                <p style={fieldLabel}>{t("d_phone")}</p>
+                <p style={fieldLabel}>{t("d_phone")}{originHint("phone")}</p>
                 <input {...bind("phone", phone, setPhone)} placeholder="+351…" style={fieldInput} />
               </div>
               <div>
-                <p style={fieldLabel}>{t("d_budget")}</p>
+                <p style={fieldLabel}>{t("d_budget")}{originHint("budget")}</p>
                 <input {...bind("budget", budget, setBudget)} placeholder="ex. 300k–500k" style={fieldInput} />
               </div>
               <div>
-                <p style={fieldLabel}>{t("d_intention")}</p>
+                <p style={fieldLabel}>{t("d_intention")}{originHint("intention")}</p>
                 <input {...bind("intention", intention, setIntention)} placeholder="ex. investir" style={fieldInput} />
               </div>
             </div>
@@ -272,13 +313,44 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             </div>
           )}
           {hasFeature("followups") && <FollowUpScheduler lead={lead} />}
-          {summary && (
-            <div>
-              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>{t("d_summary")}</p>
-              <div style={{ background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#666", fontStyle: "italic", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{summary}</div>
-            </div>
+          {/* Form answers / summary. Merged → grouped per record; else the single summary. */}
+          {isMerged ? (
+            answerRecords.length > 0 && (
+              <div>
+                <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>{t("merged_answers")}</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {answerRecords.map((r) => {
+                    const contact = [cleanField(r.phone), cleanField(r.email), cleanField(r.budget), cleanField(r.intention)].filter(Boolean).join(" · ");
+                    const notes = (cleanField(r.notes) || "").trim();
+                    return (
+                      <div key={String(r.id)}>
+                        <p style={{ fontSize: 11, fontWeight: 600, color: "#8A6D2F", margin: "0 0 4px" }}>{cleanField(r.source)}</p>
+                        {contact && <p style={{ fontSize: 12, color: "#888", margin: "0 0 4px" }}>{contact}</p>}
+                        {notes && <div style={{ background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#666", fontStyle: "italic", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{notes}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          ) : (
+            summary && (
+              <div>
+                <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>{t("d_summary")}</p>
+                <div style={{ background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#666", fontStyle: "italic", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{summary}</div>
+              </div>
+            )
           )}
-          <NotesHistory value={manualNotes} onChange={commitNotes} busy={save === "saving"} />
+          {isMerged ? (
+            <MergedNotes
+              primaryNotes={manualNotes}
+              secondaries={mergedSecondaries.map((s) => s.lead)}
+              onAppend={appendNoteToPrimary}
+              busy={save === "saving"}
+            />
+          ) : (
+            <NotesHistory value={manualNotes} onChange={commitNotes} busy={save === "saving"} />
+          )}
           {sourceOk && (
             <div>
               <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 6px" }}>{t("d_source_post")}</p>

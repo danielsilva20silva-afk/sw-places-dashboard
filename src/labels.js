@@ -207,6 +207,30 @@ const DEFAULTS = {
   cal_rem_hours_suffix: "horas antes",
   cal_rem_days_suffix: "dias antes",
 
+  // ── Duplicate detection + merge (dedupe feature) ──
+  dup_badge: "Possível duplicado",           // row indicator tooltip
+  dup_title: "Possível duplicado",           // drawer panel title
+  dup_of: "Igual a:",                        // "Igual a: {nome} · {origem} · {data}"
+  dup_matched_phone: "mesmo telefone",
+  dup_matched_email: "mesmo email",
+  dup_primary_hint: "O registo principal mantém o estado, a classificação e as notas. Nada é apagado — podes separar a qualquer momento.",
+  dup_primary_label: "Principal:",           // "Principal: {nome}"
+  dup_switch_primary: "Trocar",              // switch which record is primary
+  dup_merge: "Unir",
+  dup_merging: "A unir…",
+  dup_merge_failed: "Não foi possível unir. Tenta de novo.",
+  merged_badge: "Unido",                     // row indicator tooltip (+ count)
+  merged_title: "Registos unidos",
+  merged_sources: "Origens",                 // chips heading
+  merged_answers: "Respostas do formulário", // grouped summaries heading
+  dup_from: "De",                            // origin hint: "De {origem}" on a borrowed field
+  merged_notes_title: "Histórico de notas",
+  merged_note_primary: "principal",          // origin tag on a note from the primary
+  merged_unmerge: "Separar",
+  merged_unmerging: "A separar…",
+  merged_unmerge_confirm: "Separar este registo? Volta a aparecer como lead independente.",
+  merged_unmerge_failed: "Não foi possível separar.",
+
   // ── Dates ──
   date_locale: "pt-PT",
   today: "Hoje",
