@@ -192,6 +192,28 @@ export default {
     cal_rem_day: "1 day before",
     cal_rem_hours_suffix: "hours before",
     cal_rem_days_suffix: "days before",
+    // Duplicate detection + merge (dedupe feature)
+    dup_badge: "Possible duplicate",
+    dup_title: "Possible duplicate",
+    dup_of: "Same as:",
+    dup_matched_phone: "same phone",
+    dup_matched_email: "same email",
+    dup_primary_hint: "The primary record keeps the status, classification and notes. Nothing is deleted — you can unmerge any time.",
+    dup_primary_label: "Primary:",
+    dup_switch_primary: "Switch",
+    dup_merge: "Merge",
+    dup_merging: "Merging…",
+    dup_merge_failed: "Couldn't merge. Please try again.",
+    merged_badge: "Merged",
+    merged_title: "Merged records",
+    merged_sources: "Sources",
+    merged_answers: "Form answers",
+    merged_notes_title: "Notes history",
+    merged_note_primary: "primary",
+    merged_unmerge: "Unmerge",
+    merged_unmerging: "Unmerging…",
+    merged_unmerge_confirm: "Unmerge this record? It will reappear as a separate lead.",
+    merged_unmerge_failed: "Couldn't unmerge.",
     // Dates
     date_locale: "en-GB",
     today: "Today",
@@ -224,6 +246,7 @@ export default {
     ana: false,
     calendar: true,     // Google Calendar (month/week views + events) via GOOGLE_CALENDAR_ID
     followups: true,    // "Schedule follow-up" on leads (Google Calendar, api/follow-ups.js)
+    dedupe: true,       // duplicate-lead detection + link-based merge (api/lead-links.js)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour

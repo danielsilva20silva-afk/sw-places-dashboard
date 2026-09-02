@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { GOLD, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { t } from "../labels";
 import { eventTitle } from "../calendarUtils";
 import { relDate, buildMeetingPrefill } from "../utils";
+import { computeDedupe } from "../dedupe";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
 import LeadDrawer from "../components/LeadDrawer";
@@ -38,7 +39,9 @@ export default function Dashboard({ onLogout }) {
   const [upcomingEvents, setUpcomingEvents] = useState([]);
   const [calReload, setCalReload] = useState(0);
   const [meetingFlow, setMeetingFlow] = useState(null); // { leadId, prefill } | null
+  const [links, setLinks] = useState([]); // lead-merge links (dedupe feature)
   const calendarOn = hasFeature("calendar"); // false clients skip the whole calendar flow
+  const dedupeOn = hasFeature("dedupe"); // false clients: zero dedupe UI / no link fetch
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -66,6 +69,22 @@ export default function Dashboard({ onLogout }) {
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
+
+  // Lead-merge links (dedupe feature). Fetched once; refreshed optimistically on
+  // merge/unmerge. Off clients never fetch → no links → computeDedupe is a no-op.
+  useEffect(() => {
+    if (!dedupeOn) return;
+    let active = true;
+    api.getLeadLinks().then((data) => { if (active) setLinks(Array.isArray(data) ? data : []); });
+    return () => { active = false; };
+  }, [dedupeOn]);
+
+  // Apply links at read time: fold secondaries into their primary, flag detected
+  // duplicates. When the feature is off this is a pass-through (byte-identical).
+  const { displayLeads, enrichedById, candidatesByLead } = useMemo(() => {
+    if (!dedupeOn) return { displayLeads: leads, enrichedById: null, candidatesByLead: null };
+    return computeDedupe(leads, links);
+  }, [dedupeOn, leads, links]);
 
   // Upcoming Google Calendar events (next 30 days) for the notifications panel.
   // The full calendar lives on the Dashboard tab; this is just the heads-up feed.
@@ -154,10 +173,41 @@ export default function Dashboard({ onLogout }) {
     }
   };
 
-  const newLeads = leads.filter(l => l.status === statusRoles.new);
+  // Merge two records into one (link-based, reversible). primaryId keeps the
+  // status/classification/notes; secondaryId is folded away everywhere.
+  const mergeLeads = async (primaryId, secondaryId) => {
+    try {
+      const link = await api.createLeadLink(primaryId, secondaryId);
+      setLinks(ls => [...ls.filter(l => String(l.secondary_id) !== String(secondaryId)), link]);
+      // If the open drawer was the record just folded in, switch it to the primary
+      // (which is resolved to its enriched/merged view) so nothing "disappears".
+      setDrawerLead(cur => {
+        if (!cur) return cur;
+        if (String(cur.id) !== String(secondaryId)) return cur;
+        return leads.find(l => String(l.id) === String(primaryId)) || cur;
+      });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e?.message || "erro" };
+    }
+  };
+  // Unmerge: delete the link → both records reappear independently.
+  const unmergeLink = async (linkId) => {
+    try {
+      await api.deleteLeadLink(linkId);
+      setLinks(ls => ls.filter(l => String(l.id) !== String(linkId)));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e?.message || "erro" };
+    }
+  };
+
+  // Notifications / stats read the DISPLAY list so merged secondaries never
+  // double-count (identical to `leads` when dedupe is off).
+  const newLeads = displayLeads.filter(l => l.status === statusRoles.new);
   const unseenNewLeads = newLeads.filter(l => !seenLeadIds.includes(l.id));
   const upcomingMeetings = upcomingEvents.slice(0, 3); // already future, sorted by start
-  const notContacted = leads.filter(l => {
+  const notContacted = displayLeads.filter(l => {
     const diff = Math.floor((new Date() - new Date(l.date)) / 86400000);
     return l.status === statusRoles.new && diff >= 2;
   });
@@ -372,7 +422,7 @@ export default function Dashboard({ onLogout }) {
           <>
             {shownTab ==="dashboard" && (
               <DashboardTab
-                leads={leads}
+                leads={displayLeads}
                 onOpenLead={setDrawerLead}
                 onStatusChange={changeStatus}
                 onViewAllLeads={() => setActiveTab("leads")}
@@ -382,21 +432,38 @@ export default function Dashboard({ onLogout }) {
             )}
 
             {shownTab ==="leads" && (
-              <LeadsTab leads={leads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} />
+              <LeadsTab leads={displayLeads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} />
             )}
 
             {shownTab ==="conversas" && <ConversasTab onConvert={convertToLead} />}
 
             {shownTab ==="recuperar" && <RecuperarTab />}
 
-            {shownTab ==="newsletter" && <NewsletterTab leads={leads} />}
+            {shownTab ==="newsletter" && <NewsletterTab leads={displayLeads} />}
 
             {shownTab ==="ana" && <AnaTab />}
           </>
         )}
       </div>
 
-      {drawerLead && <LeadDrawer lead={drawerLead} onClose={() => setDrawerLead(null)} onUpdate={updateLead} onDelete={deleteLead} onRequestMeeting={requestMeeting} />}
+      {drawerLead && (() => {
+        // Resolve the freshest ENRICHED lead by id so the drawer reflects merges
+        // as links change (and stays correct after a merge/unmerge in place).
+        const id = String(drawerLead.id);
+        const active = (dedupeOn && enrichedById && enrichedById.get(id)) || drawerLead;
+        return (
+          <LeadDrawer
+            lead={active}
+            onClose={() => setDrawerLead(null)}
+            onUpdate={updateLead}
+            onDelete={deleteLead}
+            onRequestMeeting={requestMeeting}
+            candidates={dedupeOn && candidatesByLead ? (candidatesByLead.get(id) || []) : []}
+            onMerge={mergeLeads}
+            onUnmerge={unmergeLink}
+          />
+        );
+      })()}
 
       {meetingFlow && (
         <EventModal

@@ -9,6 +9,7 @@ import LeadMeta from "../components/LeadMeta";
 import LeadFormModal from "../components/LeadFormModal";
 import ClassificationBadge from "../components/ClassificationBadge";
 import LeadRowMobile from "../components/LeadRowMobile";
+import DupBadge from "../components/DupBadge";
 import useIsMobile from "../useIsMobile";
 
 // "Sem classificação" is a sentinel for the classification filter (unset leads).
@@ -99,6 +100,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
         l.name, l.email, l.phone, l.budget, l.intention, cleanField(l.source),
         l.status, cleanField(l.notes), l.manual_notes,
         cls, cls && t("cls_" + cls),
+        l.__dupSearch, // merged secondaries' data (email/phone/campaign/notes)
       ].filter(Boolean).join(" "));
       if (!hay.includes(q)) return false;
     }
@@ -190,6 +192,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
                 <span style={{ fontSize: 14, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</span>
                 <ClassificationBadge value={lead.classification} />
                 {cleanField(lead.notes) && <span title={cleanField(lead.notes)} style={{ fontSize: 11, color: GOLD }}>📝</span>}
+                <DupBadge lead={lead} />
               </div>
               <LeadMeta lead={lead} />
             </div>

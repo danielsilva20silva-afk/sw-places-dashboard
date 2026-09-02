@@ -5,12 +5,13 @@
 const CLIENT = process.env.CLIENT || "swplaces";
 
 const CONFIGS = {
-  swplaces: { dataSource: "sheets", followups: false },
+  swplaces: { dataSource: "sheets", followups: false, dedupe: false },
   // Brandon merges two lead sources: Supabase (landing page) is primary; the
   // Meta Ads Instant Forms Google Sheet is secondary. Order matters — the first
   // source is the primary (owns addLead). See api/_adapters/composite.js.
   // followups: Google Calendar "Schedule follow-up" feature (api/follow-ups.js).
-  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true },
+  // dedupe: duplicate-lead detection + link-based merge (api/lead-links.js).
+  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true, dedupe: true },
 };
 
 const serverConfig = CONFIGS[CLIENT];

@@ -4,12 +4,16 @@ import { STATUSES, STATUS_CONFIG, calendarTriggerStatus, statusRoles } from "../
 import { branding, hasFeature } from "../config";
 import { t } from "../labels";
 import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab } from "../utils";
+import { appendNote } from "../notesFormat";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
 import NotesHistory from "./NotesHistory";
 import ClassificationSelect from "./ClassificationSelect";
 import FollowUpScheduler from "./FollowUpScheduler";
+import DuplicateCandidates from "./DuplicateCandidates";
+import MergedRecords from "./MergedRecords";
+import MergedNotes from "./MergedNotes";
 
 // Per-client WhatsApp message for the "Sem resposta" button (empty when the
 // client hasn't configured one → the button is hidden).
@@ -23,7 +27,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -46,6 +50,16 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
 
   // notes (Ana's auto conversation summary) is READ-ONLY here.
   const summary = (cleanField(lead.notes) || "").trim();
+
+  // Dedupe (merge) — all gated on the feature; off clients see none of this.
+  const dedupeOn = hasFeature("dedupe");
+  const mergedSecondaries = dedupeOn && lead.__merged ? (lead.mergedSecondaries || []) : [];
+  const isMerged = mergedSecondaries.length > 0;
+  const dupCandidates = dedupeOn ? (candidates || []) : [];
+  // When merged, form answers ("summary") are shown grouped per record.
+  const answerRecords = isMerged
+    ? [lead, ...mergedSecondaries.map((s) => s.lead)].filter((r) => (cleanField(r.notes) || "").trim())
+    : [];
 
   // Refs so the debounced/close/unmount flush always reads current values.
   const fieldsRef = useRef({ name: lead.name || "", email: lead.email || "", phone: lead.phone || "", budget: lead.budget || "", intention: lead.intention || "", manual_notes: lead.manual_notes || "" });
@@ -145,6 +159,9 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
     fieldsRef.current.manual_notes = next;
     persist({ manual_notes: next });
   };
+  // Merged view: new notes append to the PRIMARY's own manual_notes (writes never
+  // touch a secondary record).
+  const appendNoteToPrimary = (text) => commitNotes(appendNote(manualNotes, text));
 
   const handleClose = () => { clearTimeout(timerRef.current); flushText(); onClose(); };
 
@@ -224,6 +241,13 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               <AnaToggle subscriberId={String(lead.id)} />
             </div>
           )}
+          {/* Possible-duplicate candidates (merge) + merged-records (unmerge) */}
+          {dupCandidates.length > 0 && (
+            <DuplicateCandidates self={lead} candidates={dupCandidates} onMerge={onMerge} />
+          )}
+          {isMerged && (
+            <MergedRecords primary={lead} secondaries={mergedSecondaries} onUnmerge={onUnmerge} />
+          )}
           {/* Editable details (auto-save) */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
@@ -272,13 +296,39 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             </div>
           )}
           {hasFeature("followups") && <FollowUpScheduler lead={lead} />}
-          {summary && (
-            <div>
-              <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>{t("d_summary")}</p>
-              <div style={{ background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#666", fontStyle: "italic", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{summary}</div>
-            </div>
+          {/* Form answers / summary. Merged → grouped per record; else the single summary. */}
+          {isMerged ? (
+            answerRecords.length > 0 && (
+              <div>
+                <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>{t("merged_answers")}</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {answerRecords.map((r) => (
+                    <div key={String(r.id)}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "#8A6D2F", margin: "0 0 4px" }}>{cleanField(r.source)}</p>
+                      <div style={{ background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#666", fontStyle: "italic", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{(cleanField(r.notes) || "").trim()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          ) : (
+            summary && (
+              <div>
+                <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" }}>{t("d_summary")}</p>
+                <div style={{ background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "12px 14px", fontSize: 13, color: "#666", fontStyle: "italic", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{summary}</div>
+              </div>
+            )
           )}
-          <NotesHistory value={manualNotes} onChange={commitNotes} busy={save === "saving"} />
+          {isMerged ? (
+            <MergedNotes
+              primaryNotes={manualNotes}
+              secondaries={mergedSecondaries.map((s) => s.lead)}
+              onAppend={appendNoteToPrimary}
+              busy={save === "saving"}
+            />
+          ) : (
+            <NotesHistory value={manualNotes} onChange={commitNotes} busy={save === "saving"} />
+          )}
           {sourceOk && (
             <div>
               <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 6px" }}>{t("d_source_post")}</p>

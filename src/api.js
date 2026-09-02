@@ -33,6 +33,40 @@ export function deleteLead(id) {
   return fetch(`/api/leads?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+// GET /api/lead-links → all lead-merge links [{ id, primary_id, secondary_id }].
+// Returns [] on any failure so the dashboard just shows no merges (degrades to
+// every lead standing on its own).
+export async function getLeadLinks() {
+  try {
+    const res = await fetch("/api/lead-links");
+    const data = await res.json().catch(() => []);
+    return res.ok && Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+// POST /api/lead-links → merge two records (create a link). Returns the created
+// row ({ id, primary_id, secondary_id }); throws the server message on failure.
+export async function createLeadLink(primaryId, secondaryId) {
+  const res = await fetch("/api/lead-links", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ primary_id: primaryId, secondary_id: secondaryId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// DELETE /api/lead-links?id=X → unmerge (delete the link). Throws on failure.
+export async function deleteLeadLink(id) {
+  const res = await fetch(`/api/lead-links?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 // GET /api/follow-ups → upcoming lead follow-ups (our calendar events only).
 // Returns [] on any failure so the dashboard card degrades gracefully.
 export async function getFollowUps() {
