@@ -67,6 +67,47 @@ export async function deleteLeadLink(id) {
   return data;
 }
 
+// ── WhatsApp templates (manager UI) ──
+// GET /api/wa-templates → ALL rows (full shape, incl. inactive). Throws on error.
+export async function getWaTemplates() {
+  const res = await fetch("/api/wa-templates");
+  const data = await res.json().catch(() => []);
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return Array.isArray(data) ? data : [];
+}
+
+// POST /api/wa-templates → create a template. Returns the created row.
+export async function createWaTemplate(fields) {
+  const res = await fetch("/api/wa-templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// PATCH /api/wa-templates → update a template by id. Returns the updated row.
+export async function updateWaTemplate(id, fields) {
+  const res = await fetch("/api/wa-templates", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...fields }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// DELETE /api/wa-templates?id=X → remove a template.
+export async function deleteWaTemplate(id) {
+  const res = await fetch(`/api/wa-templates?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 // GET /api/follow-ups → upcoming lead follow-ups (our calendar events only).
 // Returns [] on any failure so the dashboard card degrades gracefully.
 export async function getFollowUps() {

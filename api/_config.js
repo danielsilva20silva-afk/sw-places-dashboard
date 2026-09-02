@@ -5,13 +5,15 @@
 const CLIENT = process.env.CLIENT || "swplaces";
 
 const CONFIGS = {
-  swplaces: { dataSource: "sheets", followups: false, dedupe: false },
+  swplaces: { dataSource: "sheets", followups: false, dedupe: false, templates: false },
   // Brandon merges two lead sources: Supabase (landing page) is primary; the
   // Meta Ads Instant Forms Google Sheet is secondary. Order matters — the first
   // source is the primary (owns addLead). See api/_adapters/composite.js.
   // followups: Google Calendar "Schedule follow-up" feature (api/follow-ups.js).
   // dedupe: duplicate-lead detection + link-based merge (api/lead-links.js).
-  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true, dedupe: true },
+  // templates: WhatsApp message template manager (api/wa-templates.js) — the
+  // Apps Script "Meta Leads Notifier" reads active templates via a token.
+  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true, dedupe: true, templates: true },
 };
 
 const serverConfig = CONFIGS[CLIENT];
