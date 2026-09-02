@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { GOLD } from "../constants";
 import { t } from "../labels";
 import { cleanField, sourceCampaignLabel } from "../utils";
@@ -23,6 +23,18 @@ const btnPrimary = (disabled) => ({
   fontSize: 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
 });
 const btnGhost = { background: "white", color: "#555", border: "1px solid #E5E5E5", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
+// Campaign selector pill (on = currently shown group).
+const pill = (on) => ({
+  display: "inline-flex", alignItems: "center", gap: 6,
+  padding: "7px 14px", borderRadius: 20, fontSize: 13, fontWeight: 600,
+  border: `1.5px solid ${on ? "#111" : "#E5E5E5"}`,
+  background: on ? "#111" : "white", color: on ? "white" : "#555",
+  cursor: "pointer", whiteSpace: "nowrap",
+});
+
+// Unique client-side id for an unsaved draft row (replaced by the server uuid on
+// save). No ref needed — a timestamp + random suffix is unique enough.
+const newDraftId = () => "new-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 function audienceLabel(aud) {
   if (aud === "specific_area") return t("tpl_audience_specific_area");
@@ -116,7 +128,7 @@ export default function TemplatesTab({ leads = [] }) {
   const [loadError, setLoadError] = useState("");
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [newGroupKey, setNewGroupKey] = useState("");
-  const draftCounter = useRef(0);
+  const [selectedKey, setSelectedKey] = useState(null); // which campaign group is shown
 
   useEffect(() => {
     let active = true;
@@ -166,7 +178,7 @@ export default function TemplatesTab({ leads = [] }) {
   );
 
   const addVariant = (matchKey, audience) => {
-    const id = `new-${++draftCounter.current}`;
+    const id = newDraftId();
     const maxSort = rows.filter((r) => r.match_key === matchKey && (r.audience || "any") === audience)
       .reduce((m, r) => Math.max(m, +r.sort || 0), -1);
     setRows((rs) => [...rs, { id, match_key: matchKey, audience, body: "", active: true, sort: maxSort + 1 }]);
@@ -175,8 +187,9 @@ export default function TemplatesTab({ leads = [] }) {
   const addGroup = (key) => {
     const k = String(key || "").trim().toLowerCase();
     if (!k) return;
-    const id = `new-${++draftCounter.current}`;
+    const id = newDraftId();
     setRows((rs) => [...rs, { id, match_key: k, audience: "any", body: "", active: true, sort: 0 }]);
+    setSelectedKey(k); // jump to the group we just created
     setNewGroupOpen(false);
     setNewGroupKey("");
   };
@@ -228,6 +241,12 @@ export default function TemplatesTab({ leads = [] }) {
   if (loading) return <div style={{ padding: "60px 0", textAlign: "center", color: "#999", fontSize: 14 }}>{t("tpl_loading")}</div>;
   if (loadError) return <div style={{ padding: "60px 0", textAlign: "center", color: "#BE123C", fontSize: 14 }}>{t("tpl_load_failed")}</div>;
 
+  // Selected group, defaulting to the first when the stored selection is gone
+  // (e.g. its last variant was deleted). Derived — no effect needed.
+  const groupKeys = groups.map((g) => g.key);
+  const effectiveKey = groupKeys.includes(selectedKey) ? selectedKey : (groupKeys[0] || null);
+  const activeGroup = groups.find((g) => g.key === effectiveKey) || null;
+
   return (
     <>
       <div style={{ marginBottom: 16 }}>
@@ -237,16 +256,60 @@ export default function TemplatesTab({ leads = [] }) {
 
       <PlaceholderHelp />
 
-      {groups.length === 0 && (
+      {/* Campaign selector: one pill per group (name · ✓/— · active count) + add-group */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: newGroupOpen ? 12 : 16 }}>
+        {groups.map((g) => {
+          const isDefault = g.key === "default";
+          const matched = !isDefault && keyMatchesAny(g.key, knownCampaigns);
+          const activeCount = g.items.filter((i) => i.active).length;
+          const on = g.key === effectiveKey;
+          return (
+            <button key={g.key} type="button" onClick={() => setSelectedKey(g.key)} style={pill(on)}>
+              <span>{isDefault ? t("tpl_default_group") : g.key}</span>
+              {!isDefault && (
+                <span title={matched ? t("tpl_matches") : t("tpl_no_match")} style={{ fontWeight: 700, color: on ? (matched ? "#4ADE80" : "rgba(255,255,255,0.55)") : (matched ? "#15803D" : "#BBB") }}>
+                  {matched ? "✓" : "—"}
+                </span>
+              )}
+              <span style={{ color: on ? "rgba(255,255,255,0.6)" : "#AAA" }}>· {activeCount}</span>
+            </button>
+          );
+        })}
+        <button type="button" onClick={() => setNewGroupOpen((o) => !o)} style={pill(newGroupOpen)}>{t("tpl_add_group")}</button>
+      </div>
+
+      {/* Add campaign group input (opened from the pill) */}
+      {newGroupOpen && (
+        <div style={{ ...card, padding: "16px 18px", marginBottom: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input
+              value={newGroupKey}
+              onChange={(e) => setNewGroupKey(e.target.value)}
+              placeholder={t("tpl_new_group_key_ph")}
+              autoFocus
+              style={{ width: "100%", boxSizing: "border-box", border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 12px", fontSize: 13, color: "#111", outline: "none" }}
+            />
+            <p style={{ fontSize: 11, color: "#888", margin: 0 }}>{t("tpl_new_group_help")}</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" onClick={() => addGroup(newGroupKey)} disabled={!newGroupKey.trim()} style={btnPrimary(!newGroupKey.trim())}>{t("tpl_new_group_create")}</button>
+              <button type="button" onClick={() => { setNewGroupOpen(false); setNewGroupKey(""); }} style={btnGhost}>{t("tpl_new_group_cancel")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {groups.length === 0 && !newGroupOpen && (
         <div style={{ ...card, padding: "40px", textAlign: "center", color: "#CCC", fontSize: 14, marginBottom: 16 }}>{t("tpl_empty")}</div>
       )}
 
-      {groups.map((g) => {
+      {/* Selected group only */}
+      {activeGroup && (() => {
+        const g = activeGroup;
         const isDefault = g.key === "default";
         const matched = !isDefault && keyMatchesAny(g.key, knownCampaigns);
         const sampleCampaign = knownCampaigns.find((c) => keyMatchesCampaign(g.key, c)) || g.key;
         return (
-          <div key={g.key} style={{ ...card, padding: "16px 18px", marginBottom: 16 }}>
+          <div style={{ ...card, padding: "16px 18px", marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                 <span style={{ fontSize: 15, fontWeight: 700, color: "#111" }}>
@@ -280,29 +343,7 @@ export default function TemplatesTab({ leads = [] }) {
             })}
           </div>
         );
-      })}
-
-      {/* Add campaign group */}
-      <div style={{ ...card, padding: "16px 18px", marginBottom: 16 }}>
-        {newGroupOpen ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <input
-              value={newGroupKey}
-              onChange={(e) => setNewGroupKey(e.target.value)}
-              placeholder={t("tpl_new_group_key_ph")}
-              autoFocus
-              style={{ width: "100%", boxSizing: "border-box", border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 12px", fontSize: 13, color: "#111", outline: "none" }}
-            />
-            <p style={{ fontSize: 11, color: "#888", margin: 0 }}>{t("tpl_new_group_help")}</p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button type="button" onClick={() => addGroup(newGroupKey)} disabled={!newGroupKey.trim()} style={btnPrimary(!newGroupKey.trim())}>{t("tpl_new_group_create")}</button>
-              <button type="button" onClick={() => { setNewGroupOpen(false); setNewGroupKey(""); }} style={btnGhost}>{t("tpl_new_group_cancel")}</button>
-            </div>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setNewGroupOpen(true)} style={btnGhost}>{t("tpl_add_group")}</button>
-        )}
-      </div>
+      })()}
 
       {/* Campaigns using the default templates */}
       {unmatchedCampaigns.length > 0 && (
