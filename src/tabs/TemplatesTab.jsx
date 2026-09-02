@@ -122,6 +122,66 @@ function PlaceholderHelp() {
   );
 }
 
+// Compact editor for the {greeting} rotation list. Edit in place, add, remove
+// (min 1 enforced), then Save persists the whole list. Server cleans + de-dupes
+// and returns the canonical list, which we adopt.
+function GreetingsEditor({ initial, onSave }) {
+  const [list, setList] = useState(initial);
+  const [savedList, setSavedList] = useState(initial);
+  const [newG, setNewG] = useState("");
+  const [state, setState] = useState("idle"); // idle | saving | saved | error
+  const [err, setErr] = useState("");
+
+  const canRemove = list.length > 1;
+  const cleaned = list.map((g) => g.trim()).filter(Boolean);
+  const dirty = JSON.stringify(list) !== JSON.stringify(savedList);
+
+  const editAt = (i, v) => setList((l) => l.map((g, idx) => (idx === i ? v : g)));
+  const removeAt = (i) => { if (list.length <= 1) return; setList((l) => l.filter((_, idx) => idx !== i)); };
+  const add = () => { const v = newG.trim(); if (!v) return; setList((l) => [...l, v]); setNewG(""); };
+
+  const save = async () => {
+    if (state === "saving") return;
+    if (!cleaned.length) { setState("error"); setErr(t("tpl_greeting_min")); return; }
+    setState("saving"); setErr("");
+    const r = await onSave(cleaned);
+    if (r?.ok) { setList(r.greetings); setSavedList(r.greetings); setState("saved"); setTimeout(() => setState("idle"), 1600); }
+    else { setState("error"); setErr(r?.error || t("tpl_save_failed")); }
+  };
+
+  const rowInput = { flex: 1, minWidth: 0, border: "1px solid #E5E5E5", borderRadius: 8, padding: "7px 10px", fontSize: 13, color: "#111", outline: "none", boxSizing: "border-box" };
+
+  return (
+    <div style={{ ...card, padding: "14px 18px", marginBottom: 16 }}>
+      <p style={{ ...heading, margin: "0 0 2px" }}>{t("tpl_greetings_title")}</p>
+      <p style={{ fontSize: 11, color: "#888", margin: "0 0 10px" }}>{t("tpl_greetings_hint")}</p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {list.map((g, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input value={g} onChange={(e) => editAt(i, e.target.value)} style={rowInput} />
+            <button type="button" onClick={() => removeAt(i)} disabled={!canRemove} title={t("tpl_delete")} aria-label={t("tpl_delete")}
+              style={{ background: "none", border: "none", cursor: canRemove ? "pointer" : "not-allowed", fontSize: 13, color: canRemove ? "#DC2626" : "#DDD", flexShrink: 0 }}>🗑</button>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+        <input value={newG} onChange={(e) => setNewG(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder={t("tpl_greeting_add_ph")} style={rowInput} />
+        <button type="button" onClick={add} disabled={!newG.trim()} style={{ ...btnGhost, flexShrink: 0, opacity: newG.trim() ? 1 : 0.5, cursor: newG.trim() ? "pointer" : "not-allowed" }}>{t("tpl_greeting_add")}</button>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+        <button type="button" onClick={save} disabled={state === "saving" || !dirty} style={btnPrimary(state === "saving" || !dirty)}>
+          {state === "saving" ? t("tpl_saving") : t("tpl_save")}
+        </button>
+        {state === "saved" && <span style={{ fontSize: 12, color: "#15803D" }}>{t("tpl_saved")}</span>}
+        {state === "error" && <span style={{ fontSize: 12, color: "#BE123C" }}>{err}</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function TemplatesTab({ leads = [] }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -129,6 +189,7 @@ export default function TemplatesTab({ leads = [] }) {
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [newGroupKey, setNewGroupKey] = useState("");
   const [selectedKey, setSelectedKey] = useState(null); // which campaign group is shown
+  const [greetings, setGreetings] = useState(null); // null = loading; array once loaded
 
   useEffect(() => {
     let active = true;
@@ -136,8 +197,23 @@ export default function TemplatesTab({ leads = [] }) {
       .then((data) => { if (active) setRows(data); })
       .catch((e) => { if (active) setLoadError(e?.message || t("tpl_load_failed")); })
       .finally(() => { if (active) setLoading(false); });
+    // Greetings load independently — a failure just falls back to the defaults so
+    // the editor still renders (never blocks the tab).
+    api.getGreetings()
+      .then((g) => { if (active) setGreetings(g.length ? g : ["Hey", "Hi", "Hello"]); })
+      .catch(() => { if (active) setGreetings(["Hey", "Hi", "Hello"]); });
     return () => { active = false; };
   }, []);
+
+  const persistGreetings = async (list) => {
+    try {
+      const saved = await api.saveGreetings(list);
+      setGreetings(saved);
+      return { ok: true, greetings: saved };
+    } catch (e) {
+      return { ok: false, error: e?.message || t("tpl_save_failed") };
+    }
+  };
 
   // Known campaigns = the distinct short campaign labels present in the leads
   // (same source as the Leads source filter).
@@ -255,6 +331,8 @@ export default function TemplatesTab({ leads = [] }) {
       </div>
 
       <PlaceholderHelp />
+
+      {greetings && <GreetingsEditor initial={greetings} onSave={persistGreetings} />}
 
       {/* Campaign selector: one pill per group (name · ✓/— · active count) + add-group */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: newGroupOpen ? 12 : 16 }}>

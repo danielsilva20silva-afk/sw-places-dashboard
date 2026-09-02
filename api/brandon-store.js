@@ -81,6 +81,35 @@ const TPL_TABLE = "wa_templates";
 const TPL_COLS = "id, match_key, audience, body, active, sort, updated_at";
 const AUDIENCES = new Set(["any", "specific_area", "open"]);
 
+// Greetings for the {greeting} placeholder live in a tiny key-value settings
+// table (wa_settings) under one row; the value is a JSON array of strings.
+const SETTINGS_TABLE = "wa_settings";
+const GREETINGS_KEY = "greetings";
+const DEFAULT_GREETINGS = ["Hey", "Hi", "Hello"];
+
+// Trim, drop empties, de-dupe (case-insensitive, first spelling wins).
+function cleanGreetings(list) {
+  const out = [];
+  const seen = new Set();
+  for (const g of Array.isArray(list) ? list : []) {
+    const v = s(g).trim();
+    if (!v) continue;
+    const k = v.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(v);
+  }
+  return out;
+}
+
+async function readGreetings(supabase) {
+  const { data, error } = await supabase
+    .from(SETTINGS_TABLE).select("value").eq("key", GREETINGS_KEY).maybeSingle();
+  if (error) throw new Error(error.message);
+  const list = cleanGreetings(data?.value);
+  return list.length ? list : DEFAULT_GREETINGS.slice();
+}
+
 function normAudience(v) {
   const a = s(v).trim();
   return AUDIENCES.has(a) ? a : "any";
@@ -117,7 +146,9 @@ async function handleTemplates(req, res, supabase) {
         .order("audience", { ascending: true })
         .order("sort", { ascending: true });
       if (error) throw new Error(error.message);
-      return res.status(200).json(data || []);
+      // Consumer response: greetings + templates (templates array shape unchanged).
+      const greetings = await readGreetings(supabase);
+      return res.status(200).json({ greetings, templates: data || [] });
     }
     // UI path: full rows (incl. inactive), ordered for grouping.
     const { data, error } = await supabase
@@ -169,6 +200,30 @@ async function handleTemplates(req, res, supabase) {
   return res.status(405).json({ error: "Method not allowed" });
 }
 
+// ─────────────────────────── greetings ───────────────────────────
+// GET → { greetings: [...] }; POST { greetings: [...] } replaces the whole list
+// (cleaned; at least one required). Shares the templates feature gate.
+async function handleGreetings(req, res, supabase) {
+  if (req.method === "GET") {
+    return res.status(200).json({ greetings: await readGreetings(supabase) });
+  }
+
+  if (req.method === "POST" || req.method === "PUT") {
+    const list = cleanGreetings((req.body ?? {}).greetings);
+    if (!list.length) {
+      return res.status(400).json({ error: "É preciso pelo menos uma saudação." });
+    }
+    const { error } = await supabase
+      .from(SETTINGS_TABLE)
+      .upsert({ key: GREETINGS_KEY, value: list, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ greetings: list });
+  }
+
+  res.setHeader("Allow", "GET, POST, PUT");
+  return res.status(405).json({ error: "Method not allowed" });
+}
+
 // ───────────────────────────── dispatch ─────────────────────────────
 export default async function handler(req, res) {
   const resource = s(req.query?.resource).trim();
@@ -177,11 +232,11 @@ export default async function handler(req, res) {
   if (resource === "links" && !serverConfig.dedupe) {
     return res.status(403).json({ error: "Merge não está disponível para este cliente." });
   }
-  if (resource === "templates" && !serverConfig.templates) {
+  if ((resource === "templates" || resource === "greetings") && !serverConfig.templates) {
     return res.status(403).json({ error: "Templates não estão disponíveis para este cliente." });
   }
-  if (resource !== "links" && resource !== "templates") {
-    return res.status(400).json({ error: "resource inválido (usa 'links' ou 'templates')." });
+  if (resource !== "links" && resource !== "templates" && resource !== "greetings") {
+    return res.status(400).json({ error: "resource inválido (usa 'links', 'templates' ou 'greetings')." });
   }
 
   // Supabase configured? (missing env → friendly, never a crash)
@@ -192,6 +247,7 @@ export default async function handler(req, res) {
 
   try {
     if (resource === "links") return await handleLinks(req, res, ctx.supabase);
+    if (resource === "greetings") return await handleGreetings(req, res, ctx.supabase);
     return await handleTemplates(req, res, ctx.supabase);
   } catch (err) {
     if (err?.expose) return res.status(err.status).json({ error: err.message });

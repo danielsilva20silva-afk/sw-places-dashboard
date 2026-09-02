@@ -113,6 +113,30 @@ export async function deleteWaTemplate(id) {
   return data;
 }
 
+// ── Greetings (the {greeting} rotation list) ──
+const GREETINGS_URL = "/api/brandon-store?resource=greetings";
+
+// GET greetings → array of strings. Throws on error.
+export async function getGreetings() {
+  const res = await fetch(GREETINGS_URL);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return Array.isArray(data.greetings) ? data.greetings : [];
+}
+
+// POST greetings → replace the whole list (server cleans + requires ≥1).
+// Returns the saved list.
+export async function saveGreetings(greetings) {
+  const res = await fetch(GREETINGS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ greetings }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return Array.isArray(data.greetings) ? data.greetings : [];
+}
+
 // GET /api/follow-ups → upcoming lead follow-ups (our calendar events only).
 // Returns [] on any failure so the dashboard card degrades gracefully.
 export async function getFollowUps() {
