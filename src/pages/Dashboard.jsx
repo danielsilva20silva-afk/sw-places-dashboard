@@ -11,6 +11,7 @@ import LeadDrawer from "../components/LeadDrawer";
 import EventModal from "../components/EventModal";
 import DashboardTab from "../tabs/DashboardTab";
 import LeadsTab from "../tabs/LeadsTab";
+import TemplatesTab from "../tabs/TemplatesTab";
 import NewsletterTab from "../tabs/NewsletterTab";
 import AnaTab from "../tabs/AnaTab";
 import ConversasTab from "../tabs/ConversasTab";
@@ -237,7 +238,7 @@ export default function Dashboard({ onLogout }) {
   // Only tabs whose feature flag is true render (nav + content). shownTab
   // falls back to the first enabled tab if activeTab points at a disabled one
   // (stale state / direct link) instead of rendering it.
-  const ALL_TABS = [["dashboard", "Dashboard"], ["leads", "Leads"], ["conversas", "Conversas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
+  const ALL_TABS = [["dashboard", "Dashboard"], ["leads", "Leads"], ["templates", "Templates"], ["conversas", "Conversas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
   const tabs = ALL_TABS.filter(([key]) => hasFeature(key));
   const shownTab = hasFeature(activeTab) ? activeTab : (tabs[0]?.[0] || "dashboard");
 
@@ -434,6 +435,8 @@ export default function Dashboard({ onLogout }) {
             {shownTab ==="leads" && (
               <LeadsTab leads={displayLeads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} />
             )}
+
+            {shownTab ==="templates" && <TemplatesTab leads={displayLeads} />}
 
             {shownTab ==="conversas" && <ConversasTab onConvert={convertToLead} />}
 

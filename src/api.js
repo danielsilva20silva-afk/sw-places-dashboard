@@ -33,12 +33,17 @@ export function deleteLead(id) {
   return fetch(`/api/leads?id=${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-// GET /api/lead-links → all lead-merge links [{ id, primary_id, secondary_id }].
+// Lead-merge links + WhatsApp templates share one serverless function
+// (/api/brandon-store?resource=…) to stay within Vercel's 12-function cap.
+const LINKS_URL = "/api/brandon-store?resource=links";
+const TEMPLATES_URL = "/api/brandon-store?resource=templates";
+
+// GET links → all lead-merge links [{ id, primary_id, secondary_id }].
 // Returns [] on any failure so the dashboard just shows no merges (degrades to
 // every lead standing on its own).
 export async function getLeadLinks() {
   try {
-    const res = await fetch("/api/lead-links");
+    const res = await fetch(LINKS_URL);
     const data = await res.json().catch(() => []);
     return res.ok && Array.isArray(data) ? data : [];
   } catch {
@@ -46,10 +51,10 @@ export async function getLeadLinks() {
   }
 }
 
-// POST /api/lead-links → merge two records (create a link). Returns the created
-// row ({ id, primary_id, secondary_id }); throws the server message on failure.
+// POST links → merge two records (create a link). Returns the created row
+// ({ id, primary_id, secondary_id }); throws the server message on failure.
 export async function createLeadLink(primaryId, secondaryId) {
-  const res = await fetch("/api/lead-links", {
+  const res = await fetch(LINKS_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ primary_id: primaryId, secondary_id: secondaryId }),
@@ -59,12 +64,77 @@ export async function createLeadLink(primaryId, secondaryId) {
   return data;
 }
 
-// DELETE /api/lead-links?id=X → unmerge (delete the link). Throws on failure.
+// DELETE links (id=X) → unmerge (delete the link). Throws on failure.
 export async function deleteLeadLink(id) {
-  const res = await fetch(`/api/lead-links?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  const res = await fetch(`${LINKS_URL}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
+}
+
+// ── WhatsApp templates (manager UI) ──
+// GET templates → ALL rows (full shape, incl. inactive). Throws on error.
+export async function getWaTemplates() {
+  const res = await fetch(TEMPLATES_URL);
+  const data = await res.json().catch(() => []);
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return Array.isArray(data) ? data : [];
+}
+
+// POST templates → create a template. Returns the created row.
+export async function createWaTemplate(fields) {
+  const res = await fetch(TEMPLATES_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// PATCH templates → update a template by id. Returns the updated row.
+export async function updateWaTemplate(id, fields) {
+  const res = await fetch(TEMPLATES_URL, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...fields }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// DELETE templates (id=X) → remove a template.
+export async function deleteWaTemplate(id) {
+  const res = await fetch(`${TEMPLATES_URL}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// ── Greetings (the {greeting} rotation list) ──
+const GREETINGS_URL = "/api/brandon-store?resource=greetings";
+
+// GET greetings → array of strings. Throws on error.
+export async function getGreetings() {
+  const res = await fetch(GREETINGS_URL);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return Array.isArray(data.greetings) ? data.greetings : [];
+}
+
+// POST greetings → replace the whole list (server cleans + requires ≥1).
+// Returns the saved list.
+export async function saveGreetings(greetings) {
+  const res = await fetch(GREETINGS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ greetings }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return Array.isArray(data.greetings) ? data.greetings : [];
 }
 
 // GET /api/follow-ups → upcoming lead follow-ups (our calendar events only).
