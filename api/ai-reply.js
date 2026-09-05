@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import Anthropic from "@anthropic-ai/sdk";
 import { waitUntil } from "@vercel/functions";
 import { ANA_PROMPT } from "./_ana-prompt.js";
+import { notifyOnNewContact, leadFromSheetRow } from "./_notify.js";
 import * as mc from "./_manychat.js";
 
 // Let the background debounce + delivery (wait + Claude + ManyChat calls) finish
@@ -213,6 +214,8 @@ export async function upsertLead(sheets, spreadsheetId, leadId, data, source, fa
       spreadsheetId, range: `${LEADS_TAB}!A:M`, valueInputOption: "RAW",
       requestBody: { values: [row] },
     });
+    // Notify (best-effort, fire-and-forget) — a new lead with a contact.
+    try { waitUntil(notifyOnNewContact(null, leadFromSheetRow(row))); } catch (e) { console.error("[notify] hook failed:", e?.message); }
     return "created";
   }
 
@@ -238,6 +241,9 @@ export async function upsertLead(sheets, spreadsheetId, leadId, data, source, fa
     spreadsheetId, range: `${LEADS_TAB}!A${idx + 2}:M${idx + 2}`, valueInputOption: "RAW",
     requestBody: { values: [merged] },
   });
+  // Notify (best-effort, fire-and-forget) — only when this update adds the FIRST
+  // contact (ex had none, merged has one); becameContactable dedups the rest.
+  try { waitUntil(notifyOnNewContact(leadFromSheetRow(ex), leadFromSheetRow(merged))); } catch (e) { console.error("[notify] hook failed:", e?.message); }
   return "updated";
 }
 

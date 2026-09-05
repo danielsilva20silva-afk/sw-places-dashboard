@@ -1,6 +1,4 @@
 import { getSheetsClient, upsertLead } from "./ai-reply.js";
-import { notifyOnNewContact } from "./_notify.js";
-import { waitUntil } from "@vercel/functions";
 import Anthropic from "@anthropic-ai/sdk";
 
 // Promote a conversation into a lead manually (from the Conversas tab).
@@ -82,9 +80,8 @@ export default async function handler(req, res) {
     console.log(`[convert] created lead ${contactId} (name=${JSON.stringify(name)}, username=${JSON.stringify(username)}, summary=${summary ? "yes" : "no"}).`);
 
     const lead = await findLead(sheets, spreadsheetId, contactId);
-    // Notify only for a freshly-created, contactable lead (before=null). An
-    // already-existing lead returned "exists" above and never reaches here.
-    waitUntil(notifyOnNewContact(null, lead));
+    // New-lead notification is handled inside upsertLead (above) — this path goes
+    // through it, so no separate notify here (avoids a double email).
     return res.status(201).json({ status: "created", lead });
   } catch (err) {
     console.error("convert-lead error:", err);

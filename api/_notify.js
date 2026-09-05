@@ -40,6 +40,24 @@ export function becameContactable(before, after) {
   return hasContact(after) && !had;
 }
 
+// Map a Leads sheet row (A..O) to the minimal lead shape the notifier reads.
+// Used by the ai-reply.js upsertLead hook (which works with row arrays).
+export function leadFromSheetRow(r) {
+  if (!r) return null;
+  return {
+    id: r[0] ?? "",
+    name: r[1] ?? "",
+    email: r[2] ?? "",
+    phone: r[3] ?? "",
+    budget: r[4] ?? "",
+    intention: r[5] ?? "",
+    source: r[6] ?? "",
+    notes: r[9] ?? "",
+    source_content: r[12] ?? "",
+    source_url: r[14] ?? "",
+  };
+}
+
 // ── Email building ──
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const clean = (v) => (isPlaceholder(v) ? "" : String(v).trim());
