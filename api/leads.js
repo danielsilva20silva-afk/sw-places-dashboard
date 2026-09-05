@@ -1,4 +1,6 @@
 import adapter from "./_adapters/index.js";
+import { notifyOnNewContact } from "./_notify.js";
+import { waitUntil } from "@vercel/functions";
 
 // Thin handler: validate request → call the data adapter → return response.
 // All Google Sheets logic lives in api/_adapters/sheets.js.
@@ -20,7 +22,10 @@ export default async function handler(req, res) {
       if (!b.name && !b.email) {
         return res.status(400).json({ error: "Lead precisa de pelo menos nome ou email." });
       }
-      return res.status(201).json(await adapter.addLead(ctx, b));
+      const created = await adapter.addLead(ctx, b);
+      // Fresh manual creation (before=null): notify only if it already has a contact.
+      waitUntil(notifyOnNewContact(null, created));
+      return res.status(201).json(created);
     }
 
     if (req.method === "PATCH") {
