@@ -218,7 +218,6 @@ Regras do bloco:
 // before availabilityUntil, inject an EXACT phrasing for WHEN the Gustavo makes
 // contact — an authorized exception to "never promise deadlines". After the date,
 // this returns "" and nothing changes. Env vars override the config values.
-// Evaluated at module load (per cold start), so it expires on its own.
 function availabilityInstruction() {
   const note = (process.env.ANA_AVAILABILITY_NOTE ?? ANA_CONFIG.availabilityNote ?? "").trim();
   const until = (process.env.ANA_AVAILABILITY_UNTIL ?? ANA_CONFIG.availabilityUntil ?? "").trim();
@@ -229,4 +228,20 @@ function availabilityInstruction() {
 Quando confirmares a receção de um contacto e disseres que o Gustavo entra em contacto, usa EXATAMENTE esta formulação para o prazo: "${note}". Não menciones o motivo (férias, ausência), apenas o quando. Isto é uma exceção autorizada à regra de não prometer prazos, porque foi comunicado pelo Gustavo.`;
 }
 
-export const ANA_PROMPT = BASE_ANA_PROMPT + availabilityInstruction();
+// Build the full prompt (base + current availability window). Exported so callers
+// / tests can get an explicit, freshly-evaluated string.
+export function buildAnaPrompt() {
+  return BASE_ANA_PROMPT + availabilityInstruction();
+}
+
+// ANA_PROMPT re-evaluates the availability window on EVERY use, not once at module
+// load. ai-reply.js interpolates it as `${ANA_PROMPT}` inside the per-request
+// prompt, so the toString / Symbol.toPrimitive hook re-runs buildAnaPrompt() each
+// request. ROOT-CAUSE FIX: the previous `export const ANA_PROMPT = BASE + …` froze
+// the date at cold start, so a long-lived warm serverless instance kept serving a
+// note that should have expired on availabilityUntil. A per-request value can't go
+// stale. (ai-reply.js is unchanged — it already coerces ANA_PROMPT to a string.)
+export const ANA_PROMPT = {
+  toString: buildAnaPrompt,
+  [Symbol.toPrimitive]: buildAnaPrompt,
+};

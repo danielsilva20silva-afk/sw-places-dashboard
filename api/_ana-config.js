@@ -10,6 +10,10 @@
 // to "" to disable. Env vars ANA_AVAILABILITY_NOTE / ANA_AVAILABILITY_UNTIL
 // override these when present (so it can also be changed without editing code).
 export const ANA_CONFIG = {
-  availabilityNote: "O Gustavo entra em contacto contigo no início da próxima semana, a partir de dia 25 de agosto.",
-  availabilityUntil: "2026-08-24", // ISO date (YYYY-MM-DD), inclusive
+  // No active availability window. To announce one, set both fields, e.g.:
+  //   availabilityNote: "O Gustavo entra em contacto contigo a partir de dia X.",
+  //   availabilityUntil: "2026-08-24"  // last day the note is shown (inclusive)
+  // It expires on its own after availabilityUntil (evaluated per request).
+  availabilityNote: "",
+  availabilityUntil: "", // ISO date (YYYY-MM-DD), inclusive
 };
