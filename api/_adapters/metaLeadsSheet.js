@@ -179,6 +179,45 @@ function cell(row, idx, name) {
   return i == null ? "" : s(row[i]);
 }
 
+// Contact fields (phone/email/name) are usually the NATIVE Meta prefill columns
+// ("phone", "email", "full_name"). But when a form configures one as a CUSTOM
+// QUESTION, Meta names the column after the question instead — e.g. the Sellers
+// Reel form writes the phone to "phone_number" — so the value lands in a
+// non-standard column and (before this) leaked into the summary as a
+// "Phone number: p:+351…" answer line while the lead's phone field stayed empty.
+// Match the common variants too, so the value fills the real field (working
+// Call/WhatsApp buttons) and is kept OUT of the summary.
+//
+// Normalise a header for matching: strip accents, drop every non-alphanumeric,
+// lowercase — so "Phone number", "phone_number" and "phone-number" all become
+// "phonenumber".
+function normHeader(h) {
+  return s(h).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+const PHONE_ALIASES = new Set(["phone", "phonenumber", "contactnumber", "mobile", "mobilenumber", "telephone"]);
+const EMAIL_ALIASES = new Set(["email", "emailaddress", "emailid", "mail"]);
+const NAME_ALIASES = new Set(["fullname", "name"]);
+
+// A header that duplicates a native contact field (native OR a custom-question
+// variant) — read into the lead field and excluded from the summary.
+function isContactHeader(h) {
+  const n = normHeader(h);
+  return PHONE_ALIASES.has(n) || EMAIL_ALIASES.has(n) || NAME_ALIASES.has(n);
+}
+
+// First NON-EMPTY value among the row's columns whose header matches `aliases`,
+// in sheet-column order — so a native column (usually leftmost) wins over a later
+// custom one, and a lead carrying the value in both never doubles it.
+function resolveContact(row, idx, header, aliases) {
+  for (const col of header) {
+    if (col && aliases.has(normHeader(col))) {
+      const v = cell(row, idx, col).trim();
+      if (v) return v;
+    }
+  }
+  return "";
+}
+
 // Meta test leads: dummy rows with test@meta.com or "<test lead:" placeholders
 // (the placeholder can land in any question column, so scan the whole row).
 function isTestRow(row, idx) {
@@ -209,7 +248,10 @@ function composeNotes(row, idx, header) {
   const campaign = cell(row, idx, "campaign_name").trim();
   if (campaign) parts.push(campaign);
   for (const col of header) {
-    if (!col || STANDARD_COLS.has(col)) continue; // skip the fixed Meta columns
+    // Skip the fixed Meta columns AND any custom-question column that's really a
+    // contact field (phone/email/name variant) — its value lives in the lead's
+    // own field, not in the summary.
+    if (!col || STANDARD_COLS.has(col) || isContactHeader(col)) continue;
     const answer = cell(row, idx, col).replace(/_/g, " ").trim();
     if (!answer) continue;
     parts.push(`${humanizeQuestion(col)}: ${answer}`);
@@ -224,9 +266,11 @@ function rowToLead(row, idx, header) {
   const createdTime = cell(row, idx, "created_time");
   return {
     id: cell(row, idx, "id"),
-    name: cell(row, idx, "full_name"),
-    email: cell(row, idx, "email"),
-    phone: cell(row, idx, "phone").replace(/^p:/, ""),
+    // Native columns win when present; custom-question variants (e.g. Sellers
+    // Reel's "phone_number") are the fallback. First non-empty in column order.
+    name: resolveContact(row, idx, header, NAME_ALIASES),
+    email: resolveContact(row, idx, header, EMAIL_ALIASES),
+    phone: resolveContact(row, idx, header, PHONE_ALIASES).replace(/^p:/, ""),
     budget: "", // no column
     intention: "", // no column
     source: label ? `Meta Ads · ${label}` : "Meta Ads",
