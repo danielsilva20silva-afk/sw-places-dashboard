@@ -74,6 +74,31 @@ const DEFAULTS = {
   new_lead: "+ Novo lead",
   empty_leads: "Nenhum lead encontrado.",
 
+  // ── Exportar CSV (leads) ──
+  export_csv: "Exportar CSV",
+  export_all: "Todos",
+  export_filtered: "Filtrados",
+  export_all_title: "Exportar todos os leads para CSV",
+  export_filtered_title: "Exportar os leads filtrados para CSV",
+  // Cabeçalhos das colunas do CSV
+  csv_col_name: "Nome",
+  csv_col_email: "Email",
+  csv_col_phone: "Telefone",
+  csv_col_campaign: "Origem/Campanha",
+  csv_col_sources: "Todas as origens",
+  csv_col_classification: "Classificação",
+  csv_col_status: "Estado",
+  csv_col_created: "Data de criação",
+  csv_col_budget: "Orçamento",
+  csv_col_intent: "Intenção",
+  csv_col_area: "Zona",
+  csv_col_notes: "Resumo",
+  csv_col_manual_notes: "Notas",
+  csv_col_source_content: "Conteúdo de origem",
+  csv_col_source_url: "Link de origem",
+  csv_col_username: "Utilizador",
+  csv_col_id: "ID",
+
   // ── Quick actions / drawer contact buttons ──
   act_call: "Ligar",
   act_whatsapp: "WhatsApp",

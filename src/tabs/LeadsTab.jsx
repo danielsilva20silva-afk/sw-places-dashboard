@@ -11,11 +11,13 @@ import ClassificationBadge from "../components/ClassificationBadge";
 import LeadRowMobile from "../components/LeadRowMobile";
 import DupBadge from "../components/DupBadge";
 import useIsMobile from "../useIsMobile";
+import { exportLeadsCsv } from "../leadsCsv";
 
 // "Sem classificação" is a sentinel for the classification filter (unset leads).
 const NO_CLASSIFICATION = "Sem classificação";
 
 const selectStyle = { border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 32px 9px 12px", fontSize: 13, color: "#111", background: "white", cursor: "pointer", outline: "none" };
+const exportBtnStyle = { border: "1px solid #E5E5E5", background: "white", color: "#333", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
 
 // [value, labelKey] — value is the stable internal key, label is translated at
 // render time via t() so it follows the client's UI language.
@@ -147,6 +149,19 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
             </select>
           </div>
         ))}
+        {/* CSV export — client-side, from the loaded (dedupe-merged) leads. "All"
+            exports every displayed lead; "Filtered" exports the current view. */}
+        <div>
+          <FilterLabel>{t("export_csv")}</FilterLabel>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => exportLeadsCsv(leads)} title={t("export_all_title")} style={exportBtnStyle}>
+              ⬇ {t("export_all")} <span style={{ color: "#AAA", fontWeight: 500 }}>({leads.length})</span>
+            </button>
+            <button onClick={() => exportLeadsCsv(sorted)} title={t("export_filtered_title")} style={exportBtnStyle}>
+              {t("export_filtered")} <span style={{ color: "#AAA", fontWeight: 500 }}>({sorted.length})</span>
+            </button>
+          </div>
+        </div>
         <div style={{ alignSelf: "flex-end", paddingBottom: 10 }}>
           <span style={{ fontSize: 12, color: "#AAA" }}>{sorted.length} lead{sorted.length !== 1 ? "s" : ""}</span>
         </div>
