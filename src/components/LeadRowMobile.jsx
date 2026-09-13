@@ -4,6 +4,7 @@ import Avatar from "./Avatar";
 import LeadMeta from "./LeadMeta";
 import ClassificationBadge from "./ClassificationBadge";
 import DupBadge from "./DupBadge";
+import DueBadge from "./DueBadge";
 import StatusDropdown from "./StatusDropdown";
 import QuickActions from "./QuickActions";
 
@@ -15,7 +16,7 @@ const GAP = 12;  // avatar → text gap; line 2 is indented by AV + GAP to align
 //   Line 1: avatar + name (+ classification badge, + optional 📝) | status pill
 //   Line 2: source/date (LeadMeta) | quick actions
 // `style` carries the per-list border/rounding so edges match each card.
-export default function LeadRowMobile({ lead, onOpen, onStatusChange, showNotesIcon = false, style }) {
+export default function LeadRowMobile({ lead, onOpen, onStatusChange, showNotesIcon = false, nextAction = null, style }) {
   const stop = (e) => e.stopPropagation();
   return (
     <div
@@ -49,6 +50,15 @@ export default function LeadRowMobile({ lead, onOpen, onStatusChange, showNotesI
           <QuickActions lead={lead} size={40} />
         </div>
       </div>
+
+      {/* Line 3 (only when a pending action exists): next action title + due. */}
+      {nextAction && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, paddingLeft: AV + GAP, minWidth: 0 }}>
+          <span aria-hidden="true" style={{ fontSize: 11, flexShrink: 0 }}>⏰</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#444", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1 }} title={nextAction.title}>{nextAction.title}</span>
+          <DueBadge dueISO={nextAction.due_at} size={11} />
+        </div>
+      )}
     </div>
   );
 }

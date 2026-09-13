@@ -72,6 +72,52 @@ export async function deleteLeadLink(id) {
   return data;
 }
 
+// ── Lead actions (next-action tracking) ──
+const ACTIONS_URL = "/api/brandon-store?resource=actions";
+
+// GET actions → all pending + recent completed. [] on failure (feature degrades).
+export async function getActions() {
+  try {
+    const res = await fetch(ACTIONS_URL);
+    const data = await res.json().catch(() => []);
+    return res.ok && Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+// POST actions → create { lead_id, title, description?, due_at }. Returns the row.
+export async function createAction(payload) {
+  const res = await fetch(ACTIONS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// PATCH actions → edit/complete/reopen by id. Returns the updated row.
+export async function updateAction(id, fields) {
+  const res = await fetch(ACTIONS_URL, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...fields }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// DELETE actions (id=X). Throws on failure.
+export async function deleteAction(id) {
+  const res = await fetch(`${ACTIONS_URL}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 // ── WhatsApp templates (manager UI) ──
 // GET templates → ALL rows (full shape, incl. inactive). Throws on error.
 export async function getWaTemplates() {

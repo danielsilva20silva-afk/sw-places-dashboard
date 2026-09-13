@@ -10,6 +10,7 @@ import LeadFormModal from "../components/LeadFormModal";
 import ClassificationBadge from "../components/ClassificationBadge";
 import LeadRowMobile from "../components/LeadRowMobile";
 import DupBadge from "../components/DupBadge";
+import NextActionCell from "../components/NextActionCell";
 import useIsMobile from "../useIsMobile";
 
 // "Sem classificação" is a sentinel for the classification filter (unset leads).
@@ -59,7 +60,8 @@ function matchContact(lead, mode) {
   return true;
 }
 
-export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, onCreateLead }) {
+export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, onCreateLead, actionsView }) {
+  const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   // Contact-less "DM · ANA" entries (reel-flow / logged DMs) aren't leads yet —
   // hide them here (they show in Conversas). They reappear once Ana captures a
   // phone/email. Every other source stays visible, contact or not.
@@ -172,6 +174,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
               onOpen={onOpenLead}
               onStatusChange={onStatusChange}
               showNotesIcon
+              nextAction={nextActionFor(lead)}
               style={{
                 borderBottom: i < sorted.length - 1 ? "1px solid #F5F5F5" : "none",
                 borderRadius: `${i === 0 ? "16px 16px" : "0 0"} ${i === sorted.length - 1 ? "16px 16px" : "0 0"}`,
@@ -196,6 +199,11 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
               </div>
               <LeadMeta lead={lead} />
             </div>
+            {actionsView && (
+              <div style={{ flexShrink: 0, width: 150 }}>
+                <NextActionCell next={nextActionFor(lead)} maxWidth={150} />
+              </div>
+            )}
             <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
               <StatusDropdown status={lead.status} onChange={s => onStatusChange(lead, s)} />
             </div>

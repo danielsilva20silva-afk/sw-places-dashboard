@@ -224,6 +224,83 @@ async function handleGreetings(req, res, supabase) {
   return res.status(405).json({ error: "Method not allowed" });
 }
 
+// ─────────────────────────── lead actions ───────────────────────────
+// Per-lead "what's next" tasks (next-action tracking). Keyed by the composite
+// lead id (same ids as lead_links — works for Supabase AND Meta-sheet leads).
+//   GET    → all pending + the 100 most recent completed
+//   POST   → create
+//   PATCH  → edit / complete (done=true stamps done_at) / reopen (clears it)
+//   DELETE → remove
+const ACTIONS_TABLE = "lead_actions";
+const ACTION_COLS = "id, lead_id, title, description, due_at, done, done_at, created_at";
+
+function actionColumns(b, { forInsert } = {}) {
+  const cols = {};
+  if (b.lead_id !== undefined) cols.lead_id = s(b.lead_id).trim();
+  if (b.title !== undefined) cols.title = s(b.title).trim();
+  if (b.description !== undefined) cols.description = s(b.description);
+  if (b.due_at !== undefined) cols.due_at = s(b.due_at).trim();
+  if (b.done !== undefined) {
+    cols.done = !!b.done;
+    cols.done_at = b.done ? new Date().toISOString() : null; // stamp/clear on toggle
+  }
+  if (forInsert) {
+    if (!cols.lead_id) throw new DomainError(400, "lead_id em falta.");
+    if (!cols.title) throw new DomainError(400, "title em falta.");
+    if (!cols.due_at) throw new DomainError(400, "due_at em falta.");
+    cols.done = false;
+  }
+  return cols;
+}
+
+async function handleActions(req, res, supabase) {
+  if (req.method === "GET") {
+    const [pending, done] = await Promise.all([
+      supabase.from(ACTIONS_TABLE).select(ACTION_COLS).eq("done", false).order("due_at", { ascending: true }),
+      supabase.from(ACTIONS_TABLE).select(ACTION_COLS).eq("done", true).order("done_at", { ascending: false }).limit(100),
+    ]);
+    if (pending.error) throw new Error(pending.error.message);
+    if (done.error) throw new Error(done.error.message);
+    return res.status(200).json([...(pending.data || []), ...(done.data || [])]);
+  }
+
+  if (req.method === "POST") {
+    const cols = actionColumns(req.body ?? {}, { forInsert: true });
+    const { data, error } = await supabase.from(ACTIONS_TABLE).insert(cols).select(ACTION_COLS).single();
+    if (error) throw new Error(error.message);
+    return res.status(201).json(data);
+  }
+
+  if (req.method === "PATCH") {
+    const b = req.body ?? {};
+    const id = s(b.id).trim();
+    if (!id) return res.status(400).json({ error: "Campo 'id' em falta." });
+    const cols = actionColumns(b);
+    if ("title" in cols && !cols.title) {
+      return res.status(400).json({ error: "O título não pode ficar vazio." });
+    }
+    if (Object.keys(cols).length === 0) {
+      const { data: cur } = await supabase.from(ACTIONS_TABLE).select(ACTION_COLS).eq("id", id).maybeSingle();
+      return res.status(200).json(cur || {});
+    }
+    const { data, error } = await supabase.from(ACTIONS_TABLE).update(cols).eq("id", id).select(ACTION_COLS).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return res.status(404).json({ error: "Ação não encontrada." });
+    return res.status(200).json(data);
+  }
+
+  if (req.method === "DELETE") {
+    const id = s(req.query?.id ?? req.body?.id).trim();
+    if (!id) return res.status(400).json({ error: "Parâmetro 'id' em falta." });
+    const { error } = await supabase.from(ACTIONS_TABLE).delete().eq("id", id);
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ ok: true });
+  }
+
+  res.setHeader("Allow", "GET, POST, PATCH, DELETE");
+  return res.status(405).json({ error: "Method not allowed" });
+}
+
 // ───────────────────────────── dispatch ─────────────────────────────
 export default async function handler(req, res) {
   const resource = s(req.query?.resource).trim();
@@ -235,8 +312,12 @@ export default async function handler(req, res) {
   if ((resource === "templates" || resource === "greetings") && !serverConfig.templates) {
     return res.status(403).json({ error: "Templates não estão disponíveis para este cliente." });
   }
-  if (resource !== "links" && resource !== "templates" && resource !== "greetings") {
-    return res.status(400).json({ error: "resource inválido (usa 'links', 'templates' ou 'greetings')." });
+  if (resource === "actions" && !serverConfig.actions) {
+    return res.status(403).json({ error: "Ações não estão disponíveis para este cliente." });
+  }
+  const KNOWN = ["links", "templates", "greetings", "actions"];
+  if (!KNOWN.includes(resource)) {
+    return res.status(400).json({ error: "resource inválido (usa 'links', 'templates', 'greetings' ou 'actions')." });
   }
 
   // Supabase configured? (missing env → friendly, never a crash)
@@ -248,6 +329,7 @@ export default async function handler(req, res) {
   try {
     if (resource === "links") return await handleLinks(req, res, ctx.supabase);
     if (resource === "greetings") return await handleGreetings(req, res, ctx.supabase);
+    if (resource === "actions") return await handleActions(req, res, ctx.supabase);
     return await handleTemplates(req, res, ctx.supabase);
   } catch (err) {
     if (err?.expose) return res.status(err.status).json({ error: err.message });

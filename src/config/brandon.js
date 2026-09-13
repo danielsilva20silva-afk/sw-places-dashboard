@@ -66,6 +66,28 @@ export default {
     sort_old: "Oldest first",
     new_lead: "+ New lead",
     empty_leads: "No leads found.",
+    // Next actions (per-lead task tracking)
+    na_title: "Next action",
+    na_none: "No next action — add one?",
+    na_add: "+ New action",
+    na_field_title: "Title",
+    na_title_ph: "e.g. Call back, send listings",
+    na_field_desc: "Description (optional)",
+    na_field_date: "Date",
+    na_field_time: "Time",
+    na_create: "Add action",
+    na_creating: "Adding…",
+    na_save: "Save",
+    na_cancel: "Cancel",
+    na_edit: "Edit",
+    na_delete: "Delete",
+    na_delete_confirm: "Delete this action?",
+    na_complete: "Complete",
+    na_overdue: "Overdue",
+    na_today: "Today",
+    na_card_title: "Actions",
+    na_all_clear: "All caught up ✓",
+    na_error: "Couldn't save the action.",
     // Quick actions / contact buttons
     act_call: "Call",
     act_whatsapp: "WhatsApp",
@@ -299,6 +321,7 @@ export default {
     followups: true,    // "Schedule follow-up" on leads (Google Calendar, api/follow-ups.js)
     dedupe: true,       // duplicate-lead detection + merge (api/brandon-store.js?resource=links)
     templates: true,    // WhatsApp template manager (api/brandon-store.js?resource=templates)
+    actions: true,      // per-lead next-action tracking (api/brandon-store.js?resource=actions)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour

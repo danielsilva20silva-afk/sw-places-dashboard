@@ -41,8 +41,10 @@ export default function Dashboard({ onLogout }) {
   const [calReload, setCalReload] = useState(0);
   const [meetingFlow, setMeetingFlow] = useState(null); // { leadId, prefill } | null
   const [links, setLinks] = useState([]); // lead-merge links (dedupe feature)
+  const [actions, setActions] = useState([]); // per-lead next-action tasks
   const calendarOn = hasFeature("calendar"); // false clients skip the whole calendar flow
   const dedupeOn = hasFeature("dedupe"); // false clients: zero dedupe UI / no link fetch
+  const actionsOn = hasFeature("actions"); // false clients: no fetch, no actions UI
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -80,12 +82,50 @@ export default function Dashboard({ onLogout }) {
     return () => { active = false; };
   }, [dedupeOn]);
 
+  // Per-lead actions (next-action tracking). Off clients never fetch.
+  useEffect(() => {
+    if (!actionsOn) return;
+    let active = true;
+    api.getActions().then((d) => { if (active) setActions(Array.isArray(d) ? d : []); }).catch(() => { if (active) setActions([]); });
+    return () => { active = false; };
+  }, [actionsOn]);
+
   // Apply links at read time: fold secondaries into their primary, flag detected
   // duplicates. When the feature is off this is a pass-through (byte-identical).
   const { displayLeads, enrichedById, candidatesByLead } = useMemo(() => {
     if (!dedupeOn) return { displayLeads: leads, enrichedById: null, candidatesByLead: null };
     return computeDedupe(leads, links);
   }, [dedupeOn, leads, links]);
+
+  // Actions joined to the DISPLAY leads: a Map (display lead id → { pending, next })
+  // for the row column / drawer, and a flat [{ action, lead }] for the dashboard
+  // card. A merged lead aggregates its secondaries' actions under the primary.
+  const { actionsView, actionItems } = useMemo(() => {
+    if (!actionsOn) return { actionsView: null, actionItems: [] };
+    const pendingByRawId = new Map();
+    for (const a of actions) {
+      if (a.done) continue;
+      const arr = pendingByRawId.get(String(a.lead_id)) || [];
+      arr.push(a); pendingByRawId.set(String(a.lead_id), arr);
+    }
+    const byDue = (x, y) => new Date(x.due_at) - new Date(y.due_at);
+    const view = new Map();
+    const leadByAnyId = new Map();
+    for (const lead of displayLeads) {
+      leadByAnyId.set(String(lead.id), lead);
+      const secIds = (lead.mergedSecondaries || []).map((s) => String(s.lead.id));
+      for (const sid of secIds) leadByAnyId.set(sid, lead);
+      const pending = [String(lead.id), ...secIds].flatMap((id) => pendingByRawId.get(id) || []).sort(byDue);
+      view.set(String(lead.id), { pending, next: pending[0] || null });
+    }
+    const items = [];
+    for (const a of actions) {
+      if (a.done) continue;
+      const lead = leadByAnyId.get(String(a.lead_id));
+      if (lead) items.push({ action: a, lead });
+    }
+    return { actionsView: view, actionItems: items };
+  }, [actionsOn, actions, displayLeads]);
 
   // Upcoming Google Calendar events (next 30 days) for the notifications panel.
   // The full calendar lives on the Dashboard tab; this is just the heads-up feed.
@@ -201,6 +241,32 @@ export default function Dashboard({ onLogout }) {
     } catch (e) {
       return { ok: false, error: e?.message || "erro" };
     }
+  };
+
+  // ── Lead actions (next-action tracking) ──
+  const createAction = async (payload) => {
+    try {
+      const a = await api.createAction(payload);
+      setActions(xs => [...xs, a]);
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e?.message || "erro" }; }
+  };
+  const editAction = async (id, fields) => {
+    try {
+      const a = await api.updateAction(id, fields);
+      setActions(xs => xs.map(x => String(x.id) === String(id) ? a : x));
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e?.message || "erro" }; }
+  };
+  // Mark done (the drawer also appends a "✓ {title}" entry to the notes history).
+  const completeAction = async (id) => editAction(id, { done: true });
+  const removeAction = async (id) => {
+    if (!window.confirm(t("na_delete_confirm"))) return { ok: false };
+    try {
+      await api.deleteAction(id);
+      setActions(xs => xs.filter(x => String(x.id) !== String(id)));
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e?.message || "erro" }; }
   };
 
   // Notifications / stats read the DISPLAY list so merged secondaries never
@@ -429,11 +495,13 @@ export default function Dashboard({ onLogout }) {
                 onViewAllLeads={() => setActiveTab("leads")}
                 calRefreshKey={calReload}
                 onCalendarChanged={() => setCalReload(r => r + 1)}
+                actionsView={actionsView}
+                actionItems={actionItems}
               />
             )}
 
             {shownTab ==="leads" && (
-              <LeadsTab leads={displayLeads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} />
+              <LeadsTab leads={displayLeads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} actionsView={actionsView} />
             )}
 
             {shownTab ==="templates" && <TemplatesTab leads={displayLeads} />}
@@ -471,6 +539,11 @@ export default function Dashboard({ onLogout }) {
             candidates={dedupeOn && candidatesByLead ? (candidatesByLead.get(id) || []) : []}
             onMerge={mergeLeads}
             onUnmerge={unmergeLink}
+            leadActions={actionsOn && actionsView ? (actionsView.get(id)?.pending || []) : []}
+            onActionCreate={(fields) => createAction({ lead_id: id, ...fields })}
+            onActionEdit={editAction}
+            onActionComplete={completeAction}
+            onActionDelete={removeAction}
           />
         );
       })()}
