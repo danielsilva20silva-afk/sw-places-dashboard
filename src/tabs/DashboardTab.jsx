@@ -18,7 +18,7 @@ import NextActionCell from "../components/NextActionCell";
 import ActionsCard from "../components/ActionsCard";
 import useIsMobile from "../useIsMobile";
 
-export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, actionItems }) {
+export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, actionItems, onCreateTask, onActionComplete, onActionEdit, onActionDelete }) {
   const isMobile = useIsMobile();
   const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   // Hide contact-less "DM · ANA" entries (reel-flow / logged DMs) from the leads
@@ -53,7 +53,16 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
     <>
       {/* Next actions — Today / Overdue (loud) + upcoming count. Only when the
           feature is on; when off this renders nothing (swplaces unaffected). */}
-      {hasFeature("actions") && <ActionsCard items={actionItems || []} onOpenLead={onOpenLead} />}
+      {hasFeature("actions") && (
+        <ActionsCard
+          items={actionItems || []}
+          onOpenLead={onOpenLead}
+          onCreateTask={onCreateTask}
+          onComplete={onActionComplete}
+          onEdit={onActionEdit}
+          onDelete={onActionDelete}
+        />
+      )}
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>

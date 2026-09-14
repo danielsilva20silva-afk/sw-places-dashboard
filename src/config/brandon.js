@@ -88,6 +88,18 @@ export default {
     na_card_title: "Actions",
     na_all_clear: "All caught up ✓",
     na_error: "Couldn't save the action.",
+    // Suggestion chips (fill the title; still editable)
+    na_chip_call: "Call the client",
+    na_chip_viewing: "Schedule viewing",
+    na_chip_properties: "Send suggested properties",
+    na_chip_meeting: "Schedule meeting",
+    // "Also add to calendar" + non-blocking notice
+    na_cal_add: "Also add to calendar",
+    na_cal_failed: "Action saved; calendar not connected.",
+    // General tasks (no lead)
+    na_task_tag: "Task",
+    na_add_task: "+ Task",
+    na_task_new: "New task",
     // Archive leads (hide without deleting)
     arch_archive: "Archive lead",
     arch_unarchive: "Unarchive",

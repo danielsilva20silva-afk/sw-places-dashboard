@@ -231,8 +231,10 @@ export async function getFollowUps() {
   }
 }
 
-// POST /api/follow-ups → schedule a follow-up calendar event. Throws with the
-// server's friendly message so the drawer can surface it inline.
+// POST /api/follow-ups → create a calendar event for an action ("Also add to
+// calendar"). Payload: { summary, leadId, name, phone, email, datetime, note }.
+// `datetime` is a naive "YYYY-MM-DDTHH:mm" wall-clock treated as Europe/Lisbon.
+// Throws with the server's friendly message so the caller can surface it.
 export async function scheduleFollowUp(payload) {
   const res = await fetch("/api/follow-ups", {
     method: "POST",

@@ -23,6 +23,19 @@ export function sortByDue(a, b) {
   return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
 }
 
+// Split a stored UTC ISO due_at into the { date, time } wall-clock parts an edit
+// form seeds its inputs with (browser-local calendar; empty/invalid → tomorrow 10:00).
+const pad = (n) => String(n).padStart(2, "0");
+export function splitLocal(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    return { date: `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`, time: "10:00" };
+  }
+  return { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
+}
+
 // Group {action, lead} items for the dashboard card: overdue, today, and the
 // count/list of upcoming actions within the next 7 days. Each bucket sorted by due.
 export function groupActions(items, now = Date.now()) {

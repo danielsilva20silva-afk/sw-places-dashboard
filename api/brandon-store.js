@@ -236,7 +236,8 @@ const ACTION_COLS = "id, lead_id, title, description, due_at, done, done_at, cre
 
 function actionColumns(b, { forInsert } = {}) {
   const cols = {};
-  if (b.lead_id !== undefined) cols.lead_id = s(b.lead_id).trim();
+  // lead_id is nullable: a general task (no lead) sends null/"" → store NULL.
+  if (b.lead_id !== undefined) { const v = s(b.lead_id).trim(); cols.lead_id = v || null; }
   if (b.title !== undefined) cols.title = s(b.title).trim();
   if (b.description !== undefined) cols.description = s(b.description);
   if (b.due_at !== undefined) cols.due_at = s(b.due_at).trim();
@@ -245,7 +246,7 @@ function actionColumns(b, { forInsert } = {}) {
     cols.done_at = b.done ? new Date().toISOString() : null; // stamp/clear on toggle
   }
   if (forInsert) {
-    if (!cols.lead_id) throw new DomainError(400, "lead_id em falta.");
+    // No lead_id check — general tasks legitimately have none.
     if (!cols.title) throw new DomainError(400, "title em falta.");
     if (!cols.due_at) throw new DomainError(400, "due_at em falta.");
     cols.done = false;

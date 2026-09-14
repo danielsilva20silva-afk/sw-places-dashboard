@@ -10,7 +10,6 @@ import AnaToggle from "./AnaToggle";
 import LeadConversation from "./LeadConversation";
 import NotesHistory from "./NotesHistory";
 import ClassificationSelect from "./ClassificationSelect";
-import FollowUpScheduler from "./FollowUpScheduler";
 import DuplicateCandidates from "./DuplicateCandidates";
 import MergedRecords from "./MergedRecords";
 import MergedNotes from "./MergedNotes";
@@ -364,7 +363,8 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               <ClassificationSelect value={classification} onChange={pickClassification} />
             </div>
           )}
-          {hasFeature("followups") && <FollowUpScheduler lead={lead} />}
+          {/* "Schedule follow-up" removed in Actions v2 — the calendar is now
+              reached via a "Next action" with "Also add to calendar" checked. */}
           {/* Form answers / summary. Merged → grouped per record; else the single summary. */}
           {isMerged ? (
             answerRecords.length > 0 && (

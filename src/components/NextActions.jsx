@@ -1,71 +1,17 @@
 import { useState } from "react";
 import { t } from "../labels";
-import { sortByDue } from "../actions";
+import { sortByDue, splitLocal } from "../actions";
 import DueBadge from "./DueBadge";
+import ActionForm from "./ActionForm";
 
 // "Next action" section for the LeadDrawer. Lists the lead's pending actions
-// (complete / edit / delete), a "+ New action" form, and a subtle nudge when
-// there are none. Completing an action is handled by the parent (marks done AND
-// appends a "✓ {title}" entry to the notes history).
+// (complete / edit / delete), a "+ New action" form (with suggestion chips and an
+// "Also add to calendar" option on create), and a subtle nudge when there are
+// none. Completing an action is handled by the parent (marks done AND appends a
+// "✓ {title}" entry to the notes history).
 
-const pad = (n) => String(n).padStart(2, "0");
-const localDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-function defaultDate() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1); // tomorrow
-  return localDateStr(d);
-}
-function splitLocal(iso) {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return { date: defaultDate(), time: "10:00" };
-  return { date: localDateStr(d), time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
-}
-function buildDueAt(date, time) {
-  const d = new Date(`${date}T${time || "10:00"}`);
-  return isNaN(d.getTime()) ? "" : d.toISOString();
-}
-
-const label = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" };
-const input = { width: "100%", boxSizing: "border-box", border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 12px", fontSize: 13, color: "#111", background: "white", outline: "none", fontFamily: "inherit" };
 const linkBtn = { background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 600 };
-
-function ActionForm({ initial, onSubmit, onCancel, submitLabel }) {
-  const [title, setTitle] = useState(initial?.title || "");
-  const [date, setDate] = useState(initial?.date || defaultDate());
-  const [time, setTime] = useState(initial?.time || "10:00");
-  const [description, setDescription] = useState(initial?.description || "");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  const submit = async () => {
-    if (busy) return;
-    if (!title.trim()) { setErr(t("na_field_title")); return; }
-    const due_at = buildDueAt(date, time);
-    if (!due_at) { setErr(t("na_field_date")); return; }
-    setBusy(true); setErr("");
-    const r = await onSubmit({ title: title.trim(), description: description.trim(), due_at });
-    if (!r?.ok) { setBusy(false); setErr(r?.error || t("na_error")); }
-    // On success the parent updates its state and this form unmounts.
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: 12 }}>
-      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("na_title_ph")} autoFocus style={input} />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label={t("na_field_date")} style={input} />
-        <input type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label={t("na_field_time")} style={input} />
-      </div>
-      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("na_field_desc")} rows={2} style={{ ...input, resize: "vertical" }} />
-      {err && <p style={{ fontSize: 11, color: "#BE123C", margin: 0 }}>{err}</p>}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" onClick={submit} disabled={busy || !title.trim()} style={{ background: "#111", color: "white", border: "none", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: busy || !title.trim() ? "not-allowed" : "pointer", opacity: busy || !title.trim() ? 0.5 : 1 }}>
-          {busy ? t("na_creating") : submitLabel}
-        </button>
-        <button type="button" onClick={onCancel} style={{ ...linkBtn, color: "#888", padding: "8px 6px" }}>{t("na_cancel")}</button>
-      </div>
-    </div>
-  );
-}
+const label = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 8px" };
 
 function ActionRow({ action, onComplete, onEdit, onDelete }) {
   const [editing, setEditing] = useState(false);
@@ -75,6 +21,7 @@ function ActionRow({ action, onComplete, onEdit, onDelete }) {
       <ActionForm
         initial={{ title: action.title, description: action.description, ...splitLocal(action.due_at) }}
         submitLabel={t("na_save")}
+        showChips={false}
         onCancel={() => setEditing(false)}
         onSubmit={async (fields) => {
           const r = await onEdit(action.id, fields);
@@ -103,11 +50,26 @@ function ActionRow({ action, onComplete, onEdit, onDelete }) {
 
 export default function NextActions({ actions, onCreate, onComplete, onEdit, onDelete }) {
   const [adding, setAdding] = useState(false);
+  const [notice, setNotice] = useState(""); // e.g. "saved, but calendar not connected"
   const pending = [...(actions || [])].sort(sortByDue);
+
+  // Wrap create to close the form and surface a non-blocking calendar notice.
+  const handleCreate = async (fields) => {
+    const r = await onCreate(fields);
+    if (r?.ok) { setAdding(false); setNotice(r.calendarFailed ? t("na_cal_failed") : ""); }
+    return r;
+  };
 
   return (
     <div>
       <p style={label}>{t("na_title")}</p>
+
+      {notice && (
+        <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "8px 12px", fontSize: 12, color: "#92400E", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <span>⚠️ {notice}</span>
+          <button type="button" onClick={() => setNotice("")} style={{ ...linkBtn, color: "#92400E" }} aria-label={t("na_cancel")}>×</button>
+        </div>
+      )}
 
       {pending.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
@@ -120,12 +82,9 @@ export default function NextActions({ actions, onCreate, onComplete, onEdit, onD
       {adding ? (
         <ActionForm
           submitLabel={t("na_create")}
+          showCalendarOption
           onCancel={() => setAdding(false)}
-          onSubmit={async (fields) => {
-            const r = await onCreate(fields);
-            if (r?.ok) setAdding(false);
-            return r;
-          }}
+          onSubmit={handleCreate}
         />
       ) : pending.length > 0 ? (
         <button type="button" onClick={() => setAdding(true)} style={{ ...linkBtn, color: "#8A6D2F", fontSize: 13 }}>{t("na_add")}</button>
