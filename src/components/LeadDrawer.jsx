@@ -14,6 +14,7 @@ import FollowUpScheduler from "./FollowUpScheduler";
 import DuplicateCandidates from "./DuplicateCandidates";
 import MergedRecords from "./MergedRecords";
 import MergedNotes from "./MergedNotes";
+import NextActions from "./NextActions";
 
 // Per-client WhatsApp message for the "Sem resposta" button (empty when the
 // client hasn't configured one → the button is hidden).
@@ -27,7 +28,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -180,6 +181,14 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   // touch a secondary record).
   const appendNoteToPrimary = (text) => commitNotes(appendNote(manualNotes, text));
 
+  // Next-action tracking. Completing an action marks it done AND appends a
+  // "✓ {title}" entry to the notes history, so everything stays interlinked.
+  const actionsOn = hasFeature("actions");
+  const completeActionWithNote = async (action) => {
+    const r = await onActionComplete(action.id);
+    if (r?.ok) commitNotes(appendNote(manualNotes, `✓ ${action.title}`));
+  };
+
   const handleClose = () => { clearTimeout(timerRef.current); flushText(); onClose(); };
 
   const retry = () => { if (lastPatchRef.current) persist(lastPatchRef.current); };
@@ -306,6 +315,16 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               }}>{t("d_send_whatsapp")}</a>
             )}
           </div>
+          {/* Next action — placed right after status (the "what's next" layer). */}
+          {actionsOn && (
+            <NextActions
+              actions={leadActions || []}
+              onCreate={onActionCreate}
+              onComplete={completeActionWithNote}
+              onEdit={onActionEdit}
+              onDelete={onActionDelete}
+            />
+          )}
           {lead.classification_editable && (
             <div>
               <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" }}>{t("d_classification")}</p>

@@ -14,10 +14,13 @@ import LeadMeta from "../components/LeadMeta";
 import ClassificationBadge from "../components/ClassificationBadge";
 import LeadRowMobile from "../components/LeadRowMobile";
 import DupBadge from "../components/DupBadge";
+import NextActionCell from "../components/NextActionCell";
+import ActionsCard from "../components/ActionsCard";
 import useIsMobile from "../useIsMobile";
 
-export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged }) {
+export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, actionItems }) {
   const isMobile = useIsMobile();
+  const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   // Hide contact-less "DM · ANA" entries (reel-flow / logged DMs) from the leads
   // views + stats until they have a phone/email — they live in Conversas.
   const leads = allLeads.filter(isRealLead);
@@ -48,6 +51,10 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
 
   return (
     <>
+      {/* Next actions — Today / Overdue (loud) + upcoming count. Only when the
+          feature is on; when off this renders nothing (swplaces unaffected). */}
+      {hasFeature("actions") && <ActionsCard items={actionItems || []} onOpenLead={onOpenLead} />}
+
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
         {stats.map(s => (
@@ -126,6 +133,7 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
               lead={lead}
               onOpen={onOpenLead}
               onStatusChange={onStatusChange}
+              nextAction={nextActionFor(lead)}
               style={{
                 borderBottom: i < arr.length - 1 ? "1px solid #F5F5F5" : "none",
                 borderRadius: i === arr.length - 1 ? "0 0 16px 16px" : 0,
@@ -149,6 +157,11 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
               </div>
               <LeadMeta lead={lead} />
             </div>
+            {actionsView && (
+              <div style={{ flexShrink: 0, width: 150 }}>
+                <NextActionCell next={nextActionFor(lead)} maxWidth={150} />
+              </div>
+            )}
             <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
               <StatusDropdown status={lead.status} onChange={s => onStatusChange(lead, s)} />
             </div>
