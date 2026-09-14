@@ -85,6 +85,9 @@ function rowToLead(row) {
     phone: "", // no column
     budget: s(row.budget_range),
     intention: s(row.purpose),
+    // Area of interest — also folded into `notes`, but exposed here as a discrete
+    // field for the CSV export (read-only; unused by the UI).
+    area: s(row.area),
     source: s(row.source),
     date: s(row.created_at).slice(0, 10), // YYYY-MM-DD
     status: s(row.status) || "New",
