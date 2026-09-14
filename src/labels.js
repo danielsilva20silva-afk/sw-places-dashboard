@@ -96,6 +96,18 @@ const DEFAULTS = {
   na_card_title: "Ações",
   na_all_clear: "Tudo em dia ✓",
   na_error: "Não foi possível guardar a ação.",
+  // Chips de sugestão (preenchem o título; continua editável)
+  na_chip_call: "Ligar ao cliente",
+  na_chip_viewing: "Agendar visita",
+  na_chip_properties: "Enviar imóveis sugeridos",
+  na_chip_meeting: "Agendar reunião",
+  // "Adicionar também ao calendário" + aviso não bloqueante
+  na_cal_add: "Adicionar também ao calendário",
+  na_cal_failed: "Ação guardada; calendário não ligado.",
+  // Tarefas gerais (sem lead)
+  na_task_tag: "Tarefa",
+  na_add_task: "+ Tarefa",
+  na_task_new: "Nova tarefa",
 
   // ── Arquivar leads (esconder sem apagar) ──
   arch_archive: "Arquivar lead",

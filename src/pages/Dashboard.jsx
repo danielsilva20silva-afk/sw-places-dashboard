@@ -148,6 +148,8 @@ export default function Dashboard({ onLogout }) {
     const items = [];
     for (const a of actions) {
       if (a.done) continue;
+      // General task (no lead) → surfaced in the card with lead:null.
+      if (a.lead_id == null || String(a.lead_id).trim() === "") { items.push({ action: a, lead: null }); continue; }
       const lead = leadByAnyId.get(String(a.lead_id));
       if (lead) items.push({ action: a, lead });
     }
@@ -271,13 +273,43 @@ export default function Dashboard({ onLogout }) {
   };
 
   // ── Lead actions (next-action tracking) ──
-  const createAction = async (payload) => {
+  // Resolve a lead (enriched/merged when available) for calendar event details.
+  const leadForCalendar = (id) =>
+    (dedupeOn && enrichedById && enrichedById.get(String(id))) ||
+    leads.find(l => String(l.id) === String(id)) || null;
+
+  // Create an action. `addToCalendar`/`datetime` are calendar-only extras (not
+  // stored on the row): when set, ALSO create the Google Calendar event via the
+  // follow-ups path. The action always saves first; a calendar failure is
+  // non-blocking and reported back as { calendarFailed:true } for an inline notice.
+  const createAction = async ({ addToCalendar, datetime, ...payload }) => {
     try {
-      const a = await api.createAction(payload);
+      const a = await api.createAction(payload); // { lead_id?, title, description, due_at }
       setActions(xs => [...xs, a]);
-      return { ok: true };
+      let calendarFailed = false;
+      if (addToCalendar) {
+        const lead = payload.lead_id ? leadForCalendar(payload.lead_id) : null;
+        try {
+          // Pass the raw picked wall-clock (datetime) straight through — the
+          // follow-ups endpoint treats it as Europe/Lisbon. Event title = action
+          // title (summary); lead phone/email land in the description when present.
+          await api.scheduleFollowUp({
+            summary: payload.title,
+            leadId: payload.lead_id || "",
+            name: lead ? (lead.name || lead.email || "Lead") : "",
+            phone: lead?.phone || "",
+            email: lead?.email || "",
+            datetime,
+            note: payload.description || "",
+          });
+          if (calendarOn) setCalReload(r => r + 1); // refresh the Upcoming card
+        } catch { calendarFailed = true; }
+      }
+      return { ok: true, calendarFailed };
     } catch (e) { return { ok: false, error: e?.message || "erro" }; }
   };
+  // General task (no lead) — created from the dashboard Actions card.
+  const createTask = async (fields) => createAction({ ...fields, lead_id: null });
   const editAction = async (id, fields) => {
     try {
       const a = await api.updateAction(id, fields);
@@ -543,6 +575,10 @@ export default function Dashboard({ onLogout }) {
                 onCalendarChanged={() => setCalReload(r => r + 1)}
                 actionsView={actionsView}
                 actionItems={actionItems}
+                onCreateTask={createTask}
+                onActionComplete={completeAction}
+                onActionEdit={editAction}
+                onActionDelete={removeAction}
               />
             )}
 

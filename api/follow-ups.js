@@ -71,15 +71,19 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const b = req.body ?? {};
       const name = String(b.name || "").trim();
+      // Optional explicit event title (the action's title). When absent, fall back
+      // to the legacy "Follow up: {name}" form. A general task has no lead name, so
+      // require EITHER a summary or a name.
+      const summary = String(b.summary || "").trim();
       const datetime = withSeconds(b.datetime);
-      if (!name) return res.status(400).json({ error: "Falta o nome do lead." });
+      if (!summary && !name) return res.status(400).json({ error: "Falta o título ou o nome do lead." });
       if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(datetime)) {
         return res.status(400).json({ error: "Data/hora inválida." });
       }
       const r = await calendar.events.insert({
         calendarId: PRIMARY,
         requestBody: {
-          summary: `Follow up: ${name}`,
+          summary: summary || `Follow up: ${name}`,
           description: buildDescription(b),
           start: { dateTime: datetime, timeZone: TZ },
           end: { dateTime: addMinutes(datetime, DURATION_MIN), timeZone: TZ },
