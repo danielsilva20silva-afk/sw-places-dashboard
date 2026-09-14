@@ -356,6 +356,7 @@ export default {
     dedupe: true,       // duplicate-lead detection + merge (api/brandon-store.js?resource=links)
     templates: true,    // WhatsApp template manager (api/brandon-store.js?resource=templates)
     actions: true,      // per-lead next-action tracking (api/brandon-store.js?resource=actions)
+    archive: true,      // archive leads / hide-without-delete (api/brandon-store.js?resource=archive)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour
