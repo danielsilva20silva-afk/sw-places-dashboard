@@ -97,6 +97,17 @@ const DEFAULTS = {
   na_all_clear: "Tudo em dia ✓",
   na_error: "Não foi possível guardar a ação.",
 
+  // ── Arquivar leads (esconder sem apagar) ──
+  arch_archive: "Arquivar lead",
+  arch_unarchive: "Desarquivar",
+  arch_working: "A processar…",
+  arch_hint: "Esconde das tuas listas — nada é apagado; desarquiva quando quiseres.",
+  arch_archived_hint: "Este lead está arquivado — desarquiva para o repor nas listas.",
+  arch_view: "Arquivados",
+  arch_back_to_active: "Voltar aos ativos",
+  arch_empty: "Nenhum lead arquivado.",
+  arch_failed: "Não foi possível arquivar. Tenta de novo.",
+
   // ── Exportar CSV (leads) ──
   export_csv: "Exportar CSV",
   export_all: "Todos",

@@ -113,7 +113,12 @@ function searchTextFor(lead) {
 //   and __fieldOrigins { field: { id, source } } for any contact field whose value
 //   was borrowed from a secondary (the primary's was empty).
 // Leads with an unlinked candidate carry __dupCandidate true.
-export function computeDedupe(leads, links) {
+//
+// archivedIds (optional Set of composite lead ids): archived leads are excluded
+// from duplicate-detection candidates — neither offered as a merge target nor
+// flagged themselves — so hiding a lead also hides it from the dedupe surface.
+// They still appear in displayLeads (enriched); the caller partitions them out.
+export function computeDedupe(leads, links, archivedIds = new Set()) {
   const byId = new Map(leads.map((l) => [String(l.id), l]));
 
   const secToPrim = new Map();
@@ -163,6 +168,7 @@ export function computeDedupe(leads, links) {
   };
   for (const { a, b, on } of pairs) {
     if (hiddenSecondaryIds.has(a) || hiddenSecondaryIds.has(b)) continue;
+    if (archivedIds.has(a) || archivedIds.has(b)) continue; // archived → off the dedupe surface
     if (rootOf(a) === rootOf(b)) continue; // already in the same merged group
     const la = byId.get(a);
     const lb = byId.get(b);

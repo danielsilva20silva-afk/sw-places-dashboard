@@ -5,7 +5,7 @@
 const CLIENT = process.env.CLIENT || "swplaces";
 
 const CONFIGS = {
-  swplaces: { dataSource: "sheets", followups: false, dedupe: false, templates: false, actions: false, notifications: true },
+  swplaces: { dataSource: "sheets", followups: false, dedupe: false, templates: false, actions: false, archive: false, notifications: true },
   // Brandon merges two lead sources: Supabase (landing page) is primary; the
   // Meta Ads Instant Forms Google Sheet is secondary. Order matters — the first
   // source is the primary (owns addLead). See api/_adapters/composite.js.
@@ -15,7 +15,9 @@ const CONFIGS = {
   // Vercel's 12-function cap. templates powers the "Meta Leads Notifier" Apps
   // Script, which reads active templates via a token.
   // actions: per-lead next-action tracking (api/brandon-store.js?resource=actions).
-  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true, dedupe: true, templates: true, actions: true, notifications: false },
+  // archive: hide leads from the working list without deleting — works for Meta
+  // leads too (Meta owns those rows) (api/brandon-store.js?resource=archive).
+  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true, dedupe: true, templates: true, actions: true, archive: true, notifications: false },
 };
 
 const serverConfig = CONFIGS[CLIENT];

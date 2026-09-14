@@ -28,7 +28,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -38,6 +38,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   const [classification, setClassification] = useState(lead.classification || "");
   const [manualNotes, setManualNotes] = useState(lead.manual_notes || "");
   const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [save, setSave] = useState("idle"); // idle | saving | saved | error
 
   // Lock background scroll while the drawer is open. In an iOS standalone PWA an
@@ -201,6 +202,38 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
     if (ok) onClose();
     else { setDeleting(false); alert(t("d_delete_failed")); }
   };
+
+  // Archive / unarchive (hide-without-delete). Both close the drawer on success —
+  // the lead moves between the active list and the "Archived" view. Meta leads
+  // can't be deleted (Meta owns the row), so Archive is their removal path; the
+  // Delete button is hidden for them when the feature is on.
+  const isMetaLead = String(lead.id).startsWith("l:");
+  const showDelete = !archiveEnabled || !isMetaLead;
+  const handleArchive = async () => {
+    if (archiving) return;
+    setArchiving(true);
+    const r = await onArchive(lead.id);
+    if (r?.ok) onClose();
+    else { setArchiving(false); alert(t("arch_failed")); }
+  };
+  const handleUnarchive = async () => {
+    if (archiving) return;
+    setArchiving(true);
+    const r = await onUnarchive(lead.id);
+    if (r?.ok) onClose();
+    else { setArchiving(false); alert(t("arch_failed")); }
+  };
+
+  // The Delete button, unchanged from before. Rendered directly (no wrapper) so
+  // archive-off clients are byte-identical; null for Meta leads when archive is on.
+  const deleteButton = showDelete ? (
+    <button onClick={handleDelete} disabled={deleting} style={{
+      width: "100%", background: "#FFF1F2", color: "#DC2626",
+      border: "1px solid #FECDD3", borderRadius: 10, padding: "11px",
+      fontSize: 13, fontWeight: 600, cursor: deleting ? "not-allowed" : "pointer",
+      opacity: deleting ? 0.6 : 1,
+    }}>{deleting ? t("d_deleting") : t("d_delete")}</button>
+  ) : null;
 
   // Portaled to <body> so the fixed overlay escapes the Dashboard root, which has
   // `overflow-x: hidden`. In an iOS standalone PWA a position:fixed descendant of
@@ -380,12 +413,33 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             </div>
           )}
           {hasFeature("ana") && <LeadConversation lead={lead} />}
-          <button onClick={handleDelete} disabled={deleting} style={{
-            width: "100%", background: "#FFF1F2", color: "#DC2626",
-            border: "1px solid #FECDD3", borderRadius: 10, padding: "11px",
-            fontSize: 13, fontWeight: 600, cursor: deleting ? "not-allowed" : "pointer",
-            opacity: deleting ? 0.6 : 1,
-          }}>{deleting ? t("d_deleting") : t("d_delete")}</button>
+          {/* Delete stays exactly as before; when archive is OFF this renders the
+              bare button (no wrapper) so those clients are byte-identical. */}
+          {deleteButton}
+          {/* Archive (hide-without-delete) — only for clients with the feature. For
+              Meta leads it REPLACES Delete above (showDelete false); Supabase leads
+              keep both. Sits below Delete as the softer, reversible removal. */}
+          {archiveEnabled && (isArchived ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <button onClick={handleUnarchive} disabled={archiving} style={{
+                width: "100%", background: "#F0FDF4", color: "#15803D",
+                border: "1px solid #BBF7D0", borderRadius: 10, padding: "11px",
+                fontSize: 13, fontWeight: 600, cursor: archiving ? "not-allowed" : "pointer",
+                opacity: archiving ? 0.6 : 1,
+              }}>{archiving ? t("arch_working") : t("arch_unarchive")}</button>
+              <p style={{ fontSize: 11, color: "#999", margin: "0 2px", lineHeight: 1.5 }}>{t("arch_archived_hint")}</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <button onClick={handleArchive} disabled={archiving} style={{
+                width: "100%", background: "#F8F7F4", color: "#57534E",
+                border: "1px solid #E7E5E4", borderRadius: 10, padding: "11px",
+                fontSize: 13, fontWeight: 600, cursor: archiving ? "not-allowed" : "pointer",
+                opacity: archiving ? 0.6 : 1,
+              }}>{archiving ? t("arch_working") : t("arch_archive")}</button>
+              <p style={{ fontSize: 11, color: "#999", margin: "0 2px", lineHeight: 1.5 }}>{t("arch_hint")}</p>
+            </div>
+          ))}
         </div>
         {/* Auto-save indicator (replaces the old Guardar/Cancelar buttons) */}
         <div style={{ padding: "12px 24px calc(12px + env(safe-area-inset-bottom))", borderTop: "1px solid #F0F0F0", position: "sticky", bottom: 0, background: "white" }}>
