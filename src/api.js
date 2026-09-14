@@ -118,6 +118,42 @@ export async function deleteAction(id) {
   return data;
 }
 
+// ── Archived leads (hide from the working list without deleting) ──
+const ARCHIVE_URL = "/api/brandon-store?resource=archive";
+
+// GET archive → array of archived composite lead ids (strings). [] on any failure
+// so the dashboard degrades to "nothing archived" rather than breaking the list.
+export async function getArchived() {
+  try {
+    const res = await fetch(ARCHIVE_URL);
+    const data = await res.json().catch(() => []);
+    if (!res.ok || !Array.isArray(data)) return [];
+    return data.map((r) => String(r.lead_id)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+// POST archive → archive one lead by id (idempotent). Throws on failure.
+export async function addArchived(leadId) {
+  const res = await fetch(ARCHIVE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lead_id: leadId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// DELETE archive (lead_id=X) → unarchive one lead. Throws on failure.
+export async function removeArchived(leadId) {
+  const res = await fetch(`${ARCHIVE_URL}&lead_id=${encodeURIComponent(leadId)}`, { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 // ── WhatsApp templates (manager UI) ──
 // GET templates → ALL rows (full shape, incl. inactive). Throws on error.
 export async function getWaTemplates() {

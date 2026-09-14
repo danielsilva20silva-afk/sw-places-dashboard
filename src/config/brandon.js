@@ -88,6 +88,16 @@ export default {
     na_card_title: "Actions",
     na_all_clear: "All caught up ✓",
     na_error: "Couldn't save the action.",
+    // Archive leads (hide without deleting)
+    arch_archive: "Archive lead",
+    arch_unarchive: "Unarchive",
+    arch_working: "Working…",
+    arch_hint: "Hides from your lists — nothing is deleted; unarchive anytime.",
+    arch_archived_hint: "This lead is archived — unarchive to restore it to your lists.",
+    arch_view: "Archived",
+    arch_back_to_active: "Back to active",
+    arch_empty: "No archived leads.",
+    arch_failed: "Couldn't archive. Please try again.",
     // CSV export (leads)
     export_csv: "Export CSV",
     export_all: "All",
@@ -346,6 +356,7 @@ export default {
     dedupe: true,       // duplicate-lead detection + merge (api/brandon-store.js?resource=links)
     templates: true,    // WhatsApp template manager (api/brandon-store.js?resource=templates)
     actions: true,      // per-lead next-action tracking (api/brandon-store.js?resource=actions)
+    archive: true,      // archive leads / hide-without-delete (api/brandon-store.js?resource=archive)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour

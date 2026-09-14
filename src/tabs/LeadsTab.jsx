@@ -62,13 +62,16 @@ function matchContact(lead, mode) {
   return true;
 }
 
-export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, onCreateLead, actionsView }) {
+export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, onCreateLead, actionsView, archiveOn, archivedLeads = [], onUnarchive }) {
   const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   // Contact-less "DM · ANA" entries (reel-flow / logged DMs) aren't leads yet —
   // hide them here (they show in Conversas). They reappear once Ana captures a
   // phone/email. Every other source stays visible, contact or not.
   const leads = allLeads.filter(isRealLead);
   const isMobile = useIsMobile();
+  const [showArchived, setShowArchived] = useState(false);
+  // Archived rows also drop the contact-less DM entries, for parity with the list.
+  const archived = (archivedLeads || []).filter(isRealLead);
   const [filterBudget, setFilterBudget] = useState("Todos");
   const [filterIntention, setFilterIntention] = useState("Todas");
   const [filterStatus, setFilterStatus] = useState("Todos");
@@ -172,10 +175,58 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
         </div>
       </div>
 
+      {/* Archived toggle — only for clients with the feature, and only once there's
+          something archived. Switches the list below to the hidden leads. */}
+      {archiveOn && archived.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <button onClick={() => setShowArchived(v => !v)} style={{
+            background: showArchived ? "#F8F7F4" : "none", border: showArchived ? "1px solid #E7E5E4" : "none",
+            color: showArchived ? "#111" : "#888", borderRadius: 8, padding: "6px 10px",
+            fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>
+            {showArchived ? `← ${t("arch_back_to_active")}` : `${t("arch_view")} (${archived.length})`}
+          </button>
+        </div>
+      )}
+
       {showForm && <LeadFormModal onClose={() => setShowForm(false)} onCreate={onCreateLead} />}
 
-      {/* No overflow:hidden — it would clip the StatusDropdown menu on the last rows.
-          The card look is kept via border + borderRadius; edge rows round their own corners. */}
+      {archiveOn && showArchived ? (
+        /* Archived leads — hidden from every other view; each row can be restored. */
+        <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB" }}>
+          {archived.length === 0 ? (
+            <div style={{ padding: "60px", textAlign: "center", color: "#CCC", fontSize: 14 }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>🗄️</div>{t("arch_empty")}
+            </div>
+          ) : archived.map((lead, i) => (
+            <div key={lead.id} onClick={() => onOpenLead(lead)} style={{
+              display: "flex", alignItems: "center", gap: 14, padding: "14px 20px",
+              borderBottom: i < archived.length - 1 ? "1px solid #F5F5F5" : "none", cursor: "pointer",
+              borderRadius: `${i === 0 ? "16px 16px" : "0 0"} ${i === archived.length - 1 ? "16px 16px" : "0 0"}`,
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = "#FAFAFA"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+            >
+              <Avatar name={lead.name} size={36} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</span>
+                  <DupBadge lead={lead} />
+                </div>
+                <LeadMeta lead={lead} />
+              </div>
+              <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+                <button onClick={() => onUnarchive(lead.id)} style={{
+                  background: "#F0FDF4", color: "#15803D", border: "1px solid #BBF7D0",
+                  borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+                }}>{t("arch_unarchive")}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+      /* No overflow:hidden — it would clip the StatusDropdown menu on the last rows.
+         The card look is kept via border + borderRadius; edge rows round their own corners. */
       <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB" }}>
         {sorted.length === 0 ? (
           <div style={{ padding: "60px", textAlign: "center", color: "#CCC", fontSize: 14 }}>
@@ -229,6 +280,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
           )
         ))}
       </div>
+      )}
     </>
   );
 }

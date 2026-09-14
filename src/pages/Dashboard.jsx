@@ -42,9 +42,11 @@ export default function Dashboard({ onLogout }) {
   const [meetingFlow, setMeetingFlow] = useState(null); // { leadId, prefill } | null
   const [links, setLinks] = useState([]); // lead-merge links (dedupe feature)
   const [actions, setActions] = useState([]); // per-lead next-action tasks
+  const [archivedIds, setArchivedIds] = useState(() => new Set()); // hidden lead ids (archive feature)
   const calendarOn = hasFeature("calendar"); // false clients skip the whole calendar flow
   const dedupeOn = hasFeature("dedupe"); // false clients: zero dedupe UI / no link fetch
   const actionsOn = hasFeature("actions"); // false clients: no fetch, no actions UI
+  const archiveOn = hasFeature("archive"); // false clients: no fetch, nothing archived
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -90,12 +92,34 @@ export default function Dashboard({ onLogout }) {
     return () => { active = false; };
   }, [actionsOn]);
 
+  // Archived lead ids (hide-without-delete). Off clients never fetch → empty set
+  // → every lead stays visible (byte-identical to no archive feature).
+  useEffect(() => {
+    if (!archiveOn) return;
+    let active = true;
+    api.getArchived().then((ids) => { if (active) setArchivedIds(new Set((ids || []).map(String))); }).catch(() => {});
+    return () => { active = false; };
+  }, [archiveOn]);
+
   // Apply links at read time: fold secondaries into their primary, flag detected
   // duplicates. When the feature is off this is a pass-through (byte-identical).
   const { displayLeads, enrichedById, candidatesByLead } = useMemo(() => {
     if (!dedupeOn) return { displayLeads: leads, enrichedById: null, candidatesByLead: null };
-    return computeDedupe(leads, links);
-  }, [dedupeOn, leads, links]);
+    // Archived leads are kept in displayLeads (enriched) but dropped from the
+    // dedupe candidate surface; the partition below splits active vs archived.
+    return computeDedupe(leads, links, archiveOn ? archivedIds : undefined);
+  }, [dedupeOn, leads, links, archiveOn, archivedIds]);
+
+  // Split the display list into what's shown (active) and what's hidden
+  // (archived). Everything downstream — lists, stats, actions, dedupe — reads the
+  // ACTIVE list, so archiving a lead removes it everywhere at once. When the
+  // feature is off (or nothing is archived) active === displayLeads (no-op).
+  const { activeLeads, archivedLeads } = useMemo(() => {
+    if (!archiveOn || archivedIds.size === 0) return { activeLeads: displayLeads, archivedLeads: [] };
+    const active = [], archived = [];
+    for (const l of displayLeads) (archivedIds.has(String(l.id)) ? archived : active).push(l);
+    return { activeLeads: active, archivedLeads: archived };
+  }, [archiveOn, archivedIds, displayLeads]);
 
   // Actions joined to the DISPLAY leads: a Map (display lead id → { pending, next })
   // for the row column / drawer, and a flat [{ action, lead }] for the dashboard
@@ -111,7 +135,10 @@ export default function Dashboard({ onLogout }) {
     const byDue = (x, y) => new Date(x.due_at) - new Date(y.due_at);
     const view = new Map();
     const leadByAnyId = new Map();
-    for (const lead of displayLeads) {
+    // Built over ACTIVE leads only, so an archived lead's pending actions vanish
+    // from the row column, the drawer and the dashboard card (never deleted —
+    // they reappear on unarchive when the lead returns to the active list).
+    for (const lead of activeLeads) {
       leadByAnyId.set(String(lead.id), lead);
       const secIds = (lead.mergedSecondaries || []).map((s) => String(s.lead.id));
       for (const sid of secIds) leadByAnyId.set(sid, lead);
@@ -125,7 +152,7 @@ export default function Dashboard({ onLogout }) {
       if (lead) items.push({ action: a, lead });
     }
     return { actionsView: view, actionItems: items };
-  }, [actionsOn, actions, displayLeads]);
+  }, [actionsOn, actions, activeLeads]);
 
   // Upcoming Google Calendar events (next 30 days) for the notifications panel.
   // The full calendar lives on the Dashboard tab; this is just the heads-up feed.
@@ -269,12 +296,31 @@ export default function Dashboard({ onLogout }) {
     } catch (e) { return { ok: false, error: e?.message || "erro" }; }
   };
 
-  // Notifications / stats read the DISPLAY list so merged secondaries never
-  // double-count (identical to `leads` when dedupe is off).
-  const newLeads = displayLeads.filter(l => l.status === statusRoles.new);
+  // ── Archive (hide without deleting) ── Optimistic. Archiving a merged primary
+  // archives the whole composite (its id is the primary's); unarchive restores it
+  // (and its actions + dedupe eligibility, since active === visible everywhere).
+  const archiveLead = async (id) => {
+    try {
+      await api.addArchived(id);
+      setArchivedIds(s => { const n = new Set(s); n.add(String(id)); return n; });
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e?.message || "erro" }; }
+  };
+  const unarchiveLead = async (id) => {
+    try {
+      await api.removeArchived(id);
+      setArchivedIds(s => { const n = new Set(s); n.delete(String(id)); return n; });
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e?.message || "erro" }; }
+  };
+
+  // Notifications / stats read the ACTIVE list so merged secondaries never
+  // double-count and archived leads never show (identical to `leads` when both
+  // dedupe and archive are off).
+  const newLeads = activeLeads.filter(l => l.status === statusRoles.new);
   const unseenNewLeads = newLeads.filter(l => !seenLeadIds.includes(l.id));
   const upcomingMeetings = upcomingEvents.slice(0, 3); // already future, sorted by start
-  const notContacted = displayLeads.filter(l => {
+  const notContacted = activeLeads.filter(l => {
     const diff = Math.floor((new Date() - new Date(l.date)) / 86400000);
     return l.status === statusRoles.new && diff >= 2;
   });
@@ -489,7 +535,7 @@ export default function Dashboard({ onLogout }) {
           <>
             {shownTab ==="dashboard" && (
               <DashboardTab
-                leads={displayLeads}
+                leads={activeLeads}
                 onOpenLead={setDrawerLead}
                 onStatusChange={changeStatus}
                 onViewAllLeads={() => setActiveTab("leads")}
@@ -501,16 +547,16 @@ export default function Dashboard({ onLogout }) {
             )}
 
             {shownTab ==="leads" && (
-              <LeadsTab leads={displayLeads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} actionsView={actionsView} />
+              <LeadsTab leads={activeLeads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} actionsView={actionsView} archiveOn={archiveOn} archivedLeads={archivedLeads} onUnarchive={unarchiveLead} />
             )}
 
-            {shownTab ==="templates" && <TemplatesTab leads={displayLeads} />}
+            {shownTab ==="templates" && <TemplatesTab leads={activeLeads} />}
 
             {shownTab ==="conversas" && <ConversasTab onConvert={convertToLead} />}
 
             {shownTab ==="recuperar" && <RecuperarTab />}
 
-            {shownTab ==="newsletter" && <NewsletterTab leads={displayLeads} />}
+            {shownTab ==="newsletter" && <NewsletterTab leads={activeLeads} />}
 
             {shownTab ==="ana" && <AnaTab />}
           </>
@@ -544,6 +590,10 @@ export default function Dashboard({ onLogout }) {
             onActionEdit={editAction}
             onActionComplete={completeAction}
             onActionDelete={removeAction}
+            archiveEnabled={archiveOn}
+            isArchived={archiveOn && archivedIds.has(id)}
+            onArchive={archiveLead}
+            onUnarchive={unarchiveLead}
           />
         );
       })()}

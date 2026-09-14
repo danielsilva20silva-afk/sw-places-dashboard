@@ -301,6 +301,52 @@ async function handleActions(req, res, supabase) {
   return res.status(405).json({ error: "Method not allowed" });
 }
 
+// ─────────────────────────── archived leads ───────────────────────────
+// "Hide from the working list without deleting." Keyed by the composite lead id
+// (same ids as lead_links / lead_actions — works for Supabase AND Meta-sheet
+// leads, whose rows Meta owns and we can't delete). A merged lead is archived by
+// its primary id (the composite the UI shows); secondaries follow because they're
+// already folded inside it.
+//   GET    → all archived ids [{ lead_id, archived_at }]
+//   POST   → archive one { lead_id } (idempotent; re-archiving just refreshes it)
+//   DELETE → unarchive one (by lead_id)
+const ARCHIVE_TABLE = "archived_leads";
+
+async function handleArchive(req, res, supabase) {
+  if (req.method === "GET") {
+    const { data, error } = await supabase
+      .from(ARCHIVE_TABLE)
+      .select("lead_id, archived_at")
+      .order("archived_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return res.status(200).json(data || []);
+  }
+
+  if (req.method === "POST") {
+    const lead_id = s((req.body ?? {}).lead_id).trim();
+    if (!lead_id) return res.status(400).json({ error: "lead_id em falta." });
+    // Idempotent: lead_id is the primary key, so upsert never 409s on re-archive.
+    const { data, error } = await supabase
+      .from(ARCHIVE_TABLE)
+      .upsert({ lead_id }, { onConflict: "lead_id" })
+      .select("lead_id, archived_at")
+      .single();
+    if (error) throw new Error(error.message);
+    return res.status(201).json(data);
+  }
+
+  if (req.method === "DELETE") {
+    const lead_id = s(req.query?.lead_id ?? req.body?.lead_id).trim();
+    if (!lead_id) return res.status(400).json({ error: "Parâmetro 'lead_id' em falta." });
+    const { error } = await supabase.from(ARCHIVE_TABLE).delete().eq("lead_id", lead_id);
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ ok: true });
+  }
+
+  res.setHeader("Allow", "GET, POST, DELETE");
+  return res.status(405).json({ error: "Method not allowed" });
+}
+
 // ───────────────────────────── dispatch ─────────────────────────────
 export default async function handler(req, res) {
   const resource = s(req.query?.resource).trim();
@@ -315,9 +361,12 @@ export default async function handler(req, res) {
   if (resource === "actions" && !serverConfig.actions) {
     return res.status(403).json({ error: "Ações não estão disponíveis para este cliente." });
   }
-  const KNOWN = ["links", "templates", "greetings", "actions"];
+  if (resource === "archive" && !serverConfig.archive) {
+    return res.status(403).json({ error: "Arquivo não está disponível para este cliente." });
+  }
+  const KNOWN = ["links", "templates", "greetings", "actions", "archive"];
   if (!KNOWN.includes(resource)) {
-    return res.status(400).json({ error: "resource inválido (usa 'links', 'templates', 'greetings' ou 'actions')." });
+    return res.status(400).json({ error: "resource inválido (usa 'links', 'templates', 'greetings', 'actions' ou 'archive')." });
   }
 
   // Supabase configured? (missing env → friendly, never a crash)
@@ -330,6 +379,7 @@ export default async function handler(req, res) {
     if (resource === "links") return await handleLinks(req, res, ctx.supabase);
     if (resource === "greetings") return await handleGreetings(req, res, ctx.supabase);
     if (resource === "actions") return await handleActions(req, res, ctx.supabase);
+    if (resource === "archive") return await handleArchive(req, res, ctx.supabase);
     return await handleTemplates(req, res, ctx.supabase);
   } catch (err) {
     if (err?.expose) return res.status(err.status).json({ error: err.message });

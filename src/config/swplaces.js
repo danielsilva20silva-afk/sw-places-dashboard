@@ -48,6 +48,7 @@ Obrigado e até breve!`,
     dedupe: false,      // duplicate-lead detection + merge — brandon only (zero UI here)
     templates: false,   // WhatsApp message template manager — brandon only (no tab here)
     actions: false,     // per-lead next-action tracking — brandon only (zero UI here)
+    archive: false,     // archive leads / hide-without-delete — brandon only (zero UI here)
   },
 
   // Lead pipeline constants (moved from src/constants.js).
