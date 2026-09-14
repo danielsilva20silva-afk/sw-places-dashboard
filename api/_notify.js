@@ -89,6 +89,29 @@ function humanizeSource(s) {
   return t.toLowerCase().split(/\s+/).map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ");
 }
 
+const hasUrl = (s) => /https?:\/\/\S/i.test(String(s || ""));
+function truncate(s, n) {
+  const t = String(s ?? "").trim();
+  return t.length > n ? t.slice(0, n - 1).trimEnd() + "…" : t;
+}
+function firstUrl(s) {
+  const m = String(s || "").match(/https?:\/\/\S+/i);
+  return m ? m[0] : "";
+}
+// A shared URL becomes a clickable href ONLY for these hosts (Instagram / the
+// Facebook CDN that Instagram DM attachments come from). Anything else → no link,
+// and the raw URL is never shown as visible text. Also blocks javascript:/data:
+// URLs (they don't parse to a whitelisted host).
+function safeHref(url) {
+  try {
+    const h = new URL(String(url || "")).hostname.toLowerCase();
+    return h === "instagram.com" || h.endsWith(".instagram.com") ||
+           h === "fbsbx.com" || h.endsWith(".fbsbx.com") ? String(url) : "";
+  } catch {
+    return "";
+  }
+}
+
 // "18 ago, 14:32" in Europe/Lisbon. Uses the lead's created_at when present,
 // otherwise now (the moment the lead came in / the email is built).
 function lisbonWhen(lead) {
@@ -101,7 +124,7 @@ function lisbonWhen(lead) {
 }
 
 export function buildEmail(lead) {
-  const name = displayName(lead);
+  const name = truncate(displayName(lead), 40);
   const sourceContent = clean(lead.source_content);
   const source = clean(lead.source);
   const phone = clean(lead.phone);
@@ -114,13 +137,27 @@ export function buildEmail(lead) {
   const when = lisbonWhen(lead);
   const dash = dashboardUrl();
 
+  // Subject NEVER carries a URL (a raw CDN link blew the subject up and got the
+  // email flagged as suspicious) and never runs long: drop the source tag if it
+  // contains a URL or exceeds ~60 chars.
   const tag = sourceContent || source;
-  const subject = `Novo lead 🏡 ${name}${tag ? ` · ${tag}` : ""}`;
+  const tagOk = tag && !hasUrl(tag) && tag.length <= 60;
+  const subject = `Novo lead 🏡 ${name}${tagOk ? ` · ${tag}` : ""}`;
 
-  // "Veio de": humanized content (linked to the reel), else a friendly label.
-  let veioDe = sourceContent ? humanizeSource(sourceContent) : (source === "DM · ANA" ? "Mensagem direta no Instagram" : source);
-  const veioDeHtml = sourceUrl && veioDe
-    ? `<a href="${esc(sourceUrl)}" style="color:#8A6D2F;font-weight:600;text-decoration:none">${esc(veioDe)} ↗</a>`
+  // "Veio de": a shared URL is never shown as visible text — replaced with a
+  // friendly label. A humanized short label is shown as-is.
+  let veioDe;
+  if (sourceContent) {
+    veioDe = hasUrl(sourceContent) ? "Partilhou um imóvel no Instagram" : humanizeSource(sourceContent);
+  } else if (source === "DM · ANA") {
+    veioDe = "Mensagem direta no Instagram";
+  } else {
+    veioDe = source;
+  }
+  // Link only to a whitelisted host (source_url, else a URL inside source_content).
+  const veioHref = safeHref(sourceUrl) || safeHref(firstUrl(sourceContent));
+  const veioDeHtml = veioHref
+    ? `<a href="${esc(veioHref)}" style="color:#8A6D2F;font-weight:600;text-decoration:none">${esc(veioDe)} ↗</a>`
     : esc(veioDe);
 
   // Primary CTA: WhatsApp if there's a phone, else email.
@@ -163,7 +200,7 @@ export function buildEmail(lead) {
   if (phone && wa) t.push("", `WhatsApp: https://wa.me/${wa} (${phone})`);
   else if (email) t.push("", `Email: ${email}`);
   if (phone && email) t.push(`Email: ${email}`);
-  if (veioDe) t.push("", `Veio de: ${veioDe}${sourceUrl ? ` (${sourceUrl})` : ""}`);
+  if (veioDe) t.push("", `Veio de: ${veioDe}${veioHref ? ` (${veioHref})` : ""}`);
   if (notes) t.push("", "O que disse à Ana:", notes);
   t.push("", `Ver no dashboard: ${dash}`, "", "Notificação automática · SW Places Leads");
   const text = t.join("\n");
