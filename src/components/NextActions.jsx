@@ -33,10 +33,17 @@ function ActionRow({ action, onComplete, onEdit, onDelete }) {
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "10px 12px" }}>
-      <input type="checkbox" checked={false} onChange={() => onComplete(action)} title={t("na_complete")} aria-label={t("na_complete")} style={{ marginTop: 2, width: 16, height: 16, cursor: "pointer", accentColor: "#16A34A", flexShrink: 0 }} />
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 4, background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 10, padding: "10px 12px" }}>
+      {/* Larger tap target on mobile: padding grows the hit area; negative margin
+          keeps the visual layout unchanged. */}
+      <label title={t("na_complete")} style={{ display: "inline-flex", padding: 8, margin: "-6px 2px -6px -6px", cursor: "pointer", flexShrink: 0 }}>
+        <input type="checkbox" checked={false} onChange={() => onComplete(action)} aria-label={t("na_complete")} style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#16A34A" }} />
+      </label>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 13, fontWeight: 600, color: "#111", margin: 0, wordBreak: "break-word" }}>{action.title}</p>
+        <p style={{ fontSize: 13, fontWeight: 600, color: "#111", margin: 0, wordBreak: "break-word" }}>
+          {action.title}
+          {action.calendar_event_id && <span title={t("na_cal_indicator")} aria-label={t("na_cal_indicator")} style={{ marginLeft: 6, fontSize: 11 }}>📅</span>}
+        </p>
         <div style={{ marginTop: 2 }}><DueBadge dueISO={action.due_at} /></div>
         {action.description && <p style={{ fontSize: 12, color: "#888", margin: "4px 0 0", whiteSpace: "pre-wrap" }}>{action.description}</p>}
       </div>

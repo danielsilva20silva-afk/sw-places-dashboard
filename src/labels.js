@@ -108,6 +108,21 @@ const DEFAULTS = {
   na_task_tag: "Tarefa",
   na_add_task: "+ Tarefa",
   na_task_new: "Nova tarefa",
+  // Associar tarefa a um lead (picker no formulário "+ Tarefa")
+  na_link_lead: "Associar a lead (opcional)",
+  na_link_ph: "Procurar nome ou email…",
+  // Dois cartões: Hoje / Próximas
+  na_upcoming: "Próximas",
+  na_upcoming_empty: "Nada agendado",
+  na_tomorrow: "Amanhã",
+  na_more_suffix: "mais",           // "+{n} mais"
+  // Indicador de evento no calendário
+  na_cal_indicator: "No calendário",
+  // Anular conclusão (janela de ~5s)
+  na_completed: "Ação concluída",
+  na_undo: "Anular",
+  // Aviso de migração dos seguimentos antigos (uma vez)
+  na_migrated: "seguimento(s) movidos para ações",
 
   // ── Arquivar leads (esconder sem apagar) ──
   arch_archive: "Arquivar lead",

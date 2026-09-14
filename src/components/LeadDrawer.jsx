@@ -183,11 +183,28 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
 
   // Next-action tracking. Completing an action marks it done AND appends a
   // "✓ {title}" entry to the notes history, so everything stays interlinked.
+  // The pre-completion notes are handed to the parent (undoMeta) so an Undo from
+  // the toast can restore them (removing the ✓ entry).
   const actionsOn = hasFeature("actions");
   const completeActionWithNote = async (action) => {
-    const r = await onActionComplete(action.id);
-    if (r?.ok) commitNotes(appendNote(manualNotes, `✓ ${action.title}`));
+    const prevNotes = manualNotes;
+    const r = await onActionComplete(action.id, { leadId: lead.id, prevNotes });
+    if (r?.ok) commitNotes(appendNote(prevNotes, `✓ ${action.title}`));
+    return r;
   };
+
+  // Keep the notes field in sync with the lead prop when it changes from OUTSIDE
+  // the drawer (a completion writes "✓ {title}"; an Undo restores the prior text).
+  // Gated on the actions feature so other clients' drawer behaviour is unchanged.
+  // Safe because notes here are committed atomically (NotesHistory), never typed
+  // char-by-char, so there's no in-progress edit to clobber.
+  useEffect(() => {
+    if (!actionsOn) return;
+    const v = lead.manual_notes || "";
+    setManualNotes(v);
+    fieldsRef.current.manual_notes = v;
+    savedRef.current.manual_notes = v;
+  }, [lead.manual_notes, actionsOn]);
 
   const handleClose = () => { clearTimeout(timerRef.current); flushText(); onClose(); };
 

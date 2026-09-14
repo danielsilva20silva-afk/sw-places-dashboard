@@ -42,11 +42,18 @@ export default function Dashboard({ onLogout }) {
   const [meetingFlow, setMeetingFlow] = useState(null); // { leadId, prefill } | null
   const [links, setLinks] = useState([]); // lead-merge links (dedupe feature)
   const [actions, setActions] = useState([]); // per-lead next-action tasks
+  const [actionsLoaded, setActionsLoaded] = useState(false); // gate the legacy migration
+  const [toast, setToast] = useState(null); // undo/info toast: { kind:"undo", id } | { kind:"info", text }
   const [archivedIds, setArchivedIds] = useState(() => new Set()); // hidden lead ids (archive feature)
   const calendarOn = hasFeature("calendar"); // false clients skip the whole calendar flow
   const dedupeOn = hasFeature("dedupe"); // false clients: zero dedupe UI / no link fetch
   const actionsOn = hasFeature("actions"); // false clients: no fetch, no actions UI
   const archiveOn = hasFeature("archive"); // false clients: no fetch, nothing archived
+
+  const toastTimerRef = useRef(null);          // auto-dismiss timer for the toast
+  const undoMetaRef = useRef(new Map());        // actionId → { leadId, prevNotes } for undo
+  const migratedRef = useRef(false);            // legacy follow-up migration runs once
+  useEffect(() => () => clearTimeout(toastTimerRef.current), []);
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -88,9 +95,55 @@ export default function Dashboard({ onLogout }) {
   useEffect(() => {
     if (!actionsOn) return;
     let active = true;
-    api.getActions().then((d) => { if (active) setActions(Array.isArray(d) ? d : []); }).catch(() => { if (active) setActions([]); });
+    api.getActions()
+      .then((d) => { if (active) setActions(Array.isArray(d) ? d : []); })
+      .catch(() => { if (active) setActions([]); })
+      .finally(() => { if (active) setActionsLoaded(true); });
     return () => { active = false; };
   }, [actionsOn]);
+
+  // ── Legacy follow-up migration (one-time reconciliation) ──
+  // Old "Schedule follow-up" events live only on Google Calendar (tagged
+  // swDashboardKind=followup) with no action. When the "Upcoming follow-ups" card
+  // was removed they'd vanish from the dashboard, so turn each one that isn't
+  // already linked to an action into a pending action (title/due from the event,
+  // lead linked when its stored leadId matches a loaded lead, calendar_event_id
+  // set so the 📅 indicator shows and it's never migrated twice). Runs once, after
+  // actions AND leads are loaded so we never mistake a not-yet-loaded action for a
+  // missing one. Actions created via "Also add to calendar" already carry the
+  // event id, so they're skipped — only genuinely orphaned legacy events migrate.
+  useEffect(() => {
+    if (!actionsOn || !calendarOn || !actionsLoaded || loading || migratedRef.current) return;
+    migratedRef.current = true;
+    let active = true;
+    (async () => {
+      const events = await api.getFollowUps(); // upcoming, tagged follow-up events
+      if (!active || !events.length) return;
+      const linked = new Set(actions.map((a) => a.calendar_event_id).filter(Boolean).map(String));
+      const legacy = events.filter((e) => e.id && !linked.has(String(e.id)));
+      const created = [];
+      for (const e of legacy) {
+        const leadId = e.leadId && leads.some((l) => String(l.id) === String(e.leadId)) ? String(e.leadId) : null;
+        try {
+          const a = await api.createAction({
+            lead_id: leadId,
+            title: e.leadName ? `Follow up: ${e.leadName}` : (e.title || "Follow-up"),
+            description: "",
+            due_at: new Date(e.start).toISOString(),
+            calendar_event_id: String(e.id),
+          });
+          created.push(a);
+        } catch { /* skip a bad event; others still migrate */ }
+      }
+      if (!active || !created.length) return;
+      setActions((xs) => [...xs, ...created]);
+      // eslint-disable-next-line no-console
+      console.info(`[actions] migrated ${created.length} legacy follow-up event(s) to actions`);
+      showToast({ kind: "info", text: `${created.length} ${t("na_migrated")}` }, 6000);
+    })();
+    return () => { active = false; };
+    // actions/leads are read once (guarded by migratedRef) — intentionally not deps.
+  }, [actionsOn, calendarOn, actionsLoaded, loading]);
 
   // Archived lead ids (hide-without-delete). Off clients never fetch → empty set
   // → every lead stays visible (byte-identical to no archive feature).
@@ -293,7 +346,7 @@ export default function Dashboard({ onLogout }) {
           // Pass the raw picked wall-clock (datetime) straight through — the
           // follow-ups endpoint treats it as Europe/Lisbon. Event title = action
           // title (summary); lead phone/email land in the description when present.
-          await api.scheduleFollowUp({
+          const ev = await api.scheduleFollowUp({
             summary: payload.title,
             leadId: payload.lead_id || "",
             name: lead ? (lead.name || lead.email || "Lead") : "",
@@ -302,14 +355,20 @@ export default function Dashboard({ onLogout }) {
             datetime,
             note: payload.description || "",
           });
-          if (calendarOn) setCalReload(r => r + 1); // refresh the Upcoming card
+          // Persist the event id on the action so the row shows the 📅 indicator
+          // and the legacy migration never re-imports it.
+          if (ev?.id) {
+            const updated = await api.updateAction(a.id, { calendar_event_id: String(ev.id) });
+            setActions(xs => xs.map(x => String(x.id) === String(a.id) ? updated : x));
+          }
+          if (calendarOn) setCalReload(r => r + 1); // refresh the calendar view
         } catch { calendarFailed = true; }
       }
       return { ok: true, calendarFailed };
     } catch (e) { return { ok: false, error: e?.message || "erro" }; }
   };
-  // General task (no lead) — created from the dashboard Actions card.
-  const createTask = async (fields) => createAction({ ...fields, lead_id: null });
+  // "+ Task" from the dashboard: fields already carry lead_id (picked lead or null).
+  const createTask = async (fields) => createAction(fields);
   const editAction = async (id, fields) => {
     try {
       const a = await api.updateAction(id, fields);
@@ -317,8 +376,39 @@ export default function Dashboard({ onLogout }) {
       return { ok: true };
     } catch (e) { return { ok: false, error: e?.message || "erro" }; }
   };
-  // Mark done (the drawer also appends a "✓ {title}" entry to the notes history).
-  const completeAction = async (id) => editAction(id, { done: true });
+  // Toast helper: show and auto-dismiss after `ms`. Used for the undo window and
+  // the one-time migration notice.
+  const showToast = (next, ms) => {
+    clearTimeout(toastTimerRef.current);
+    setToast(next);
+    toastTimerRef.current = setTimeout(() => setToast(null), ms);
+  };
+
+  // Mark an action done, then open a ~5s undo window (toast). `meta` (from the
+  // drawer, for lead actions) carries the lead's pre-completion notes so Undo can
+  // remove the "✓ {title}" entry it just wrote. General tasks pass no meta.
+  const completeAction = async (id, meta) => {
+    const r = await editAction(id, { done: true });
+    if (r.ok) {
+      if (meta) undoMetaRef.current.set(String(id), meta); else undoMetaRef.current.delete(String(id));
+      showToast({ kind: "undo", id: String(id) }, 5000);
+    }
+    return r;
+  };
+  // Undo the most recent completion: reopen the action and, if it wrote a notes
+  // entry (lead action), restore the lead's previous notes.
+  const undoComplete = async () => {
+    if (!toast || toast.kind !== "undo") return;
+    const id = toast.id;
+    clearTimeout(toastTimerRef.current);
+    setToast(null);
+    const meta = undoMetaRef.current.get(String(id));
+    undoMetaRef.current.delete(String(id));
+    if (meta && meta.leadId != null && meta.prevNotes !== undefined) {
+      await updateLead(meta.leadId, { manual_notes: meta.prevNotes });
+    }
+    await editAction(id, { done: false });
+  };
   const removeAction = async (id) => {
     if (!window.confirm(t("na_delete_confirm"))) return { ok: false };
     try {
@@ -644,6 +734,24 @@ export default function Dashboard({ onLogout }) {
             setMeetingFlow(null);
           }}
         />
+      )}
+
+      {/* Toast: undo window after completing an action, or the one-time migration
+          notice. Fixed bottom-center so it works over any tab, mobile included. */}
+      {toast && (
+        <div style={{
+          position: "fixed", left: "50%", transform: "translateX(-50%)",
+          bottom: "calc(20px + env(safe-area-inset-bottom))", zIndex: 300,
+          display: "flex", alignItems: "center", gap: 14,
+          background: "#111", color: "white", borderRadius: 12,
+          padding: "12px 16px", boxShadow: "0 10px 40px rgba(0,0,0,0.28)",
+          fontSize: 13, maxWidth: "calc(100vw - 32px)",
+        }}>
+          <span>{toast.kind === "undo" ? t("na_completed") : toast.text}</span>
+          {toast.kind === "undo" && (
+            <button onClick={undoComplete} style={{ background: "none", border: "none", color: GOLD, fontSize: 13, fontWeight: 700, cursor: "pointer", padding: 0 }}>{t("na_undo")}</button>
+          )}
+        </div>
       )}
     </div>
   );

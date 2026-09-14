@@ -100,6 +100,21 @@ export default {
     na_task_tag: "Task",
     na_add_task: "+ Task",
     na_task_new: "New task",
+    // Link a task to a lead (picker in the "+ Task" form)
+    na_link_lead: "Link to lead (optional)",
+    na_link_ph: "Search name or email…",
+    // Two cards: Today / Upcoming
+    na_upcoming: "Upcoming",
+    na_upcoming_empty: "Nothing scheduled ahead",
+    na_tomorrow: "Tomorrow",
+    na_more_suffix: "more",           // "+{n} more"
+    // Calendar-event indicator
+    na_cal_indicator: "On calendar",
+    // Undo completion (~5s window)
+    na_completed: "Action completed",
+    na_undo: "Undo",
+    // One-time legacy follow-up migration notice
+    na_migrated: "follow-up(s) moved to actions",
     // Archive leads (hide without deleting)
     arch_archive: "Archive lead",
     arch_unarchive: "Unarchive",

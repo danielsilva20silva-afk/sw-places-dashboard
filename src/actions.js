@@ -36,22 +36,37 @@ export function splitLocal(iso) {
   return { date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time: `${pad(d.getHours())}:${pad(d.getMinutes())}` };
 }
 
-// Group {action, lead} items for the dashboard card: overdue, today, and the
-// count/list of upcoming actions within the next 7 days. Each bucket sorted by due.
-export function groupActions(items, now = Date.now()) {
+// Partition {action, lead} items for the two dashboard cards:
+//   overdue + today  → the "Today" card (overdue shown loud, on top)
+//   upcoming         → the "Upcoming" card (everything due after today)
+// Each bucket sorted by due (soonest first).
+export function partitionActions(items, now = Date.now()) {
   const overdue = [];
   const today = [];
-  const week = [];
-  const weekEnd = now + 7 * 86400000;
+  const upcoming = [];
   for (const it of items || []) {
     const st = dueState(it.action.due_at, now);
     if (st === "overdue") overdue.push(it);
     else if (st === "today") today.push(it);
-    else if (new Date(it.action.due_at).getTime() <= weekEnd) week.push(it);
+    else upcoming.push(it); // "future"
   }
   const byDue = (a, b) => sortByDue(a.action, b.action);
   overdue.sort(byDue);
   today.sort(byDue);
-  week.sort(byDue);
-  return { overdue, today, week };
+  upcoming.sort(byDue);
+  return { overdue, today, upcoming };
+}
+
+// Group already-sorted items by their local calendar day. Returns
+// [{ dayStart, items }] in ascending day order (items kept in incoming order).
+export function byCalendarDay(items) {
+  const map = new Map();
+  for (const it of items || []) {
+    const d = new Date(it.action.due_at);
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const g = map.get(dayStart) || { dayStart, items: [] };
+    g.items.push(it);
+    map.set(dayStart, g);
+  }
+  return Array.from(map.values()).sort((a, b) => a.dayStart - b.dayStart);
 }
