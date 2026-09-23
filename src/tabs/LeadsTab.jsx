@@ -62,6 +62,19 @@ function matchContact(lead, mode) {
   return true;
 }
 
+// Every short source/campaign label of a lead AS DISPLAYED: the primary's plus
+// every merged secondary's. Dedupe folds secondaries into the primary, so their
+// source would otherwise be invisible to the source filter and its option list —
+// this makes both reflect the whole composite (same principle as the text search,
+// which already matches secondaries via __dupSearch). With dedupe off (swplaces)
+// there are no mergedSecondaries, so this is just the primary's label — unchanged.
+function leadSources(lead) {
+  const secondaries = Array.isArray(lead.mergedSecondaries)
+    ? lead.mergedSecondaries.map((s) => sourceCampaignLabel(cleanField(s.lead && s.lead.source)))
+    : [];
+  return [sourceCampaignLabel(cleanField(lead.source)), ...secondaries].filter(Boolean);
+}
+
 export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, onCreateLead, actionsView, archiveOn, archivedLeads = [], onUnarchive }) {
   const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   // Contact-less "DM · ANA" entries (reel-flow / logged DMs) aren't leads yet —
@@ -86,8 +99,10 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
   // Distinct source options present in the data, each shown in short form (Meta
   // campaign/form values collapse to their middle segment, e.g. "BUYERS REEL";
   // every other source is left as-is). Derived dynamically, so new campaigns
-  // appear automatically. The filter matches on this same short label.
-  const sources = Array.from(new Set(leads.map(l => sourceCampaignLabel(cleanField(l.source))).filter(Boolean))).sort();
+  // appear automatically — INCLUDING campaigns whose only lead is folded into a
+  // merge as a secondary (leadSources covers the whole composite). The filter
+  // matches on this same short label.
+  const sources = Array.from(new Set(leads.flatMap(leadSources))).sort();
 
   const q = normalizeText(search);
   const filtered = leads.filter(l => {
@@ -96,7 +111,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
     if (filterStatus !== "Todos" && l.status !== filterStatus) return false;
     if (filterClassification === NO_CLASSIFICATION) { if (l.classification) return false; }
     else if (filterClassification !== "Todas" && l.classification !== filterClassification) return false;
-    if (filterSource !== "Todas" && sourceCampaignLabel(cleanField(l.source)) !== filterSource) return false;
+    if (filterSource !== "Todas" && !leadSources(l).includes(filterSource)) return false;
     if (!inPeriod(l, filterPeriod)) return false;
     if (!matchContact(l, filterContact)) return false;
     // Search matches ALL displayed lead fields (name/email/phone/budget/intention/
