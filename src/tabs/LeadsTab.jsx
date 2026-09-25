@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { STATUSES, BUDGETS, INTENTIONS, GOLD } from "../constants";
 import { cleanField, isValidPhone, isValidEmail, leadTime, isRealLead, normalizeText, sourceCampaignLabel } from "../utils";
+import { hasFeature } from "../config";
+import { CLASSIFICATION_CONFIG } from "../constants";
+import { suggestClassification } from "../suggestClassification";
 import { t } from "../labels";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
@@ -75,8 +78,10 @@ function leadSources(lead) {
   return [sourceCampaignLabel(cleanField(lead.source)), ...secondaries].filter(Boolean);
 }
 
-export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, onCreateLead, actionsView, archiveOn, archivedLeads = [], onUnarchive }) {
+export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, onCreateLead, actionsView, archiveOn, archivedLeads = [], onUnarchive, onApplyClassifications }) {
   const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
+  const suggestOn = hasFeature("classSuggest");
+  const suggestFor = (lead) => (suggestOn ? suggestClassification(lead) : null);
   // Contact-less "DM · ANA" entries (reel-flow / logged DMs) aren't leads yet —
   // hide them here (they show in Conversas). They reappear once Ana captures a
   // phone/email. Every other source stays visible, contact or not.
@@ -133,6 +138,22 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
     sortOrder === "recent" ? leadTime(b) - leadTime(a) : leadTime(a) - leadTime(b)
   );
 
+  // Bulk suggested classifications — computed over ALL real leads in the tab (the
+  // whole backlog, not just the filtered view). Each entry { id, value }.
+  const suggestions = suggestOn
+    ? leads.map((l) => ({ id: l.id, value: suggestClassification(l) })).filter((x) => x.value)
+    : [];
+  const runBulkApply = async () => {
+    if (!suggestions.length || !onApplyClassifications) return;
+    const counts = suggestions.reduce((m, x) => ((m[x.value] = (m[x.value] || 0) + 1), m), {});
+    const breakdown = ["A", "B", "C"].filter((k) => counts[k]).map((k) => `${counts[k]}→${k}`).join(", ");
+    if (!window.confirm(`${t("cls_bulk_confirm")}\n\n${breakdown}`)) return;
+    const res = await onApplyClassifications(suggestions);
+    const applied = res?.applied ?? 0;
+    const skipped = res?.skipped ?? 0;
+    window.alert(`${applied} ${t("cls_applied")}${skipped ? ` · ${skipped} ${t("cls_skipped_nocol")}` : ""}`);
+  };
+
   return (
     <>
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -185,6 +206,14 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
         <div style={{ alignSelf: "flex-end", paddingBottom: 10 }}>
           <span style={{ fontSize: 12, color: "#AAA" }}>{sorted.length} lead{sorted.length !== 1 ? "s" : ""}</span>
         </div>
+        {suggestions.length > 0 && (
+          <div style={{ alignSelf: "flex-end" }}>
+            <button onClick={runBulkApply} title={t("cls_bulk_confirm")} style={{
+              background: "#FFFBEB", color: "#92400E", border: "1px solid #FDE68A", borderRadius: 10,
+              padding: "9px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+            }}>{t("cls_apply")} {suggestions.length} {t("cls_suggested_plural")}</button>
+          </div>
+        )}
         <div style={{ alignSelf: "flex-end" }}>
           <button onClick={() => setShowForm(true)} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "9px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{t("new_lead")}</button>
         </div>
@@ -256,6 +285,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
               onStatusChange={onStatusChange}
               showNotesIcon
               nextAction={nextActionFor(lead)}
+              suggested={suggestFor(lead)}
               style={{
                 borderBottom: i < sorted.length - 1 ? "1px solid #F5F5F5" : "none",
                 borderRadius: `${i === 0 ? "16px 16px" : "0 0"} ${i === sorted.length - 1 ? "16px 16px" : "0 0"}`,
@@ -274,7 +304,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lead.name}</span>
-                <ClassificationBadge value={lead.classification} />
+                <ClassificationBadge value={lead.classification} suggested={suggestFor(lead)} />
                 {cleanField(lead.notes) && <span title={cleanField(lead.notes)} style={{ fontSize: 11, color: GOLD }}>📝</span>}
                 <DupBadge lead={lead} />
               </div>

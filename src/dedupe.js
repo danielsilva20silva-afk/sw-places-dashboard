@@ -85,7 +85,7 @@ function makeRootOf(secToPrim) {
 // Contact/profile fields that fall back to a secondary when the primary's is
 // empty (display only — edits still write to the primary; every raw value stays
 // visible under "form answers grouped by source").
-const FALLBACK_FIELDS = ["phone", "email", "budget", "intention"];
+const FALLBACK_FIELDS = ["phone", "email", "budget", "intention", "area"];
 
 // A field counts as present when it's non-empty and not a webhook placeholder
 // ("{{phone}}"), matching how the UI treats real vs. empty values.
