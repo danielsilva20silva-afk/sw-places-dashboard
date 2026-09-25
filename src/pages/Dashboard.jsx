@@ -184,6 +184,28 @@ export default function Dashboard({ onLogout }) {
       return { ok: false, error: e?.message || "erro" };
     }
   };
+  // Bulk-apply suggested classifications. Writes each through the normal path
+  // (Meta → sheet column, Supabase → column). A Meta tab that lacks the
+  // classification column silently ignores the write and returns the row
+  // unchanged — detected by comparing the returned value, counted as "skipped".
+  // Returns { applied, skipped } for the caller's result dialog.
+  const applyClassifications = async (pairs) => {
+    let applied = 0, skipped = 0;
+    for (const { id, value } of pairs || []) {
+      try {
+        const res = await api.updateLead(id, { classification: value });
+        if (!res.ok) { skipped++; continue; }
+        const updated = await res.json();
+        if (String(updated.classification || "") === String(value)) {
+          applied++;
+          setLeads(ls => ls.map(l => String(l.id) === String(id) ? { ...l, ...updated } : l));
+        } else {
+          skipped++; // tab has no classification column → not persisted
+        }
+      } catch { skipped++; }
+    }
+    return { applied, skipped };
+  };
   // Quick status change (from the row dropdowns) — optimistic, best-effort.
   const updateStatus = (id, status) => {
     setLeads(leads.map(l => l.id === id ? { ...l, status } : l));
@@ -547,7 +569,7 @@ export default function Dashboard({ onLogout }) {
             )}
 
             {shownTab ==="leads" && (
-              <LeadsTab leads={activeLeads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} actionsView={actionsView} archiveOn={archiveOn} archivedLeads={archivedLeads} onUnarchive={unarchiveLead} />
+              <LeadsTab leads={activeLeads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} actionsView={actionsView} archiveOn={archiveOn} archivedLeads={archivedLeads} onUnarchive={unarchiveLead} onApplyClassifications={applyClassifications} />
             )}
 
             {shownTab ==="templates" && <TemplatesTab leads={activeLeads} />}

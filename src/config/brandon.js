@@ -134,6 +134,7 @@ export default {
     d_phone: "Phone",
     d_budget: "Budget",
     d_intention: "Intent",
+    d_area: "Area",
     d_status: "Status",
     d_classification: "Classification",
     d_summary: "Summary",
@@ -155,6 +156,14 @@ export default {
     cls_B: "B — Warm",
     cls_C: "C — Cold",
     cls_clear: "Clear",
+    // Suggested classification (from the form answer) — suggest, never auto-assign
+    cls_suggested: "Suggested",
+    cls_from_form: "from form answer",
+    cls_apply: "Apply",
+    cls_suggested_plural: "suggested classifications",   // "Apply {n} suggested classifications"
+    cls_bulk_confirm: "Apply the suggested classifications?",
+    cls_applied: "applied",
+    cls_skipped_nocol: "skipped (no classification column)",
     // Notes history (display only)
     notes_title: "Notes",
     notes_placeholder: "Write a note…",
@@ -357,6 +366,7 @@ export default {
     templates: true,    // WhatsApp template manager (api/brandon-store.js?resource=templates)
     actions: true,      // per-lead next-action tracking (api/brandon-store.js?resource=actions)
     archive: true,      // archive leads / hide-without-delete (api/brandon-store.js?resource=archive)
+    classSuggest: true, // suggested A/B/C from the Meta form's Intent answer (suggest, never auto-assign)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour

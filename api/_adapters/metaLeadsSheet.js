@@ -241,6 +241,63 @@ function humanizeQuestion(q) {
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
 }
 
+// ── Structured field mapping from known form-question columns ──
+// Two known buyer-form questions populate the lead's structured Area / Intent
+// fields (which otherwise sit empty for Meta leads). Tolerant header match:
+// case-insensitive, trimmed, trailing "?" ignored, spaces ≡ underscores. The
+// mapped columns ALSO stay in the summary (composeNotes doesn't skip them) — no
+// information is lost; the structured fields are derived in addition.
+function normQ(h) {
+  return s(h).trim().toLowerCase().replace(/\?+$/, "").replace(/\s+/g, "_");
+}
+const AREA_Q = "which_areas_are_you_interested_in";
+const INTENT_Q = "when_are_you_looking_to_buy";
+
+// First non-empty answer whose header matches the wanted normalized question.
+function answerFor(row, idx, header, wantNorm) {
+  for (const col of header) {
+    if (col && normQ(col) === wantNorm) {
+      const v = cell(row, idx, col).trim();
+      if (v) return v;
+    }
+  }
+  return "";
+}
+
+// Portuguese connectors kept lowercase inside a title-cased place name.
+const SMALL_WORDS = new Set(["do", "da", "de", "dos", "das", "e"]);
+function titleCasePt(str) {
+  return str.split(" ").filter(Boolean).map((w, i) => {
+    const lw = w.toLowerCase();
+    if (i > 0 && SMALL_WORDS.has(lw)) return lw;
+    return lw.charAt(0).toUpperCase() + lw.slice(1);
+  }).join(" ");
+}
+
+// Humanize an area answer: "quinta_do_lago" → "Quinta do Lago"; open/all →
+// "Open to all". Multi-select (comma/semicolon separated) humanized per part.
+function humanizeArea(raw) {
+  const v = s(raw).trim();
+  if (!v) return "";
+  const parts = v.split(/[;,]+/).map((p) => p.replace(/_/g, " ").trim()).filter(Boolean);
+  const out = parts.map((p) => {
+    const low = p.toLowerCase();
+    if (low === "open" || low === "all" || low.startsWith("open to") || low.includes("all areas")) return "Open to all";
+    return titleCasePt(p);
+  });
+  return Array.from(new Set(out)).join(", ");
+}
+
+// Humanize an intent answer: "i'm_actively_looking_now" → "Actively looking now".
+// (The suggested-classification rule keys on substrings — "actively" / "6" /
+// "12 months" / "exploring" — so exact phrasing here is display-only.)
+function humanizeIntent(raw) {
+  let v = s(raw).replace(/_/g, " ").trim();
+  if (!v) return "";
+  v = v.replace(/^i['’]?\s*m\s+/i, "").replace(/^i\s+am\s+/i, ""); // drop a leading "I'm" / "I am"
+  return v.charAt(0).toUpperCase() + v.slice(1);
+}
+
 // Notes = campaign name, then every answered form question ("Question: answer"),
 // with the question label humanized and the answer's underscores spaced out.
 function composeNotes(row, idx, header) {
@@ -272,7 +329,11 @@ function rowToLead(row, idx, header) {
     email: resolveContact(row, idx, header, EMAIL_ALIASES),
     phone: resolveContact(row, idx, header, PHONE_ALIASES).replace(/^p:/, ""),
     budget: "", // no column
-    intention: "", // no column
+    // Intent / Area derived from the buyer form's question columns (also kept in
+    // the summary). Display-only, read-only in the UI — the form answer is the
+    // source of truth and the Meta sync owns these columns.
+    intention: humanizeIntent(answerFor(row, idx, header, INTENT_Q)),
+    area: humanizeArea(answerFor(row, idx, header, AREA_Q)),
     source: label ? `Meta Ads · ${label}` : "Meta Ads",
     date: createdTime.slice(0, 10), // YYYY-MM-DD
     status: mapStatus(cell(row, idx, STATUS_COL)),

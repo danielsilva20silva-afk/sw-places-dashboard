@@ -16,7 +16,7 @@ const GAP = 12;  // avatar → text gap; line 2 is indented by AV + GAP to align
 //   Line 1: avatar + name (+ classification badge, + optional 📝) | status pill
 //   Line 2: source/date (LeadMeta) | quick actions
 // `style` carries the per-list border/rounding so edges match each card.
-export default function LeadRowMobile({ lead, onOpen, onStatusChange, showNotesIcon = false, nextAction = null, style }) {
+export default function LeadRowMobile({ lead, onOpen, onStatusChange, showNotesIcon = false, nextAction = null, suggested = null, style }) {
   const stop = (e) => e.stopPropagation();
   return (
     <div
@@ -30,7 +30,7 @@ export default function LeadRowMobile({ lead, onOpen, onStatusChange, showNotesI
         <Avatar name={lead.name} size={AV} />
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 14, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{lead.name}</span>
-          <ClassificationBadge value={lead.classification} />
+          <ClassificationBadge value={lead.classification} suggested={suggested} />
           {showNotesIcon && cleanField(lead.notes) && (
             <span title={cleanField(lead.notes)} style={{ fontSize: 11, color: GOLD, flexShrink: 0 }}>📝</span>
           )}
