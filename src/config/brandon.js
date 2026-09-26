@@ -342,6 +342,7 @@ export default {
   users: [
     { email: "daniel.silva20@hotmail.com", password: "daniel2026", role: "admin", name: "Daniel" },
     { email: "brandon@brandonvanriet.com", password: "brandon2026", role: "admin", name: "Brandon" },
+    { email: "vanrietbrandon@gmail.com", password: "brandon2026", role: "admin", name: "Brandon" },
   ],
 
   features: {
