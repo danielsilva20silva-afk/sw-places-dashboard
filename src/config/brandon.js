@@ -47,6 +47,7 @@ export default {
     f_classification: "Classification",
     f_budget: "Budget",
     f_intention: "Intent",
+    f_area: "Area",
     f_source: "Source",
     f_period: "Period",
     f_contact: "Contact",

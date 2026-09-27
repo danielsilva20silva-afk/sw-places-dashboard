@@ -54,6 +54,7 @@ const DEFAULTS = {
   f_classification: "Classificação",
   f_budget: "Orçamento",
   f_intention: "Intenção",
+  f_area: "Zona",
   f_source: "Origem",
   f_period: "Período",
   f_contact: "Contacto",

@@ -4,6 +4,7 @@ import { cleanField, isValidPhone, isValidEmail, leadTime, isRealLead, normalize
 import { hasFeature } from "../config";
 import { CLASSIFICATION_CONFIG } from "../constants";
 import { suggestClassification } from "../suggestClassification";
+import { parseBudget, budgetInBucket } from "../budgetMatch";
 import { t } from "../labels";
 import Avatar from "../components/Avatar";
 import StatusDropdown from "../components/StatusDropdown";
@@ -78,6 +79,52 @@ function leadSources(lead) {
   return [sourceCampaignLabel(cleanField(lead.source)), ...secondaries].filter(Boolean);
 }
 
+// ── Area filter helpers ──
+const AREA_OPEN = "Open to all";
+// Title-case for display, keeping PT/EN connectors lowercase so "quinta do lago"
+// → "Quinta do Lago" and "open to all" → "Open to all".
+const AREA_SMALL = new Set(["do", "da", "de", "dos", "das", "e", "of", "the", "to", "and", "for", "a", "à", "no", "na"]);
+function titleCaseArea(str) {
+  return String(str).trim().toLowerCase().split(/\s+/).filter(Boolean)
+    .map((w, i) => (i > 0 && AREA_SMALL.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+// Every area STRING of a lead AS DISPLAYED: primary + merged secondaries (same
+// composite principle as leadSources). Empty values dropped.
+function leadAreaValues(lead) {
+  const secs = Array.isArray(lead.mergedSecondaries)
+    ? lead.mergedSecondaries.map((s) => cleanField(s.lead && s.lead.area))
+    : [];
+  return [cleanField(lead.area), ...secs].filter(Boolean);
+}
+// A single area string split into its tokens (on "/" and ",").
+function areaTokens(value) {
+  return String(value || "").split(/[/,]+/).map((x) => x.trim()).filter(Boolean);
+}
+// Distinct area options across all loaded leads (case/accent-insensitive), sorted.
+function buildAreaOptions(leads) {
+  const seen = new Map(); // normalized key → display
+  for (const l of leads) {
+    for (const v of leadAreaValues(l)) {
+      for (const tok of areaTokens(v)) {
+        const key = normalizeText(tok);
+        if (key && !seen.has(key)) seen.set(key, titleCaseArea(tok));
+      }
+    }
+  }
+  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+}
+// A lead matches the selected area: substring (case/accent-insensitive) against any
+// of its area strings. An "Open to all" lead matches ANY specific area; selecting
+// "Open to all" matches only open-to-all leads.
+function matchArea(lead, sel) {
+  const selN = normalizeText(sel);
+  const openN = normalizeText(AREA_OPEN);
+  const vals = leadAreaValues(lead).map(normalizeText);
+  if (selN === openN) return vals.some((v) => v.includes(openN));
+  return vals.some((v) => v.includes(selN) || v.includes(openN));
+}
+
 export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, onCreateLead, actionsView, archiveOn, archivedLeads = [], onUnarchive, onApplyClassifications }) {
   const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   const suggestOn = hasFeature("classSuggest");
@@ -92,6 +139,7 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
   const archived = (archivedLeads || []).filter(isRealLead);
   const [filterBudget, setFilterBudget] = useState("Todos");
   const [filterIntention, setFilterIntention] = useState("Todas");
+  const [filterArea, setFilterArea] = useState("Todas");
   const [filterStatus, setFilterStatus] = useState("Todos");
   const [filterClassification, setFilterClassification] = useState("Todas");
   const [filterPeriod, setFilterPeriod] = useState("all");
@@ -109,10 +157,31 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
   // matches on this same short label.
   const sources = Array.from(new Set(leads.flatMap(leadSources))).sort();
 
+  // Area filter: options derived from the data; shown only when some lead has an
+  // area (keeps swplaces — no area data — visually unchanged, no flag needed).
+  const areaOptions = buildAreaOptions(leads);
+  const areaFilterVisible = areaOptions.length > 0;
+
+  // Intent options: curated list + any distinct intent values present in the data
+  // (Meta timeline answers) that aren't already there, deduped case-insensitively,
+  // appended after the curated ones. swplaces data is all curated → no change.
+  const intentOptions = (() => {
+    const out = [...INTENTIONS];
+    const seen = new Set(INTENTIONS.map((x) => x.toLowerCase()));
+    for (const l of leads) {
+      const v = (l.intention || "").trim();
+      if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); out.push(v); }
+    }
+    return out;
+  })();
+
   const q = normalizeText(search);
   const filtered = leads.filter(l => {
-    if (filterBudget !== "Todos" && l.budget !== filterBudget) return false;
+    // Budget: exact bucket string (landing leads, as before) OR the free-text
+    // budget's parsed ceiling falling in the selected bucket (Meta budget column).
+    if (filterBudget !== "Todos" && l.budget !== filterBudget && !budgetInBucket(parseBudget(l.budget), filterBudget)) return false;
     if (filterIntention !== "Todas" && l.intention !== filterIntention) return false;
+    if (filterArea !== "Todas" && !matchArea(l, filterArea)) return false;
     if (filterStatus !== "Todos" && l.status !== filterStatus) return false;
     if (filterClassification === NO_CLASSIFICATION) { if (l.classification) return false; }
     else if (filterClassification !== "Todas" && l.classification !== filterClassification) return false;
@@ -167,7 +236,9 @@ export default function LeadsTab({ leads: allLeads, onOpenLead, onStatusChange, 
           { label: t("f_status"), value: filterStatus, set: setFilterStatus, opts: ["Todos", ...STATUSES] },
           { label: t("f_classification"), value: filterClassification, set: setFilterClassification, opts: ["Todas", "A", "B", "C", NO_CLASSIFICATION] },
           { label: t("f_budget"), value: filterBudget, set: setFilterBudget, opts: BUDGETS },
-          { label: t("f_intention"), value: filterIntention, set: setFilterIntention, opts: INTENTIONS },
+          { label: t("f_intention"), value: filterIntention, set: setFilterIntention, opts: intentOptions },
+          // Area filter only appears when the loaded data has areas (data-driven).
+          ...(areaFilterVisible ? [{ label: t("f_area"), value: filterArea, set: setFilterArea, opts: ["Todas", ...areaOptions] }] : []),
           { label: t("f_source"), value: filterSource, set: setFilterSource, opts: ["Todas", ...sources] },
         ].map((f, i) => (
           <div key={i}>
