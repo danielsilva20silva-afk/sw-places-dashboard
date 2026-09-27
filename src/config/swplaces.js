@@ -49,6 +49,7 @@ Obrigado e até breve!`,
     templates: false,   // WhatsApp message template manager — brandon only (no tab here)
     actions: false,     // per-lead next-action tracking — brandon only (zero UI here)
     archive: false,     // archive leads / hide-without-delete — brandon only (zero UI here)
+    classSuggest: false, // suggested classification from form Intent — brandon only (zero UI here)
   },
 
   // Lead pipeline constants (moved from src/constants.js).

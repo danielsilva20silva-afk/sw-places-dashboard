@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { STATUSES, STATUS_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
+import { STATUSES, STATUS_CONFIG, CLASSIFICATION_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
+import { suggestClassification } from "../suggestClassification";
 import { t } from "../labels";
 import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab, sourceCampaignLabel } from "../utils";
 import { appendNote } from "../notesFormat";
@@ -209,6 +210,14 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   // Delete button is hidden for them when the feature is on.
   const isMetaLead = String(lead.id).startsWith("l:");
   const showDelete = !archiveEnabled || !isMetaLead;
+
+  // Meta leads' Area/Intent are derived from the form answer (source of truth) —
+  // shown read-only. Suggested classification (brandon-only feature) is offered
+  // when the lead has no manual classification yet; Applying writes it normally.
+  const metaIntent = isMetaLead ? (cleanField(lead.intention) || "").trim() : "";
+  const metaArea = isMetaLead ? (cleanField(lead.area) || "").trim() : "";
+  const suggestOn = hasFeature("classSuggest");
+  const suggestedClass = suggestOn ? suggestClassification(lead) : null;
   const handleArchive = async () => {
     if (archiving) return;
     setArchiving(true);
@@ -328,8 +337,19 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               </div>
               <div>
                 <p style={fieldLabel}>{t("d_intention")}{originHint("intention")}</p>
-                <input {...bind("intention", intention, setIntention)} placeholder="ex. investir" style={fieldInput} />
+                {isMetaLead ? (
+                  // Derived from the form answer → read-only (the Meta sync owns it).
+                  <div style={{ ...fieldInput, background: "#FAFAF9", color: "#555" }} title={t("cls_from_form")}>{metaIntent || "—"}</div>
+                ) : (
+                  <input {...bind("intention", intention, setIntention)} placeholder="ex. investir" style={fieldInput} />
+                )}
               </div>
+              {isMetaLead && metaArea && (
+                <div>
+                  <p style={fieldLabel}>{t("d_area")}</p>
+                  <div style={{ ...fieldInput, background: "#FAFAF9", color: "#555" }} title={t("cls_from_form")}>{metaArea}</div>
+                </div>
+              )}
             </div>
           </div>
           <div>
@@ -361,6 +381,19 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
           {lead.classification_editable && (
             <div>
               <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" }}>{t("d_classification")}</p>
+              {/* Suggested chip (from the form Intent) — only when unclassified.
+                  Suggests, never auto-assigns; Applying writes it the normal way,
+                  which clears the suggestion (a set classification wins). */}
+              {suggestedClass && !classification && (
+                <button type="button" onClick={() => pickClassification(suggestedClass)} style={{
+                  display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 10, cursor: "pointer",
+                  background: "transparent", border: `1px dashed ${(CLASSIFICATION_CONFIG[suggestedClass] || {}).border || "#E5E5E5"}`,
+                  borderRadius: 999, padding: "5px 11px", fontSize: 12, color: (CLASSIFICATION_CONFIG[suggestedClass] || {}).text || "#555",
+                }}>
+                  <span>{t("cls_suggested")}: {suggestedClass} {(CLASSIFICATION_CONFIG[suggestedClass] || {}).emoji} <span style={{ color: "#999" }}>({t("cls_from_form")})</span></span>
+                  <span style={{ fontWeight: 700, color: "#111" }}>{t("cls_apply")}</span>
+                </button>
+              )}
               <ClassificationSelect value={classification} onChange={pickClassification} />
             </div>
           )}

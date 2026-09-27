@@ -146,6 +146,7 @@ const DEFAULTS = {
   d_phone: "Telefone",
   d_budget: "Orçamento",
   d_intention: "Intenção",
+  d_area: "Zona",
   d_status: "Estado",
   d_classification: "Classificação",
   d_summary: "Resumo da conversa",
@@ -168,6 +169,14 @@ const DEFAULTS = {
   cls_B: "B — Morno",
   cls_C: "C — Frio",
   cls_clear: "Limpar",
+  // Classificação sugerida (a partir da resposta do formulário) — sugere, nunca aplica sozinha
+  cls_suggested: "Sugerido",
+  cls_from_form: "da resposta do formulário",
+  cls_apply: "Aplicar",
+  cls_suggested_plural: "classificações sugeridas",   // "Aplicar {n} classificações sugeridas"
+  cls_bulk_confirm: "Aplicar as classificações sugeridas?",
+  cls_applied: "aplicadas",
+  cls_skipped_nocol: "ignoradas (sem coluna de classificação)",
 
   // ── Notes history (DISPLAY only — storage tokens are NOT translated) ──
   notes_title: "Notas",

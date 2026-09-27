@@ -5,7 +5,7 @@
 const CLIENT = process.env.CLIENT || "swplaces";
 
 const CONFIGS = {
-  swplaces: { dataSource: "sheets", followups: false, dedupe: false, templates: false, actions: false, archive: false, notifications: true },
+  swplaces: { dataSource: "sheets", followups: false, dedupe: false, templates: false, actions: false, archive: false, classSuggest: false, notifications: true },
   // Brandon merges two lead sources: Supabase (landing page) is primary; the
   // Meta Ads Instant Forms Google Sheet is secondary. Order matters — the first
   // source is the primary (owns addLead). See api/_adapters/composite.js.
@@ -17,7 +17,11 @@ const CONFIGS = {
   // actions: per-lead next-action tracking (api/brandon-store.js?resource=actions).
   // archive: hide leads from the working list without deleting — works for Meta
   // leads too (Meta owns those rows) (api/brandon-store.js?resource=archive).
-  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true, dedupe: true, templates: true, actions: true, archive: true, notifications: false },
+  // classSuggest: frontend-only — suggested A/B/C from the Meta form's Intent
+  // answer (the Meta adapter maps Area/Intent unconditionally; this flag just
+  // gates the suggestion UI so other clients stay untouched). Kept here too so
+  // both config systems declare it.
+  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true, dedupe: true, templates: true, actions: true, archive: true, classSuggest: true, notifications: false },
 };
 
 const serverConfig = CONFIGS[CLIENT];
