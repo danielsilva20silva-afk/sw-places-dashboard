@@ -135,6 +135,10 @@ export default {
     d_budget: "Budget",
     d_intention: "Intent",
     d_area: "Area",
+    d_no_column: "no column in this sheet tab",  // field disabled (the tab lacks the column)
+    d_budget_ph: "e.g. 1.5M pref 1.3",
+    d_intention_ph: "e.g. invest",
+    d_area_ph: "e.g. Quinta do Lago",
     d_status: "Status",
     d_classification: "Classification",
     d_summary: "Summary",

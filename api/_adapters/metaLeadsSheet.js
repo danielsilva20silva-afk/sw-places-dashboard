@@ -23,6 +23,14 @@ const STATUS_COL = "lead_status";
 // Optional column WE add to the sheet (like lead_status, written back from the
 // dashboard). Absent → classification is read-only/blank for that tab.
 const CLASS_COL = "classification";
+// Optional plain columns WE may add to a tab, matched case-insensitively by
+// normalized header (normQ): free-text Budget, and Area/Intent for tabs that
+// DON'T carry the form-answer question columns. When a tab has the form-answer
+// column, that wins and the field stays read-only (see rowToLead). Absent →
+// the field is read-only/blank for that tab (graceful gate, like classification).
+const BUDGET_COL = "budget";
+const AREA_COL = "area";
+const INTENT_COL = "intent";
 
 // Manual (human) notes for Meta leads live in a side table in the SAME Supabase
 // project as the brandon subscribers — the Meta Ads sync owns the Sheet and has
@@ -264,6 +272,28 @@ function answerFor(row, idx, header, wantNorm) {
   return "";
 }
 
+// Locate a column by normalized header → { name, index } (or null). Used for the
+// optional plain read/write columns (budget/area/intent), case-insensitively.
+function findCol(header, idx, wantNorm) {
+  for (const col of header) {
+    if (col && normQ(col) === wantNorm) return { name: col, index: idx[col] };
+  }
+  return null;
+}
+
+// Header presence of a form-answer question column (regardless of this row's value).
+function hasCol(header, wantNorm) {
+  return header.some((c) => c && normQ(c) === wantNorm);
+}
+
+// Our plain structured columns are kept OUT of the summary (their value lives in
+// the lead's own field, like classification). The form-answer question columns
+// are NOT plain columns, so they still show in the summary as before.
+const PLAIN_MAPPED = new Set([BUDGET_COL, AREA_COL, INTENT_COL]);
+function isMappedPlainCol(h) {
+  return PLAIN_MAPPED.has(normQ(h));
+}
+
 // Portuguese connectors kept lowercase inside a title-cased place name.
 const SMALL_WORDS = new Set(["do", "da", "de", "dos", "das", "e"]);
 function titleCasePt(str) {
@@ -305,10 +335,12 @@ function composeNotes(row, idx, header) {
   const campaign = cell(row, idx, "campaign_name").trim();
   if (campaign) parts.push(campaign);
   for (const col of header) {
-    // Skip the fixed Meta columns AND any custom-question column that's really a
-    // contact field (phone/email/name variant) — its value lives in the lead's
-    // own field, not in the summary.
-    if (!col || STANDARD_COLS.has(col) || isContactHeader(col)) continue;
+    // Skip the fixed Meta columns, any custom-question column that's really a
+    // contact field (phone/email/name variant), and our own plain structured
+    // columns (budget/area/intent) — their values live in the lead's own fields,
+    // not in the summary. (The form-answer question columns are NOT plain columns,
+    // so they still appear here as before.)
+    if (!col || STANDARD_COLS.has(col) || isContactHeader(col) || isMappedPlainCol(col)) continue;
     const answer = cell(row, idx, col).replace(/_/g, " ").trim();
     if (!answer) continue;
     parts.push(`${humanizeQuestion(col)}: ${answer}`);
@@ -321,6 +353,25 @@ function rowToLead(row, idx, header) {
   const formName = cell(row, idx, "form_name").trim();
   const label = adName || formName;
   const createdTime = cell(row, idx, "created_time");
+
+  // Area / Intent precedence: a form-answer question column (buyers reel) WINS
+  // and stays read-only (source of truth = the form answer). Otherwise, if the
+  // tab has our plain "area"/"intent" column, read it and make the field editable.
+  // Budget has no form question — it's only ever the plain "budget" column.
+  const areaFromForm = hasCol(header, AREA_Q);
+  const intentFromForm = hasCol(header, INTENT_Q);
+  const areaCol = areaFromForm ? null : findCol(header, idx, AREA_COL);
+  const intentCol = intentFromForm ? null : findCol(header, idx, INTENT_COL);
+  const budgetCol = findCol(header, idx, BUDGET_COL);
+
+  const area = areaFromForm
+    ? humanizeArea(answerFor(row, idx, header, AREA_Q))
+    : (areaCol ? cell(row, idx, areaCol.name) : "");
+  const intention = intentFromForm
+    ? humanizeIntent(answerFor(row, idx, header, INTENT_Q))
+    : (intentCol ? cell(row, idx, intentCol.name) : "");
+  const budget = budgetCol ? cell(row, idx, budgetCol.name) : "";
+
   return {
     id: cell(row, idx, "id"),
     // Native columns win when present; custom-question variants (e.g. Sellers
@@ -328,12 +379,17 @@ function rowToLead(row, idx, header) {
     name: resolveContact(row, idx, header, NAME_ALIASES),
     email: resolveContact(row, idx, header, EMAIL_ALIASES),
     phone: resolveContact(row, idx, header, PHONE_ALIASES).replace(/^p:/, ""),
-    budget: "", // no column
-    // Intent / Area derived from the buyer form's question columns (also kept in
-    // the summary). Display-only, read-only in the UI — the form answer is the
-    // source of truth and the Meta sync owns these columns.
-    intention: humanizeIntent(answerFor(row, idx, header, INTENT_Q)),
-    area: humanizeArea(answerFor(row, idx, header, AREA_Q)),
+    // Budget: free-text plain column (editable when the tab has it). No form Q.
+    budget,
+    budget_editable: !!budgetCol,
+    // Intent / Area: form answer wins (read-only); else the plain column (editable);
+    // else blank/read-only. *_from_form tells the drawer which hint to show.
+    intention,
+    intention_editable: !!intentCol,
+    intention_from_form: intentFromForm,
+    area,
+    area_editable: !!areaCol,
+    area_from_form: areaFromForm,
     source: label ? `Meta Ads · ${label}` : "Meta Ads",
     date: createdTime.slice(0, 10), // YYYY-MM-DD
     status: mapStatus(cell(row, idx, STATUS_COL)),
@@ -469,7 +525,40 @@ export async function updateLead(ctx, id, b) {
       }
     }
 
-    return { ...current, status, manual_notes: manualNotes, classification };
+    // budget / area / intent → their plain free-text columns, when the tab has
+    // them. Same graceful pattern as classification: no column → ignore silently
+    // (the field is read-only in the UI, so an edit shouldn't arrive anyway).
+    // Area/Intent are NEVER written when the tab carries the form-answer column —
+    // that's the read-only source of truth (and Meta owns it).
+    const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
+    const writeCol = async (col, value) => {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: tab.spreadsheetId,
+        range: `${a1Tab(tab.title)}!${colLetter(col.index)}${sheetRow}`,
+        valueInputOption: "RAW",
+        requestBody: { values: [[s(value)]] },
+      });
+    };
+
+    let budget = current.budget;
+    if (b.budget !== undefined) {
+      const col = findCol(tab.header, tab.idx, BUDGET_COL);
+      if (col && col.index != null) { await writeCol(col, b.budget); budget = s(b.budget); }
+    }
+
+    let area = current.area;
+    if (b.area !== undefined && !hasCol(tab.header, AREA_Q)) {
+      const col = findCol(tab.header, tab.idx, AREA_COL);
+      if (col && col.index != null) { await writeCol(col, b.area); area = s(b.area); }
+    }
+
+    let intention = current.intention;
+    if (b.intention !== undefined && !hasCol(tab.header, INTENT_Q)) {
+      const col = findCol(tab.header, tab.idx, INTENT_COL);
+      if (col && col.index != null) { await writeCol(col, b.intention); intention = s(b.intention); }
+    }
+
+    return { ...current, status, manual_notes: manualNotes, classification, budget, area, intention };
   }
 
   throw new DataError(404, "Lead não encontrado.");

@@ -20,7 +20,7 @@ import NextActions from "./NextActions";
 // Per-client WhatsApp message for the "Sem resposta" button (empty when the
 // client hasn't configured one → the button is hidden).
 const WA_NO_ANSWER = branding.noAnswerMessage || "";
-const TEXT_KEYS = ["name", "email", "phone", "budget", "intention", "manual_notes"];
+const TEXT_KEYS = ["name", "email", "phone", "budget", "intention", "area", "manual_notes"];
 const SAVE_DEBOUNCE = 900;
 
 const fieldInput = {
@@ -35,6 +35,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   const [phone, setPhone] = useState(lead.phone || "");
   const [budget, setBudget] = useState(lead.budget || "");
   const [intention, setIntention] = useState(lead.intention || "");
+  const [area, setArea] = useState(lead.area || "");
   const [status, setStatus] = useState(lead.status);
   const [classification, setClassification] = useState(lead.classification || "");
   const [manualNotes, setManualNotes] = useState(lead.manual_notes || "");
@@ -82,7 +83,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   };
 
   // Refs so the debounced/close/unmount flush always reads current values.
-  const fieldsRef = useRef({ name: lead.name || "", email: lead.email || "", phone: lead.phone || "", budget: lead.budget || "", intention: lead.intention || "", manual_notes: lead.manual_notes || "" });
+  const fieldsRef = useRef({ name: lead.name || "", email: lead.email || "", phone: lead.phone || "", budget: lead.budget || "", intention: lead.intention || "", area: lead.area || "", manual_notes: lead.manual_notes || "" });
   const savedRef = useRef({ ...fieldsRef.current });
   const timerRef = useRef(null);
   const fadeRef = useRef(null);
@@ -211,11 +212,15 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   const isMetaLead = String(lead.id).startsWith("l:");
   const showDelete = !archiveEnabled || !isMetaLead;
 
-  // Meta leads' Area/Intent are derived from the form answer (source of truth) —
-  // shown read-only. Suggested classification (brandon-only feature) is offered
-  // when the lead has no manual classification yet; Applying writes it normally.
-  const metaIntent = isMetaLead ? (cleanField(lead.intention) || "").trim() : "";
-  const metaArea = isMetaLead ? (cleanField(lead.area) || "").trim() : "";
+  // Meta leads' Budget/Area/Intent map to plain sheet columns when the tab has
+  // them (editable), else a form-answer column wins (read-only), else there's no
+  // column (disabled + hint). renderMetaField renders that 3-way gate; non-Meta
+  // leads keep their normal editable inputs (Supabase writes budget_range/purpose).
+  const metaFieldStyle = { ...fieldInput, background: "#FAFAF9", color: "#555", minHeight: 20 };
+  const renderMetaField = (key, value, setter, { editable, fromForm, placeholder }) =>
+    editable
+      ? <input {...bind(key, value, setter)} placeholder={placeholder} style={fieldInput} />
+      : <div style={metaFieldStyle} title={fromForm ? t("cls_from_form") : t("d_no_column")}>{value || "—"}</div>;
   const suggestOn = hasFeature("classSuggest");
   const suggestedClass = suggestOn ? suggestClassification(lead) : null;
   const handleArchive = async () => {
@@ -333,21 +338,20 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               </div>
               <div>
                 <p style={fieldLabel}>{t("d_budget")}{originHint("budget")}</p>
-                <input {...bind("budget", budget, setBudget)} placeholder="ex. 300k–500k" style={fieldInput} />
+                {isMetaLead
+                  ? renderMetaField("budget", budget, setBudget, { editable: lead.budget_editable, fromForm: false, placeholder: t("d_budget_ph") })
+                  : <input {...bind("budget", budget, setBudget)} placeholder="ex. 300k–500k" style={fieldInput} />}
               </div>
               <div>
                 <p style={fieldLabel}>{t("d_intention")}{originHint("intention")}</p>
-                {isMetaLead ? (
-                  // Derived from the form answer → read-only (the Meta sync owns it).
-                  <div style={{ ...fieldInput, background: "#FAFAF9", color: "#555" }} title={t("cls_from_form")}>{metaIntent || "—"}</div>
-                ) : (
-                  <input {...bind("intention", intention, setIntention)} placeholder="ex. investir" style={fieldInput} />
-                )}
+                {isMetaLead
+                  ? renderMetaField("intention", intention, setIntention, { editable: lead.intention_editable, fromForm: lead.intention_from_form, placeholder: t("d_intention_ph") })
+                  : <input {...bind("intention", intention, setIntention)} placeholder="ex. investir" style={fieldInput} />}
               </div>
-              {isMetaLead && metaArea && (
+              {isMetaLead && (
                 <div>
                   <p style={fieldLabel}>{t("d_area")}</p>
-                  <div style={{ ...fieldInput, background: "#FAFAF9", color: "#555" }} title={t("cls_from_form")}>{metaArea}</div>
+                  {renderMetaField("area", area, setArea, { editable: lead.area_editable, fromForm: lead.area_from_form, placeholder: t("d_area_ph") })}
                 </div>
               )}
             </div>

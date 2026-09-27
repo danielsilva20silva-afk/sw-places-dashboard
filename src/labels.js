@@ -147,6 +147,10 @@ const DEFAULTS = {
   d_budget: "Orçamento",
   d_intention: "Intenção",
   d_area: "Zona",
+  d_no_column: "sem coluna neste separador do Sheet",  // campo desativado (o tab não tem a coluna)
+  d_budget_ph: "ex. 1.5M pref 1.3",
+  d_intention_ph: "ex. investir",
+  d_area_ph: "ex. Quinta do Lago",
   d_status: "Estado",
   d_classification: "Classificação",
   d_summary: "Resumo da conversa",
