@@ -21,7 +21,18 @@ import { exportLeadsCsv } from "../leadsCsv";
 // "Sem classificação" is a sentinel for the classification filter (unset leads).
 const NO_CLASSIFICATION = "Sem classificação";
 
-const selectStyle = { border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 32px 9px 12px", fontSize: 13, color: "#111", background: "white", cursor: "pointer", outline: "none" };
+// Shared filter-select style. Native arrow is suppressed (appearance:none +
+// vendor prefixes) and replaced with a custom chevron SVG sat 12px from the right;
+// padding-right leaves room so the option text never overlaps it. backgroundColor
+// is set separately from backgroundImage (a `background` shorthand would wipe the
+// image). Cosmetic-only; applies to every toolbar select in both clients.
+const CHEVRON = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")";
+const selectStyle = {
+  border: "1px solid #E5E5E5", borderRadius: 10, padding: "9px 34px 9px 12px", fontSize: 13,
+  color: "#111", backgroundColor: "white", cursor: "pointer", outline: "none",
+  appearance: "none", WebkitAppearance: "none", MozAppearance: "none",
+  backgroundImage: CHEVRON, backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center",
+};
 const exportBtnStyle = { border: "1px solid #E5E5E5", background: "white", color: "#333", borderRadius: 10, padding: "9px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
 
 // [value, labelKey] — value is the stable internal key, label is translated at
