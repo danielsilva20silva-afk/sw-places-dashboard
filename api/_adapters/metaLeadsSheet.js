@@ -50,7 +50,7 @@ const STANDARD_COLS = new Set([
 // Dashboard statuses (brandon). Meta writes CREATED/OK/empty for fresh leads.
 // Kept in sync with src/config/brandon.js STATUSES (this adapter is server-side
 // and can't import the frontend config).
-const DASHBOARD_STATUSES = ["New", "Contacted — no answer", "Contacted — answered", "Viewing booked", "Closed", "Lost"];
+const DASHBOARD_STATUSES = ["New", "Contacted — no answer", "Contacted — qualifying", "Contacted — answered", "Viewing booked", "Closed", "Lost"];
 
 // Domain error the endpoints surface directly (duck-typed via `.expose`).
 export class DataError extends Error {
