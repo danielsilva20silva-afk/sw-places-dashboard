@@ -94,6 +94,17 @@ function isPresent(v) {
   return str !== "" && !str.startsWith("{{");
 }
 
+// Sort/display timestamp for one record: created_at (full ISO) preferred, else
+// the date column. Mirrors utils.leadTime's precedence (kept inline so dedupe.js
+// stays import-free/node-testable). Used only to pick a merge's newest record.
+function recordMs(r) {
+  const ca = r && r.created_at;
+  if (ca) { const t = new Date(ca).getTime(); if (!isNaN(t)) return t; }
+  const dt = r && r.date;
+  if (dt) { const t = new Date(dt).getTime(); if (!isNaN(t)) return t; }
+  return 0;
+}
+
 // Concatenate a secondary's searchable fields so a merged primary stays findable
 // by the secondary's data (campaign, email variant, phone, name…).
 function searchTextFor(lead) {
@@ -193,6 +204,15 @@ export function computeDedupe(leads, links, archivedIds = new Set()) {
         out.__mergedCount = secs.length;
         out.mergedSecondaries = secs;
         out.__dupSearch = secs.map((x) => searchTextFor(x.lead)).join(" ");
+        // Surface the composite at its NEWEST record's position and show that
+        // date, so a repeat inquiry lifts the merged row back to the top of the
+        // lists (both sort directions read this same timestamp). Primary semantics
+        // — default-oldest primary, status/notes/classification target — are
+        // unchanged; only the displayed/sort date moves. The Merged-records panel
+        // still shows each secondary's own date (it reads the raw records).
+        let newest = l;
+        for (const { lead: sec } of secs) if (recordMs(sec) > recordMs(newest)) newest = sec;
+        if (newest !== l) { out.created_at = newest.created_at; out.date = newest.date; }
         // Contact/profile fallback: primary wins; when its field is empty, take the
         // first secondary that has a value. Records the origin of any borrowed value
         // in __fieldOrigins so the drawer can show a subtle "from {source}" hint.
