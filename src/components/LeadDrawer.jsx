@@ -102,7 +102,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   // source_content used as a human label (e.g. "REEL 300K MAR"). When it's itself
   // a URL it's a legacy "shared publication" shown lower down, not a label here.
   const sourceContentLabel = sourceOk ? "" : sourceContent;
-  const isAnaSubscriber = hasFeature("ana") && lead.source === "DM · ANA" && /^\d+$/.test(String(lead.id));
+  const isAnaSubscriber = hasFeature("ana") && String(lead.source || "").startsWith("DM · ANA") && /^\d+$/.test(String(lead.id));
 
   const persist = async (patch) => {
     if (!patch || Object.keys(patch).length === 0) return;

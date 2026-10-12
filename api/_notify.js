@@ -106,7 +106,9 @@ function safeHref(url) {
   try {
     const h = new URL(String(url || "")).hostname.toLowerCase();
     return h === "instagram.com" || h.endsWith(".instagram.com") ||
-           h === "fbsbx.com" || h.endsWith(".fbsbx.com") ? String(url) : "";
+           h === "fbsbx.com" || h.endsWith(".fbsbx.com") ||
+           h === "facebook.com" || h.endsWith(".facebook.com") ||
+           h === "fb.com" || h.endsWith(".fb.com") ? String(url) : "";
   } catch {
     return "";
   }

@@ -25,7 +25,7 @@ function stamp(ts, withDate) {
 }
 
 export default function LeadConversation({ lead }) {
-  const enabled = lead.source === "DM · ANA" && isSubscriber(lead.id);
+  const enabled = String(lead.source || "").startsWith("DM · ANA") && isSubscriber(lead.id);
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(enabled);
   const [collapsed, setCollapsed] = useState(false);

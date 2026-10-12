@@ -89,7 +89,8 @@ export function sourceCampaignLabel(source) {
 // extracts a phone/email the row appears in Leads automatically — no extra code.
 export function isRealLead(lead) {
   if (isValidPhone(lead.phone) || isValidEmail(lead.email)) return true;
-  return lead.source !== "DM · ANA";
+  // Prefix match so Messenger ("DM · ANA · Messenger") behaves like Instagram.
+  return !String(lead.source || "").startsWith("DM · ANA");
 }
 
 // Relative time with minute/hour granularity (for conversation freshness)

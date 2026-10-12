@@ -250,7 +250,7 @@ export async function upsertLead(sheets, spreadsheetId, leadId, data, source, fa
 // Generate Ana's reply: read history → Claude → strip <lead>. Does NOT persist
 // anything. Shared by the live flow and the "Recuperar conversas" tool (which
 // needs the reply before Gustavo confirms he sent it).
-export async function generateReply({ sheets, spreadsheetId, apiKey, contactId, message, profileFirstName, includeNewMessage = true }) {
+export async function generateReply({ sheets, spreadsheetId, apiKey, contactId, message, profileFirstName, includeNewMessage = true, channel = "instagram" }) {
   await ensureTab(sheets, spreadsheetId);
 
   const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: DATA_RANGE });
@@ -272,6 +272,9 @@ export async function generateReply({ sheets, spreadsheetId, apiKey, contactId, 
   ];
   if (profileFirstName && String(profileFirstName).trim()) {
     ctx.push(`O primeiro nome da pessoa (perfil de Instagram) é "${String(profileFirstName).trim()}". Podes usá-lo com naturalidade quando fizer sentido, mas não és obrigada a usá-lo em todas as mensagens.`);
+  }
+  if (channel === "messenger") {
+    ctx.push(`Esta conversa é no Facebook Messenger, não no Instagram. A pessoa provavelmente viu uma publicação ou anúncio na página de Facebook do Gustavo, não um reel ou story. Não uses as palavras reel, story ou Instagram ao falar com esta pessoa.`);
   }
   const system = `${ANA_PROMPT}\n\n## Contexto (injetado automaticamente)\n${ctx.join("\n")}`;
 
@@ -376,7 +379,7 @@ async function generateAndPersist({ sheets, spreadsheetId, apiKey, contactId, me
 // away, wait for a silence window, then only the LAST message of the burst
 // generates + delivers (with the full history). Parallel invocations coordinate
 // purely through the Conversations sheet.
-async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName }) {
+async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName, channel = "instagram" }) {
   const cid = String(subscriberId);
   try {
     await ensureTab(sheets, spreadsheetId);
@@ -426,7 +429,7 @@ async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, me
     //    user turn(s) are already in the sheet, so don't append another.
     const { reply, leadData } = await generateReply({
       sheets, spreadsheetId, apiKey, contactId: cid,
-      profileFirstName: effFirst, includeNewMessage: false,
+      profileFirstName: effFirst, includeNewMessage: false, channel,
     });
     if (!reply) {
       console.error(`[ana] empty reply for ${cid}, nothing to deliver.`);
@@ -436,18 +439,29 @@ async function processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, me
     // 5. Persist Ana's reply (assistant turn only — user turns already written).
     await appendAssistantMessage(sheets, spreadsheetId, cid, reply);
 
-    // 6. Upsert lead from the block (same rules as before).
+    // 6. Upsert lead from the block (same rules as before). Messenger leads get a
+    //    dedicated source so the dashboard can tell them apart; IG stays "DM · ANA".
+    const anaSource = channel === "messenger" ? "DM · ANA · Messenger" : "DM · ANA";
     if (leadData && (String(leadData.phone || "").trim() || String(leadData.email || "").trim())) {
       try {
-        await upsertLead(sheets, spreadsheetId, cid, leadData, "DM · ANA", effFullName, effUsername);
+        await upsertLead(sheets, spreadsheetId, cid, leadData, anaSource, effFullName, effUsername);
       } catch (e) {
         console.error("upsertLead failed:", e?.message);
       }
     }
 
-    // 7. Deliver: set the ana_response field, then fire the delivery flow.
+    // 7. Deliver: set the ana_response field, then fire the delivery flow. The
+    //    delivery flow is per-channel; Messenger uses its own flow_ns (falling back
+    //    to the IG flow with a loud warning if that env isn't set).
+    let flowNs = MC_FLOW_NS;
+    if (channel === "messenger") {
+      flowNs = process.env.MANYCHAT_FLOW_NS_MESSENGER || MC_FLOW_NS;
+      if (!process.env.MANYCHAT_FLOW_NS_MESSENGER) {
+        console.warn(`[ana] MANYCHAT_FLOW_NS_MESSENGER não definido — a entregar ${cid} pelo flow de Instagram (${MC_FLOW_NS}) como fallback.`);
+      }
+    }
     await mc.setCustomField(subscriberId, MC_FIELD_ID, reply);
-    await mc.sendFlow(subscriberId, MC_FLOW_NS);
+    await mc.sendFlow(subscriberId, flowNs);
   } catch (e) {
     console.error(`[ana] processManyChat failed for ${cid}:`, e?.message);
   }
@@ -501,6 +515,9 @@ export default async function handler(req, res) {
       // timeout); waitUntil keeps the function alive to finish Claude + delivery.
       res.status(200).json({ status: "ok" });
       const subscriberId = /^\d+$/.test(String(rawSid)) ? Number(rawSid) : rawSid;
+      // Channel: "messenger" only when explicitly stated; anything else (incl. the
+      // existing IG flow, which sends no `channel`) is treated as "instagram".
+      const channel = String(body.channel || "").trim().toLowerCase() === "messenger" ? "messenger" : "instagram";
       const message = typeof body.message === "string" ? body.message.trim() : "";
       const first = typeof body.first_name === "string" ? body.first_name.trim() : "";
       const last = typeof body.last_name === "string" ? body.last_name.trim() : "";
@@ -523,7 +540,7 @@ export default async function handler(req, res) {
       // its exact format before threading it into timestamps.
       console.log("[ana] message_time raw:", JSON.stringify({ value: body.message_time ?? null, typeof: typeof body.message_time }));
       if (apiKey && message) {
-        waitUntil(processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName: first }));
+        waitUntil(processManyChat({ sheets, spreadsheetId, apiKey, subscriberId, message, profileName, profileFirstName: first, channel }));
       } else {
         console.error("[ana] ManyChat call missing ANTHROPIC_API_KEY or message; skipping.");
       }
