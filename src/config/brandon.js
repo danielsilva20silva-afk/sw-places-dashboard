@@ -224,6 +224,8 @@ export default {
     fu_days: "days",
     fu_from_action: "from scheduled action",
     fu_classify_within: "classify within 48h",
+    fu_show_all: "Show all",                 // "Show all ({n})"
+    fu_show_less: "Show less",
     d_last_contacted: "Last contacted",
     d_next_followup: "Next follow-up",
     // Calendar

@@ -240,6 +240,8 @@ const DEFAULTS = {
   fu_days: "dias",
   fu_from_action: "de ação agendada",
   fu_classify_within: "classificar em 48h",
+  fu_show_all: "Ver todos",                  // "Ver todos ({n})"
+  fu_show_less: "Ver menos",
   d_last_contacted: "Último contacto",
   d_next_followup: "Próximo seguimento",
 
