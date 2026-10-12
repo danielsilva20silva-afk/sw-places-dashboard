@@ -48,7 +48,7 @@ export default function Dashboard({ onLogout }) {
   const dedupeOn = hasFeature("dedupe"); // false clients: zero dedupe UI / no link fetch
   const actionsOn = hasFeature("actions"); // false clients: no fetch, no actions UI
   const archiveOn = hasFeature("archive"); // false clients: no fetch, nothing archived
-  const followupsOn = hasFeature("followups"); // false clients: no Due-today panel / drawer fields
+  const followupCadenceOn = hasFeature("followupCadence"); // false clients: no Due-today panel / drawer fields
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -162,7 +162,7 @@ export default function Dashboard({ onLogout }) {
   // feeds the drawer; `dueList` ([{lead, fu}], sorted) feeds the Due-today panel.
   // Off clients: null/[] → zero new UI, no computation.
   const { followupsView, dueList } = useMemo(() => {
-    if (!followupsOn) return { followupsView: null, dueList: [] };
+    if (!followupCadenceOn) return { followupsView: null, dueList: [] };
     const actionsByRawId = new Map();
     for (const a of actions) {
       const arr = actionsByRawId.get(String(a.lead_id)) || [];
@@ -186,7 +186,7 @@ export default function Dashboard({ onLogout }) {
       ((x.fu.nextFollowUp || 0) - (y.fu.nextFollowUp || 0))
     );
     return { followupsView: view, dueList: due };
-  }, [followupsOn, actions, activeLeads]);
+  }, [followupCadenceOn, actions, activeLeads]);
 
   // Upcoming Google Calendar events (next 30 days) for the notifications panel.
   // The full calendar lives on the Dashboard tab; this is just the heads-up feed.
@@ -642,7 +642,7 @@ export default function Dashboard({ onLogout }) {
             candidates={dedupeOn && candidatesByLead ? (candidatesByLead.get(id) || []) : []}
             onMerge={mergeLeads}
             onUnmerge={unmergeLink}
-            followup={followupsOn && followupsView ? (followupsView.get(id) || null) : null}
+            followup={followupCadenceOn && followupsView ? (followupsView.get(id) || null) : null}
             leadActions={actionsOn && actionsView ? (actionsView.get(id)?.pending || []) : []}
             onActionCreate={(fields) => createAction({ lead_id: id, ...fields })}
             onActionEdit={editAction}

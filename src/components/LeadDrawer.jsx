@@ -223,7 +223,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
       : <div style={metaFieldStyle} title={fromForm ? t("cls_from_form") : t("d_no_column")}>{value || "—"}</div>;
   // Follow-up cadence (brandon only; derived, read-only). Muted cadence line:
   // override > classify-deadline > "{class} · every {n} days".
-  const followupsOn = hasFeature("followups");
+  const followupCadenceOn = hasFeature("followupCadence");
   const followupCadenceText = (fu) => {
     if (!fu) return "";
     if (fu.overridden) return t("fu_from_action");
@@ -367,7 +367,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
             </div>
           </div>
           {/* Derived follow-up (brandon only; read-only, never stored/editable). */}
-          {followupsOn && followup && (
+          {followupCadenceOn && followup && (
             <div style={{ display: "flex", gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={fieldLabel}>{t("d_last_contacted")}</p>
