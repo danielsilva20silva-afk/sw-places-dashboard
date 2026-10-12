@@ -213,6 +213,19 @@ export default {
     fu_success_prefix: "Follow-up scheduled for",
     fu_error: "Couldn't schedule. Please try again.",
     fu_upcoming_title: "Upcoming follow-ups",
+    // Follow-up cadence (derived)
+    fu_due_today_title: "Due today",
+    fu_empty: "No follow-ups due today.",
+    fu_today: "today",
+    fu_overdue_suffix: "overdue",            // "{n}d overdue"
+    fu_classify: "classify",
+    fu_none: "No contact yet",
+    fu_every: "every",                       // "{class} · every {n} days"
+    fu_days: "days",
+    fu_from_action: "from scheduled action",
+    fu_classify_within: "classify within 48h",
+    d_last_contacted: "Last contacted",
+    d_next_followup: "Next follow-up",
     // Calendar
     cal_prev: "Previous",
     cal_next: "Next",

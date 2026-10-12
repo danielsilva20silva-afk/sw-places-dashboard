@@ -5,6 +5,7 @@ import { t } from "../labels";
 import { eventTitle } from "../calendarUtils";
 import { relDate, buildMeetingPrefill } from "../utils";
 import { computeDedupe } from "../dedupe";
+import { computeFollowup } from "../followups";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
 import LeadDrawer from "../components/LeadDrawer";
@@ -47,6 +48,7 @@ export default function Dashboard({ onLogout }) {
   const dedupeOn = hasFeature("dedupe"); // false clients: zero dedupe UI / no link fetch
   const actionsOn = hasFeature("actions"); // false clients: no fetch, no actions UI
   const archiveOn = hasFeature("archive"); // false clients: no fetch, nothing archived
+  const followupsOn = hasFeature("followups"); // false clients: no Due-today panel / drawer fields
 
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -153,6 +155,38 @@ export default function Dashboard({ onLogout }) {
     }
     return { actionsView: view, actionItems: items };
   }, [actionsOn, actions, activeLeads]);
+
+  // Derived follow-up cadence (brandon only). For each active lead compute its
+  // follow-up state from notes/actions/creation/classification (nothing stored,
+  // no new fetch — reuses the actions already loaded). `followupsView` (id → state)
+  // feeds the drawer; `dueList` ([{lead, fu}], sorted) feeds the Due-today panel.
+  // Off clients: null/[] → zero new UI, no computation.
+  const { followupsView, dueList } = useMemo(() => {
+    if (!followupsOn) return { followupsView: null, dueList: [] };
+    const actionsByRawId = new Map();
+    for (const a of actions) {
+      const arr = actionsByRawId.get(String(a.lead_id)) || [];
+      arr.push(a); actionsByRawId.set(String(a.lead_id), arr);
+    }
+    const view = new Map();
+    const due = [];
+    for (const lead of activeLeads) {
+      const ids = [String(lead.id), ...(lead.mergedSecondaries || []).map((s) => String(s.lead.id))];
+      const acts = ids.flatMap((id) => actionsByRawId.get(id) || []);
+      const fu = computeFollowup(lead, acts);
+      view.set(String(lead.id), fu);
+      if (fu.isOverdue || fu.isDueToday) due.push({ lead, fu });
+    }
+    // Overdue first, then by classification A→B→C→(classify/none), then most overdue.
+    const classRank = (c) => (c === "A" ? 0 : c === "B" ? 1 : c === "C" ? 2 : 3);
+    due.sort((x, y) =>
+      (x.fu.isOverdue === y.fu.isOverdue ? 0 : x.fu.isOverdue ? -1 : 1) ||
+      (classRank(x.fu.classification) - classRank(y.fu.classification)) ||
+      (y.fu.daysOverdue - x.fu.daysOverdue) ||
+      ((x.fu.nextFollowUp || 0) - (y.fu.nextFollowUp || 0))
+    );
+    return { followupsView: view, dueList: due };
+  }, [followupsOn, actions, activeLeads]);
 
   // Upcoming Google Calendar events (next 30 days) for the notifications panel.
   // The full calendar lives on the Dashboard tab; this is just the heads-up feed.
@@ -565,6 +599,7 @@ export default function Dashboard({ onLogout }) {
                 onCalendarChanged={() => setCalReload(r => r + 1)}
                 actionsView={actionsView}
                 actionItems={actionItems}
+                dueList={dueList}
               />
             )}
 
@@ -607,6 +642,7 @@ export default function Dashboard({ onLogout }) {
             candidates={dedupeOn && candidatesByLead ? (candidatesByLead.get(id) || []) : []}
             onMerge={mergeLeads}
             onUnmerge={unmergeLink}
+            followup={followupsOn && followupsView ? (followupsView.get(id) || null) : null}
             leadActions={actionsOn && actionsView ? (actionsView.get(id)?.pending || []) : []}
             onActionCreate={(fields) => createAction({ lead_id: id, ...fields })}
             onActionEdit={editAction}

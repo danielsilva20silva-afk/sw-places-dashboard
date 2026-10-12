@@ -4,7 +4,7 @@ import { STATUSES, STATUS_CONFIG, CLASSIFICATION_CONFIG, calendarTriggerStatus, 
 import { branding, hasFeature } from "../config";
 import { suggestClassification } from "../suggestClassification";
 import { t } from "../labels";
-import { leadWhen, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab, sourceCampaignLabel } from "../utils";
+import { leadWhen, relDate, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab, sourceCampaignLabel } from "../utils";
 import { appendNote } from "../notesFormat";
 import Avatar from "./Avatar";
 import AnaToggle from "./AnaToggle";
@@ -29,7 +29,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, followup, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -221,6 +221,16 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
     editable
       ? <input {...bind(key, value, setter)} placeholder={placeholder} style={fieldInput} />
       : <div style={metaFieldStyle} title={fromForm ? t("cls_from_form") : t("d_no_column")}>{value || "—"}</div>;
+  // Follow-up cadence (brandon only; derived, read-only). Muted cadence line:
+  // override > classify-deadline > "{class} · every {n} days".
+  const followupsOn = hasFeature("followups");
+  const followupCadenceText = (fu) => {
+    if (!fu) return "";
+    if (fu.overridden) return t("fu_from_action");
+    if (fu.reason === "classify") return t("fu_classify_within");
+    if (fu.cadenceDays) return `${fu.classification} · ${t("fu_every")} ${fu.cadenceDays} ${t("fu_days")}`;
+    return "";
+  };
   const suggestOn = hasFeature("classSuggest");
   const suggestedClass = suggestOn ? suggestClassification(lead) : null;
   const handleArchive = async () => {
@@ -356,6 +366,24 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               )}
             </div>
           </div>
+          {/* Derived follow-up (brandon only; read-only, never stored/editable). */}
+          {followupsOn && followup && (
+            <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={fieldLabel}>{t("d_last_contacted")}</p>
+                <div style={{ ...fieldInput, background: "#FAFAF9", color: "#555" }}>
+                  {followup.lastContacted ? relDate(new Date(followup.lastContacted).toISOString()) : t("fu_none")}
+                </div>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={fieldLabel}>{t("d_next_followup")}</p>
+                <div style={{ ...fieldInput, background: "#FAFAF9", color: followup.isOverdue ? "#DC2626" : "#555" }}>
+                  {followup.nextFollowUp ? relDate(new Date(followup.nextFollowUp).toISOString()) : "—"}
+                </div>
+                <p style={{ fontSize: 10, color: "#AAA", margin: "4px 0 0" }}>{followupCadenceText(followup)}</p>
+              </div>
+            </div>
+          )}
           <div>
             <p style={{ fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px" }}>{t("d_status")}</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
