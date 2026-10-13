@@ -214,6 +214,7 @@ export default {
     fu_error: "Couldn't schedule. Please try again.",
     fu_upcoming_title: "Upcoming follow-ups",
     // Follow-up cadence (derived)
+    fu_today_panel_title: "Today",           // title of the single "Today" panel
     fu_due_today_title: "Due today",
     fu_empty: "No follow-ups due today.",
     fu_today: "today",
@@ -226,6 +227,12 @@ export default {
     fu_classify_within: "classify within 48h",
     fu_show_all: "Show all",                 // "Show all ({n})"
     fu_show_less: "Show less",
+    // No-answer one-click log + attempts + auto-downgrade
+    na_no_answer: "📞 No answer",
+    fu_attempts_title: "no-answer attempts",
+    fu_undo: "Undo",
+    fu_downgraded: "Moved to {to} after {n} no-answer attempts",            // toast
+    fu_downgrade_note: "Auto-moved to {to} after {n} no-answer attempts",   // stored note
     d_last_contacted: "Last contacted",
     d_next_followup: "Next follow-up",
     // Calendar

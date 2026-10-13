@@ -230,6 +230,7 @@ const DEFAULTS = {
   fu_error: "Não foi possível agendar. Tenta de novo.",
   fu_upcoming_title: "Próximos seguimentos",
   // ── Cadência de seguimento (derivada) ──
+  fu_today_panel_title: "Hoje",              // título do painel único "Today"
   fu_due_today_title: "Para hoje",
   fu_empty: "Nenhum seguimento para hoje.",
   fu_today: "hoje",
@@ -242,6 +243,12 @@ const DEFAULTS = {
   fu_classify_within: "classificar em 48h",
   fu_show_all: "Ver todos",                  // "Ver todos ({n})"
   fu_show_less: "Ver menos",
+  // No-answer one-click log + attempts + auto-downgrade
+  na_no_answer: "📞 Sem resposta",
+  fu_attempts_title: "tentativas sem resposta",
+  fu_undo: "Anular",
+  fu_downgraded: "Movido para {to} após {n} tentativas sem resposta",       // toast
+  fu_downgrade_note: "Movido automaticamente para {to} após {n} tentativas sem resposta", // stored note
   d_last_contacted: "Último contacto",
   d_next_followup: "Próximo seguimento",
 

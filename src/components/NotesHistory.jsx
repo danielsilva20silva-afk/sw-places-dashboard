@@ -18,7 +18,23 @@ const areaStyle = {
 };
 const linkBtn = { background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 600 };
 
-export default function NotesHistory({ value, onChange, busy }) {
+// Small "N of M" attempt dots for no-answer leads (brandon followup cadence).
+function AttemptDots({ attempts, threshold }) {
+  const total = Math.max(threshold || 0, attempts || 0);
+  if (!total) return null;
+  return (
+    <span title={`${attempts}${threshold ? ` / ${threshold}` : ""} ${t("fu_attempts_title")}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#92400E" }}>
+      <span style={{ display: "inline-flex", gap: 3 }}>
+        {Array.from({ length: total }).map((_, i) => (
+          <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i < attempts ? "#DC2626" : "#E5E7EB" }} />
+        ))}
+      </span>
+      <span style={{ fontWeight: 600 }}>{attempts}{threshold ? ` / ${threshold}` : ""}</span>
+    </span>
+  );
+}
+
+export default function NotesHistory({ value, onChange, busy, onNoAnswer, attemptsInfo, onNoteDeleted }) {
   const [draft, setDraft] = useState("");
   const [editingIndex, setEditingIndex] = useState(-1);
   const [editDraft, setEditDraft] = useState("");
@@ -42,8 +58,12 @@ export default function NotesHistory({ value, onChange, busy }) {
   const removeAt = (i) => {
     if (busy) return;
     if (!window.confirm(t("notes_delete_confirm"))) return;
+    const deleted = entries[i];
     if (editingIndex === i) cancelEdit();
     onChange(serializeNotes(deleteEntryAt(entries, i)));
+    // Let the parent react to a deleted entry (e.g. remove a paired attempt-action
+    // when the prefilled no-answer note is deleted). Optional → unused clients unaffected.
+    if (onNoteDeleted) onNoteDeleted(deleted);
   };
 
   const brand = branding.primaryColor || "#111";
@@ -61,19 +81,53 @@ export default function NotesHistory({ value, onChange, busy }) {
           rows={3}
           style={areaStyle}
         />
-        <button
-          type="button"
-          onClick={addNote}
-          disabled={busy || !draft.trim()}
-          style={{
-            alignSelf: "flex-start", background: brand, color: "white", border: "none",
-            borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600,
-            cursor: busy || !draft.trim() ? "not-allowed" : "pointer",
-            opacity: busy || !draft.trim() ? 0.5 : 1,
-          }}
-        >
-          {t("notes_add")}
-        </button>
+        {/* When the no-answer quick-log is wired (brandon followup cadence), the Add
+            button sits in a row with the "No answer" chip + attempt dots. Otherwise
+            the bare Add button renders EXACTLY as before (swplaces byte-identical). */}
+        {onNoAnswer ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={addNote}
+              disabled={busy || !draft.trim()}
+              style={{
+                background: brand, color: "white", border: "none",
+                borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600,
+                cursor: busy || !draft.trim() ? "not-allowed" : "pointer",
+                opacity: busy || !draft.trim() ? 0.5 : 1,
+              }}
+            >
+              {t("notes_add")}
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (!busy) onNoAnswer(); }}
+              disabled={busy}
+              style={{
+                background: "white", color: "#92400E", border: "1px solid #FDE68A",
+                borderRadius: 10, padding: "7px 12px", fontSize: 12, fontWeight: 600,
+                cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1,
+              }}
+            >
+              {t("na_no_answer")}
+            </button>
+            {attemptsInfo && <AttemptDots attempts={attemptsInfo.attempts || 0} threshold={attemptsInfo.threshold} />}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={addNote}
+            disabled={busy || !draft.trim()}
+            style={{
+              alignSelf: "flex-start", background: brand, color: "white", border: "none",
+              borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600,
+              cursor: busy || !draft.trim() ? "not-allowed" : "pointer",
+              opacity: busy || !draft.trim() ? 0.5 : 1,
+            }}
+          >
+            {t("notes_add")}
+          </button>
+        )}
       </div>
 
       {/* History (newest first) */}

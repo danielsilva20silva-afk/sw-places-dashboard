@@ -15,11 +15,13 @@ import ClassificationBadge from "../components/ClassificationBadge";
 import LeadRowMobile from "../components/LeadRowMobile";
 import DupBadge from "../components/DupBadge";
 import NextActionCell from "../components/NextActionCell";
-import ActionsCard from "../components/ActionsCard";
 import DueTodayCard from "../components/DueTodayCard";
 import useIsMobile from "../useIsMobile";
 
-export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, actionItems, dueList }) {
+// NOTE: the separate ActionsCard was removed from the brandon dashboard in favor
+// of the single "Today" panel (DueTodayCard). The component file is kept for any
+// client that still wants it; swplaces never rendered it (actions flag off).
+export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, dueList, onLogNoAnswer, onCompleteAction }) {
   const isMobile = useIsMobile();
   const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   // Hide contact-less "DM · ANA" entries (reel-flow / logged DMs) from the leads
@@ -54,13 +56,12 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
 
   return (
     <>
-      {/* Due today — derived follow-up cadence (brandon only; gated on
-          followupCadence). Off clients render nothing (swplaces unaffected). */}
-      {hasFeature("followupCadence") && <DueTodayCard items={dueList || []} onOpenLead={onOpenLead} />}
-
-      {/* Next actions — Today / Overdue (loud) + upcoming count. Only when the
-          feature is on; when off this renders nothing (swplaces unaffected). */}
-      {hasFeature("actions") && <ActionsCard items={actionItems || []} onOpenLead={onOpenLead} />}
+      {/* Single "Today" panel — derived cadence follow-ups + scheduled actions
+          (brandon only; gated on followupCadence). Replaces the old Actions card.
+          Off clients render nothing (swplaces unaffected). */}
+      {hasFeature("followupCadence") && (
+        <DueTodayCard items={dueList || []} onOpenLead={onOpenLead} onLogNoAnswer={onLogNoAnswer} onCompleteAction={onCompleteAction} />
+      )}
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>

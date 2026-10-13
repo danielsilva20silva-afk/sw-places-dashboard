@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { STATUSES, STATUS_CONFIG, CLASSIFICATION_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { suggestClassification } from "../suggestClassification";
+import { NO_ANSWER_STATUS, PREFILLED_NO_ANSWER_NOTE } from "../followups";
 import { t } from "../labels";
 import { leadWhen, relDate, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab, sourceCampaignLabel } from "../utils";
 import { appendNote } from "../notesFormat";
@@ -29,7 +30,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, followup, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, followup, onLogNoAnswer, onDeleteAttempt, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -231,6 +232,29 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
     if (fu.cadenceDays) return `${fu.classification} · ${t("fu_every")} ${fu.cadenceDays} ${t("fu_days")}`;
     return "";
   };
+  // Keep the notes field in sync when the lead's manual_notes changes from OUTSIDE
+  // the drawer (the one-click "No answer" log / an auto-downgrade note) so history
+  // refreshes immediately without reopening. Gated on the cadence feature so other
+  // clients' drawer behaviour is unchanged; safe because notes are committed
+  // atomically here (NotesHistory), never typed char-by-char.
+  useEffect(() => {
+    if (!followupCadenceOn) return;
+    const v = lead.manual_notes || "";
+    setManualNotes(v);
+    fieldsRef.current.manual_notes = v;
+    savedRef.current.manual_notes = v;
+  }, [lead.manual_notes, followupCadenceOn]);
+
+  // Same for classification: an auto-downgrade (or its Undo) changes the lead's
+  // class from OUTSIDE the drawer, so re-sync the local pills live — same render,
+  // no reopen — exactly as if the user had picked the pill. (The attempt dots come
+  // straight from the `followup` prop, so they already reset to the new chain when
+  // it recomputes.) Idempotent for the user's own pick (prop settles to the same).
+  useEffect(() => {
+    if (!followupCadenceOn) return;
+    setClassification(lead.classification || "");
+  }, [lead.classification, followupCadenceOn]);
+
   const suggestOn = hasFeature("classSuggest");
   const suggestedClass = suggestOn ? suggestClassification(lead) : null;
   const handleArchive = async () => {
@@ -429,7 +453,9 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               <ClassificationSelect value={classification} onChange={pickClassification} />
             </div>
           )}
-          {hasFeature("followups") && <FollowUpScheduler lead={lead} />}
+          {/* Legacy "Schedule follow-up" — removed for brandon (followupCadence on);
+              "Next action" is the only way to schedule now. Other clients keep it. */}
+          {hasFeature("followups") && !followupCadenceOn && <FollowUpScheduler lead={lead} />}
           {/* Form answers / summary. Merged → grouped per record; else the single summary. */}
           {isMerged ? (
             answerRecords.length > 0 && (
@@ -466,7 +492,14 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               busy={save === "saving"}
             />
           ) : (
-            <NotesHistory value={manualNotes} onChange={commitNotes} busy={save === "saving"} />
+            <NotesHistory
+              value={manualNotes}
+              onChange={commitNotes}
+              busy={save === "saving"}
+              onNoAnswer={followupCadenceOn && onLogNoAnswer ? () => onLogNoAnswer(lead.id) : undefined}
+              attemptsInfo={followupCadenceOn && followup && lead.status === NO_ANSWER_STATUS ? { attempts: followup.attempts, threshold: followup.attemptThreshold } : null}
+              onNoteDeleted={followupCadenceOn && onDeleteAttempt ? (entry) => { if (entry && entry.dated && entry.text === PREFILLED_NO_ANSWER_NOTE) onDeleteAttempt(lead.id, entry.stamp); } : undefined}
+            />
           )}
           {sourceOk && (
             <div>
