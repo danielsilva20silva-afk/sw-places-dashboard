@@ -32,7 +32,7 @@ const chipStyleFor = (ev) => ev.allDay
   : (ev.readOnly ? chipTimedSecondary : chipTimed);
 const accentFor = (ev) => (ev.readOnly ? GRAY : GOLD);
 
-export default function CalendarView({ refreshKey = 0, onChanged }) {
+export default function CalendarView({ refreshKey = 0, onChanged, extraEvents }) {
   const isMobile = useIsMobile();
   const [view, setView] = useState("month"); // month | week (week is desktop-only)
   const [anchor, setAnchor] = useState(() => new Date());
@@ -67,19 +67,30 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
     return () => { alive = false; };
   }, [range.start, range.end, refreshKey, localReload]);
 
+  // Fetched Google events + any derived events passed in (brandon: pending next
+  // actions rendered as calendar events). Merged for display only — the fetch
+  // effect still owns `events`. No duplication: derived events carry their own ids.
+  const allEvents = useMemo(
+    () => (extraEvents && extraEvents.length ? [...events, ...extraEvents] : events),
+    [events, extraEvents],
+  );
+
   const byDay = useMemo(() => {
     const m = {};
-    for (const ev of events) { (m[eventDayKey(ev)] ||= []).push(ev); }
+    for (const ev of allEvents) { (m[eventDayKey(ev)] ||= []).push(ev); }
     for (const k in m) {
       m[k].sort((a, b) => (a.allDay === b.allDay ? 0 : a.allDay ? -1 : 1) ||
         (a.allDay ? 0 : new Date(a.start) - new Date(b.start)));
     }
     return m;
-  }, [events]);
+  }, [allEvents]);
 
   // Any create/update/delete refreshes the grid (localReload) AND notifies the
   // parent (onChanged) so the Dashboard notifications refetch too.
   const refetch = () => { setModal(null); setLocalReload((r) => r + 1); onChanged?.(); };
+  // Derived events (pending next actions) are display-only — they aren't real
+  // calendar events, so clicking one never opens the edit/delete modal.
+  const openEvent = (ev) => { if (!ev.derived) setModal({ event: ev }); };
   const goToday = () => { setAnchor(new Date()); setSelectedDay(ymd(new Date())); };
   const step = (dir) => setAnchor((a) => (effView === "week" ? addDays(startOfWeekMon(a), dir * 7) : addMonths(a, dir)));
 
@@ -126,7 +137,7 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
 
       {firstLoad && refreshing ? (
         <div style={{ padding: "60px 0", textAlign: "center", color: "#999", fontSize: 14 }}>{t("cal_loading")}</div>
-      ) : error && events.length === 0 ? (
+      ) : error && allEvents.length === 0 ? (
         <div style={{ background: "#FFF1F2", border: "1px solid #FECDD3", color: "#BE123C", borderRadius: 12, padding: "14px 16px", fontSize: 13 }}>
           {t("cal_not_connected")}
         </div>
@@ -143,11 +154,11 @@ export default function CalendarView({ refreshKey = 0, onChanged }) {
           </div>
         )}
         {isMobile ? (
-        <MobileMonth anchor={anchor} byDay={byDay} todayKey={todayKey} selectedDay={selectedDay} setSelectedDay={setSelectedDay} onEvent={(ev) => setModal({ event: ev })} onCreate={(d) => setModal({ prefillDate: d })} />
+        <MobileMonth anchor={anchor} byDay={byDay} todayKey={todayKey} selectedDay={selectedDay} setSelectedDay={setSelectedDay} onEvent={openEvent} onCreate={(d) => setModal({ prefillDate: d })} />
       ) : effView === "week" ? (
-        <WeekGrid anchor={anchor} byDay={byDay} todayKey={todayKey} onEvent={(ev) => setModal({ event: ev })} onCreate={(d) => setModal({ prefillDate: d })} />
+        <WeekGrid anchor={anchor} byDay={byDay} todayKey={todayKey} onEvent={openEvent} onCreate={(d) => setModal({ prefillDate: d })} />
       ) : (
-        <MonthGrid anchor={anchor} byDay={byDay} todayKey={todayKey} onEvent={(ev) => setModal({ event: ev })} onCreate={(d) => setModal({ prefillDate: d })} />
+        <MonthGrid anchor={anchor} byDay={byDay} todayKey={todayKey} onEvent={openEvent} onCreate={(d) => setModal({ prefillDate: d })} />
       )}
       </>
       )}

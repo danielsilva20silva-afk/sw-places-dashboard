@@ -21,7 +21,7 @@ import useIsMobile from "../useIsMobile";
 // NOTE: the separate ActionsCard was removed from the brandon dashboard in favor
 // of the single "Today" panel (DueTodayCard). The component file is kept for any
 // client that still wants it; swplaces never rendered it (actions flag off).
-export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, dueList, onLogNoAnswer, onCompleteAction }) {
+export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, dueList, onLogNoAnswer, onCompleteAction, calendarActionEvents }) {
   const isMobile = useIsMobile();
   const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   // Hide contact-less "DM · ANA" entries (reel-flow / logged DMs) from the leads
@@ -124,7 +124,7 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
       {/* Calendar (Google Calendar) — only for clients with the calendar feature */}
       {hasFeature("calendar") && (
         <div style={{ marginBottom: 20 }}>
-          <CalendarView refreshKey={calRefreshKey} onChanged={onCalendarChanged} />
+          <CalendarView refreshKey={calRefreshKey} onChanged={onCalendarChanged} extraEvents={calendarActionEvents} />
         </div>
       )}
 

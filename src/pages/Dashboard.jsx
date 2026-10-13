@@ -141,7 +141,7 @@ export default function Dashboard({ onLogout }) {
       const arr = pendingByRawId.get(String(a.lead_id)) || [];
       arr.push(a); pendingByRawId.set(String(a.lead_id), arr);
     }
-    const byDue = (x, y) => new Date(x.due_at) - new Date(y.due_at);
+    const byDue = (x, y) => compareActions(x, y); // shared order: due_at, then created_at, id
     const view = new Map();
     const leadByAnyId = new Map();
     // Built over ACTIVE leads only, so an archived lead's pending actions vanish
@@ -201,6 +201,40 @@ export default function Dashboard({ onLogout }) {
     });
     return { followupsView: view, dueList: due };
   }, [followupCadenceOn, actions, activeLeads]);
+
+  // Pending next actions rendered as dashboard-calendar events (brandon). Derived
+  // at render time from the already-loaded actions — no new storage/fetch. Each
+  // pending action (with a due date, joined to an active, non-archived lead) becomes
+  // exactly one timed event; completed/deleted actions and archived leads drop out.
+  // `calendar_event_id` (if ever set) means a real calendar event already exists →
+  // skip to avoid duplicating. Shown once; derived events are display-only.
+  const calendarActionEvents = useMemo(() => {
+    if (!followupCadenceOn || !calendarOn) return [];
+    const leadByAnyId = new Map();
+    for (const lead of activeLeads) {
+      leadByAnyId.set(String(lead.id), lead);
+      for (const s of (lead.mergedSecondaries || [])) leadByAnyId.set(String(s.lead.id), lead);
+    }
+    const evs = [];
+    for (const a of actions) {
+      if (!a || a.done || !a.due_at || a.calendar_event_id) continue;
+      const lead = leadByAnyId.get(String(a.lead_id));
+      if (!lead) continue;
+      const start = new Date(a.due_at);
+      if (isNaN(start.getTime())) continue;
+      const name = lead.name || lead.email || "—";
+      evs.push({
+        id: `na:${a.id}`,
+        title: `${name} — ${a.title}`,
+        start: start.toISOString(),
+        end: new Date(start.getTime() + 30 * 60000).toISOString(),
+        allDay: false,
+        readOnly: false,
+        derived: true,
+      });
+    }
+    return evs;
+  }, [followupCadenceOn, calendarOn, actions, activeLeads]);
 
   // Upcoming Google Calendar events (next 30 days) for the notifications panel.
   // The full calendar lives on the Dashboard tab; this is just the heads-up feed.
@@ -697,6 +731,7 @@ export default function Dashboard({ onLogout }) {
                 dueList={dueList}
                 onLogNoAnswer={logNoAnswer}
                 onCompleteAction={completeAction}
+                calendarActionEvents={calendarActionEvents}
               />
             )}
 
