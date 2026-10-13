@@ -232,7 +232,9 @@ async function handleGreetings(req, res, supabase) {
 //   PATCH  → edit / complete (done=true stamps done_at) / reopen (clears it)
 //   DELETE → remove
 const ACTIONS_TABLE = "lead_actions";
-const ACTION_COLS = "id, lead_id, title, description, due_at, done, done_at, created_at";
+// NOTE: calendar_event_id requires `alter table lead_actions add column
+// calendar_event_id text;` to have been run — the SELECT below fails otherwise.
+const ACTION_COLS = "id, lead_id, title, description, due_at, done, done_at, created_at, calendar_event_id";
 
 function actionColumns(b, { forInsert } = {}) {
   const cols = {};
@@ -240,6 +242,8 @@ function actionColumns(b, { forInsert } = {}) {
   if (b.title !== undefined) cols.title = s(b.title).trim();
   if (b.description !== undefined) cols.description = s(b.description);
   if (b.due_at !== undefined) cols.due_at = s(b.due_at).trim();
+  // Google Calendar event id for actions mirrored to the calendar; "" clears it.
+  if (b.calendar_event_id !== undefined) { const v = s(b.calendar_event_id).trim(); cols.calendar_event_id = v || null; }
   if (b.done !== undefined) {
     cols.done = !!b.done;
     cols.done_at = b.done ? new Date().toISOString() : null; // stamp/clear on toggle

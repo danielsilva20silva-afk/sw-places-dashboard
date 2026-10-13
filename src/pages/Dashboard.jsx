@@ -141,7 +141,7 @@ export default function Dashboard({ onLogout }) {
       const arr = pendingByRawId.get(String(a.lead_id)) || [];
       arr.push(a); pendingByRawId.set(String(a.lead_id), arr);
     }
-    const byDue = (x, y) => new Date(x.due_at) - new Date(y.due_at);
+    const byDue = (x, y) => compareActions(x, y); // shared order: due_at, then created_at, id
     const view = new Map();
     const leadByAnyId = new Map();
     // Built over ACTIVE leads only, so an archived lead's pending actions vanish
@@ -201,6 +201,40 @@ export default function Dashboard({ onLogout }) {
     });
     return { followupsView: view, dueList: due };
   }, [followupCadenceOn, actions, activeLeads]);
+
+  // Pending next actions rendered as dashboard-calendar events (brandon). Derived
+  // at render time from the already-loaded actions — no new storage/fetch. Each
+  // pending action (with a due date, joined to an active, non-archived lead) becomes
+  // exactly one timed event; completed/deleted actions and archived leads drop out.
+  // `calendar_event_id` (if ever set) means a real calendar event already exists →
+  // skip to avoid duplicating. Shown once; derived events are display-only.
+  const calendarActionEvents = useMemo(() => {
+    if (!followupCadenceOn || !calendarOn) return [];
+    const leadByAnyId = new Map();
+    for (const lead of activeLeads) {
+      leadByAnyId.set(String(lead.id), lead);
+      for (const s of (lead.mergedSecondaries || [])) leadByAnyId.set(String(s.lead.id), lead);
+    }
+    const evs = [];
+    for (const a of actions) {
+      if (!a || a.done || !a.due_at || a.calendar_event_id) continue;
+      const lead = leadByAnyId.get(String(a.lead_id));
+      if (!lead) continue;
+      const start = new Date(a.due_at);
+      if (isNaN(start.getTime())) continue;
+      const name = lead.name || lead.email || "—";
+      evs.push({
+        id: `na:${a.id}`,
+        title: `${name} — ${a.title}`,
+        start: start.toISOString(),
+        end: new Date(start.getTime() + 30 * 60000).toISOString(),
+        allDay: false,
+        readOnly: false,
+        derived: true,
+      });
+    }
+    return evs;
+  }, [followupCadenceOn, calendarOn, actions, activeLeads]);
 
   // Upcoming Google Calendar events (next 30 days) for the notifications panel.
   // The full calendar lives on the Dashboard tab; this is just the heads-up feed.
@@ -341,10 +375,48 @@ export default function Dashboard({ onLogout }) {
   };
 
   // ── Lead actions (next-action tracking) ──
+  // Convert an action's stored UTC due_at into the naive Europe/Lisbon wall-clock
+  // the follow-ups endpoint expects ("YYYY-MM-DDTHH:mm"), so the Google event lands
+  // at the same wall-clock the user picked, regardless of server TZ.
+  const lisbonNaive = (iso) => {
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(iso));
+    const g = (k) => parts.find((p) => p.type === k)?.value || "";
+    let hh = g("hour"); if (hh === "24") hh = "00";
+    return `${g("year")}-${g("month")}-${g("day")}T${hh}:${g("minute")}`;
+  };
+  const leadForEvent = (leadId) =>
+    (dedupeOn && enrichedById && enrichedById.get(String(leadId))) ||
+    leads.find((l) => String(l.id) === String(leadId)) || null;
+  // Attempt + downgrade marker actions must NEVER get a calendar event.
+  const isSystemAction = (title) => title === ATTEMPT_TITLE || String(title || "").startsWith(DOWNGRADE_TITLE);
+
   const createAction = async (payload) => {
     try {
       const a = await api.createAction(payload);
       setActions(xs => [...xs, a]);
+      // Best-effort: mirror a user-created scheduled action to Google Calendar, like
+      // the legacy scheduler did (reuses /api/follow-ups). Store the event id so the
+      // derived dashboard event skips it (no double-show). Never blocks the action.
+      if (followupCadenceOn && calendarOn && a && a.id && a.due_at && !a.done && !isSystemAction(a.title)) {
+        try {
+          const lead = leadForEvent(a.lead_id);
+          const name = lead ? (lead.name || lead.email || "Lead") : "Lead";
+          const ev = await api.scheduleFollowUp({
+            summary: `${name} — ${a.title}`,
+            leadId: String(a.lead_id || ""),
+            name,
+            phone: lead?.phone || "",
+            email: lead?.email || "",
+            datetime: lisbonNaive(a.due_at),
+            note: a.description || "",
+          });
+          if (ev?.id) {
+            const updated = await api.updateAction(a.id, { calendar_event_id: String(ev.id) });
+            setActions(xs => xs.map(x => String(x.id) === String(a.id) ? (updated?.id ? updated : { ...x, calendar_event_id: String(ev.id) }) : x));
+          }
+          setCalReload(r => r + 1);
+        } catch (e) { console.warn("next-action calendar event failed (action saved anyway):", e?.message || e); }
+      }
       return { ok: true };
     } catch (e) { return { ok: false, error: e?.message || "erro" }; }
   };
@@ -355,11 +427,22 @@ export default function Dashboard({ onLogout }) {
       return { ok: true };
     } catch (e) { return { ok: false, error: e?.message || "erro" }; }
   };
+  // Delete an action's linked Google event, best-effort (ignore if already gone).
+  const deleteLinkedEvent = (action) => {
+    if (action && action.calendar_event_id && calendarOn) {
+      api.deleteEvent(action.calendar_event_id).then(() => setCalReload(r => r + 1)).catch((e) => console.warn("calendar event delete failed:", e?.message || e));
+    }
+  };
   // Mark done (the drawer also appends a "✓ {title}" entry to the notes history).
-  const completeAction = async (id) => editAction(id, { done: true });
+  // Completing removes the mirrored calendar event (the touch is done).
+  const completeAction = async (id) => {
+    deleteLinkedEvent(actions.find(x => String(x.id) === String(id)));
+    return editAction(id, { done: true });
+  };
   const removeAction = async (id) => {
     if (!window.confirm(t("na_delete_confirm"))) return { ok: false };
     try {
+      deleteLinkedEvent(actions.find(x => String(x.id) === String(id)));
       await api.deleteAction(id);
       setActions(xs => xs.filter(x => String(x.id) !== String(id)));
       return { ok: true };
@@ -697,6 +780,7 @@ export default function Dashboard({ onLogout }) {
                 dueList={dueList}
                 onLogNoAnswer={logNoAnswer}
                 onCompleteAction={completeAction}
+                calendarActionEvents={calendarActionEvents}
               />
             )}
 
