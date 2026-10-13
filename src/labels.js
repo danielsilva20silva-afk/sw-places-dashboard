@@ -229,6 +229,21 @@ const DEFAULTS = {
   fu_success_prefix: "Seguimento agendado para", // "… {data}"
   fu_error: "Não foi possível agendar. Tenta de novo.",
   fu_upcoming_title: "Próximos seguimentos",
+  // ── Cadência de seguimento (derivada) ──
+  fu_due_today_title: "Para hoje",
+  fu_empty: "Nenhum seguimento para hoje.",
+  fu_today: "hoje",
+  fu_overdue_suffix: "em atraso",            // "{n}d em atraso"
+  fu_classify: "classificar",
+  fu_none: "Sem contacto",
+  fu_every: "a cada",                        // "{classe} · a cada {n} dias"
+  fu_days: "dias",
+  fu_from_action: "de ação agendada",
+  fu_classify_within: "classificar em 48h",
+  fu_show_all: "Ver todos",                  // "Ver todos ({n})"
+  fu_show_less: "Ver menos",
+  d_last_contacted: "Último contacto",
+  d_next_followup: "Próximo seguimento",
 
   // ── Calendar (CalendarView / EventModal / DateTimePicker) ──
   cal_prev: "Anterior",

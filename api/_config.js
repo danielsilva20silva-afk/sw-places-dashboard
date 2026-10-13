@@ -5,7 +5,7 @@
 const CLIENT = process.env.CLIENT || "swplaces";
 
 const CONFIGS = {
-  swplaces: { dataSource: "sheets", followups: false, dedupe: false, templates: false, actions: false, archive: false, classSuggest: false, notifications: true },
+  swplaces: { dataSource: "sheets", followups: false, dedupe: false, templates: false, actions: false, archive: false, classSuggest: false, followupCadence: false, notifications: true },
   // Brandon merges two lead sources: Supabase (landing page) is primary; the
   // Meta Ads Instant Forms Google Sheet is secondary. Order matters — the first
   // source is the primary (owns addLead). See api/_adapters/composite.js.
@@ -21,7 +21,10 @@ const CONFIGS = {
   // answer (the Meta adapter maps Area/Intent unconditionally; this flag just
   // gates the suggestion UI so other clients stay untouched). Kept here too so
   // both config systems declare it.
-  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true, dedupe: true, templates: true, actions: true, archive: true, classSuggest: true, notifications: false },
+  // followupCadence: frontend-only — derived follow-up cadence engine + "Due today"
+  // panel (src/followups.js). Separate from `followups` (legacy calendar scheduler)
+  // so the two toggle independently; when on, it also hides the legacy Upcoming card.
+  brandon: { dataSource: "composite", sources: ["supabase", "metaLeadsSheet"], followups: true, dedupe: true, templates: true, actions: true, archive: true, classSuggest: true, followupCadence: true, notifications: false },
 };
 
 const serverConfig = CONFIGS[CLIENT];

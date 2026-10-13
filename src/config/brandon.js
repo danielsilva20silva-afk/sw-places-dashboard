@@ -213,6 +213,21 @@ export default {
     fu_success_prefix: "Follow-up scheduled for",
     fu_error: "Couldn't schedule. Please try again.",
     fu_upcoming_title: "Upcoming follow-ups",
+    // Follow-up cadence (derived)
+    fu_due_today_title: "Due today",
+    fu_empty: "No follow-ups due today.",
+    fu_today: "today",
+    fu_overdue_suffix: "overdue",            // "{n}d overdue"
+    fu_classify: "classify",
+    fu_none: "No contact yet",
+    fu_every: "every",                       // "{class} · every {n} days"
+    fu_days: "days",
+    fu_from_action: "from scheduled action",
+    fu_classify_within: "classify within 48h",
+    fu_show_all: "Show all",                 // "Show all ({n})"
+    fu_show_less: "Show less",
+    d_last_contacted: "Last contacted",
+    d_next_followup: "Next follow-up",
     // Calendar
     cal_prev: "Previous",
     cal_next: "Next",
@@ -373,6 +388,7 @@ export default {
     actions: true,      // per-lead next-action tracking (api/brandon-store.js?resource=actions)
     archive: true,      // archive leads / hide-without-delete (api/brandon-store.js?resource=archive)
     classSuggest: true, // suggested A/B/C from the Meta form's Intent answer (suggest, never auto-assign)
+    followupCadence: true, // derived follow-up cadence engine + "Due today" panel (src/followups.js)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour

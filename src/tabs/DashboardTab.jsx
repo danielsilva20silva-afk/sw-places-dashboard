@@ -16,9 +16,10 @@ import LeadRowMobile from "../components/LeadRowMobile";
 import DupBadge from "../components/DupBadge";
 import NextActionCell from "../components/NextActionCell";
 import ActionsCard from "../components/ActionsCard";
+import DueTodayCard from "../components/DueTodayCard";
 import useIsMobile from "../useIsMobile";
 
-export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, actionItems }) {
+export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, actionItems, dueList }) {
   const isMobile = useIsMobile();
   const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   // Hide contact-less "DM · ANA" entries (reel-flow / logged DMs) from the leads
@@ -30,7 +31,9 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
   // getFollowUps returns [] on any failure, so the card just stays hidden.
   const [followUps, setFollowUps] = useState([]);
   useEffect(() => {
-    if (!hasFeature("followups")) return;
+    // Skip entirely when the cadence engine is on — its "Due today" panel replaces
+    // this card, so there's no point fetching the calendar events.
+    if (!hasFeature("followups") || hasFeature("followupCadence")) return;
     let active = true;
     getFollowUps().then((data) => { if (active) setFollowUps(Array.isArray(data) ? data : []); });
     return () => { active = false; };
@@ -51,6 +54,10 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
 
   return (
     <>
+      {/* Due today — derived follow-up cadence (brandon only; gated on
+          followupCadence). Off clients render nothing (swplaces unaffected). */}
+      {hasFeature("followupCadence") && <DueTodayCard items={dueList || []} onOpenLead={onOpenLead} />}
+
       {/* Next actions — Today / Overdue (loud) + upcoming count. Only when the
           feature is on; when off this renders nothing (swplaces unaffected). */}
       {hasFeature("actions") && <ActionsCard items={actionItems || []} onOpenLead={onOpenLead} />}
@@ -85,8 +92,10 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
         </div>
       </div>
 
-      {/* Upcoming follow-ups (Google Calendar) — hidden when off or empty */}
-      {hasFeature("followups") && followUps.length > 0 && (
+      {/* Upcoming follow-ups (Google Calendar) — hidden when off or empty, and
+          suppressed entirely when the cadence engine's "Due today" panel is active
+          (one follow-up panel only). The component/flag are left intact. */}
+      {hasFeature("followups") && !hasFeature("followupCadence") && followUps.length > 0 && (
         <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB", marginBottom: 20 }}>
           <div style={{ padding: "16px 20px 12px", borderBottom: "1px solid #F0F0F0" }}>
             <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>{t("fu_upcoming_title")}</p>
