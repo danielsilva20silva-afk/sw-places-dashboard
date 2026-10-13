@@ -26,6 +26,10 @@ export const NO_ANSWER_STATUS = "Contacted — no answer";
 // derived from attempt ACTIONS, never from note text.
 export const ATTEMPT_TITLE = "📞 No-answer attempt";
 export const PREFILLED_NO_ANSWER_NOTE = "Tried calling, no answer";
+// A completed action with this title (prefix) is the STRUCTURED downgrade marker
+// that anchors the attempts counter — independent of the human-readable journal
+// note (which stays, but the counter never reads note text for the anchor).
+export const DOWNGRADE_TITLE = "⤵️ Auto-downgrade";
 
 // Auto-downgrade thresholds: classification A moves to B on the 4th no-answer
 // attempt since the last real contact; B moves to C on the 3rd. C is terminal for
@@ -90,26 +94,42 @@ function creationMs(lead) {
   return toMs(lead && lead.created_at) ?? toMs(lead && lead.date);
 }
 
-// Attempts since the last REAL contact. Real contact = a manual notes entry whose
-// text is NOT the prefilled no-answer note, OR a completed action that is NOT an
-// attempt (a normal completed action, or the downgrade log). Attempts = completed
-// attempt-actions dated after that anchor. Derived from actions, never note text.
+// Strict total order over events by (ms, then id) so same-minute collisions are
+// deterministic: an attempt logged right after a downgrade (its id sorts after the
+// downgrade's) counts toward the NEW chain, while the triggering attempt (logged
+// just before the downgrade) does not.
+function keyCmp(a, b) {
+  if (a.ms !== b.ms) return a.ms - b.ms;
+  return String(a.id).localeCompare(String(b.id));
+}
+
+// Attempts since the last REAL contact, anchored on STRUCTURED markers (never note
+// text). The anchor is the latest of: a manual notes entry that is NOT the
+// prefilled no-answer note; a completed action that is NOT an attempt (a normal
+// completed action, OR the structured downgrade action). Attempts = completed
+// attempt-actions ordered strictly after that anchor.
+//
+// The downgrade NOTE is journal-only: the downgrade ACTION shares its minute but
+// carries an id and (seconds-precision) timestamp, so it always dominates the
+// note as the anchor — deleting the note never changes the counter.
 export function attemptStats(lead, actions = [], cls = (lead && lead.classification) || "") {
   const list = Array.isArray(actions) ? actions : [];
-  let resetMs = -Infinity;
+  let anchor = { ms: -Infinity, id: "" };
+  const bump = (k) => { if (keyCmp(k, anchor) > 0) anchor = k; };
   for (const e of datedNoteEntries(lead && lead.manual_notes)) {
-    if (e.text && e.text !== PREFILLED_NO_ANSWER_NOTE && e.ms > resetMs) resetMs = e.ms;
+    if (e.text && e.text !== PREFILLED_NO_ANSWER_NOTE) bump({ ms: e.ms, id: "" });
   }
-  const attemptTimes = [];
+  const attempts = [];
   for (const a of list) {
     if (!a || !a.done) continue;
     const ms = toMs(a.done_at) ?? toMs(a.created_at);
     if (ms == null) continue;
-    if ((a.title || "") === ATTEMPT_TITLE) attemptTimes.push(ms);
-    else if (ms > resetMs) resetMs = ms; // completed non-attempt action = real contact
+    const key = { ms, id: String(a.id ?? "") };
+    if ((a.title || "") === ATTEMPT_TITLE) attempts.push(key);
+    else bump(key); // completed non-attempt action (incl the downgrade action) = anchor
   }
-  const attempts = attemptTimes.filter((ms) => ms > resetMs).length;
-  return { attempts, threshold: DOWNGRADE_THRESHOLD[cls] || null };
+  const count = attempts.filter((k) => keyCmp(k, anchor) > 0).length;
+  return { attempts: count, threshold: DOWNGRADE_THRESHOLD[cls] || null };
 }
 
 // computeFollowup(lead, actions, opts?) → { lastContacted, nextFollowUp, isOverdue,

@@ -34,7 +34,7 @@ function AttemptDots({ attempts, threshold }) {
   );
 }
 
-export default function NotesHistory({ value, onChange, busy, onNoAnswer, attemptsInfo }) {
+export default function NotesHistory({ value, onChange, busy, onNoAnswer, attemptsInfo, onNoteDeleted }) {
   const [draft, setDraft] = useState("");
   const [editingIndex, setEditingIndex] = useState(-1);
   const [editDraft, setEditDraft] = useState("");
@@ -58,8 +58,12 @@ export default function NotesHistory({ value, onChange, busy, onNoAnswer, attemp
   const removeAt = (i) => {
     if (busy) return;
     if (!window.confirm(t("notes_delete_confirm"))) return;
+    const deleted = entries[i];
     if (editingIndex === i) cancelEdit();
     onChange(serializeNotes(deleteEntryAt(entries, i)));
+    // Let the parent react to a deleted entry (e.g. remove a paired attempt-action
+    // when the prefilled no-answer note is deleted). Optional → unused clients unaffected.
+    if (onNoteDeleted) onNoteDeleted(deleted);
   };
 
   const brand = branding.primaryColor || "#111";

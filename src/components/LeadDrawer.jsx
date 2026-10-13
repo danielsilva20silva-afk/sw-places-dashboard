@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { STATUSES, STATUS_CONFIG, CLASSIFICATION_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { suggestClassification } from "../suggestClassification";
-import { NO_ANSWER_STATUS } from "../followups";
+import { NO_ANSWER_STATUS, PREFILLED_NO_ANSWER_NOTE } from "../followups";
 import { t } from "../labels";
 import { leadWhen, relDate, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab, sourceCampaignLabel } from "../utils";
 import { appendNote } from "../notesFormat";
@@ -30,7 +30,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, followup, onLogNoAnswer, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, followup, onLogNoAnswer, onDeleteAttempt, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -488,6 +488,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               busy={save === "saving"}
               onNoAnswer={followupCadenceOn && onLogNoAnswer ? () => onLogNoAnswer(lead.id) : undefined}
               attemptsInfo={followupCadenceOn && followup && lead.status === NO_ANSWER_STATUS ? { attempts: followup.attempts, threshold: followup.attemptThreshold } : null}
+              onNoteDeleted={followupCadenceOn && onDeleteAttempt ? (entry) => { if (entry && entry.dated && entry.text === PREFILLED_NO_ANSWER_NOTE) onDeleteAttempt(lead.id, entry.stamp); } : undefined}
             />
           )}
           {sourceOk && (

@@ -1,6 +1,6 @@
 // Unit tests for the follow-up cadence engine. Run: node src/followups.test.mjs
 import assert from "node:assert/strict";
-import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS } from "./followups.js";
+import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS } from "./followups.js";
 import { compareActions } from "./actions.js";
 
 const DAY = 86400000;
@@ -266,6 +266,49 @@ const attempt = (ms) => ({ done: true, title: ATTEMPT_TITLE, done_at: new Date(m
   assert.equal(fu.attempts, 3);
   assert.equal(fu.attemptThreshold, 4);
   ok("downgrade target/threshold + computeFollowup surfaces attempts");
+}
+
+// ── Deletable attempts + structured downgrade anchor ──
+const att = (ms, id) => ({ done: true, title: ATTEMPT_TITLE, done_at: new Date(ms).toISOString(), id });
+const dgAct = (ms, id) => ({ done: true, title: `${DOWNGRADE_TITLE} → B`, done_at: new Date(ms).toISOString(), id });
+{
+  // Counter decreases when an attempt is deleted (deletion = removing it from the list).
+  const lead = { classification: "A", status: NO_ANSWER_STATUS, manual_notes: "[01/10/2026 09:00] call back" };
+  const three = [att(Date.UTC(2026, 9, 2), "a1"), att(Date.UTC(2026, 9, 3), "a2"), att(Date.UTC(2026, 9, 4), "a3")];
+  assert.equal(attemptStats(lead, three).attempts, 3);
+  assert.equal(attemptStats(lead, three.filter(a => a.id !== "a3")).attempts, 2, "deleting an attempt decreases the counter");
+  ok("deletable attempts: counter decreases when an attempt is removed");
+}
+{
+  // Colliding timestamps: tie-break by id. Same ms for the triggering attempt, the
+  // downgrade action and the next attempt. 'a1' < 'm' (not counted, old chain);
+  // 'z1' > 'm' (counted, new chain) → attempts = 1.
+  const ms = Date.UTC(2026, 9, 6, 14, 30, 0);
+  const lead = { classification: "B", status: NO_ANSWER_STATUS, manual_notes: "" };
+  const acts = [att(ms, "a1"), dgAct(ms, "m"), att(ms, "z1")];
+  const st = attemptStats(lead, acts);
+  assert.equal(st.attempts, 1, `colliding-ms tie-break by id → 1, got ${st.attempts}`);
+  assert.equal(st.threshold, 3);
+  ok("downgrade anchor: colliding timestamps tie-break by id");
+}
+{
+  // Attempts after a downgrade count toward the NEW chain: 0 right after, 1 next.
+  const lead = { classification: "B", status: NO_ANSWER_STATUS, manual_notes: "[01/10/2026 09:00] spoke" };
+  const base = [att(Date.UTC(2026, 9, 2), "a1"), att(Date.UTC(2026, 9, 3), "a2"), att(Date.UTC(2026, 9, 4), "a3"), att(Date.UTC(2026, 9, 5), "a4"), dgAct(Date.UTC(2026, 9, 5, 0, 0, 30), "d1")];
+  assert.equal(attemptStats(lead, base).attempts, 0, "right after downgrade → 0 of 3");
+  const next = [...base, att(Date.UTC(2026, 9, 12), "a5")];
+  assert.equal(attemptStats(lead, next).attempts, 1, "next attempt → 1 of 3");
+  ok("downgrade anchor: attempts after downgrade count toward the new chain");
+}
+{
+  // Deleting the downgrade NOTE does not change the counter (the ACTION anchors).
+  const dgNote = "[05/10/2026 14:30] Auto-moved to B after 4 attempts";
+  const acts = [dgAct(Date.UTC(2026, 9, 5, 14, 30, 45), "d1"), att(Date.UTC(2026, 9, 6, 10), "a5")];
+  const withNote = attemptStats({ classification: "B", status: NO_ANSWER_STATUS, manual_notes: dgNote }, acts).attempts;
+  const withoutNote = attemptStats({ classification: "B", status: NO_ANSWER_STATUS, manual_notes: "" }, acts).attempts;
+  assert.equal(withNote, 1);
+  assert.equal(withoutNote, 1, "removing the downgrade note leaves the counter unchanged (action anchors)");
+  ok("downgrade anchor: deleting the downgrade note doesn't change the counter");
 }
 
 console.log(`\nALL ${n} TESTS PASSED ✓`);

@@ -5,7 +5,7 @@ import { t } from "../labels";
 import { eventTitle } from "../calendarUtils";
 import { relDate, buildMeetingPrefill } from "../utils";
 import { computeDedupe } from "../dedupe";
-import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS } from "../followups";
+import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS } from "../followups";
 import { compareActions } from "../actions";
 import { appendNote } from "../notesFormat";
 import * as api from "../api";
@@ -398,6 +398,14 @@ export default function Dashboard({ onLogout }) {
         const note = fmt(t("fu_downgrade_note"), { to: target, n: attempts });
         const notesWithDowngrade = appendNote(notesWithAttempt, note);
         await updateLead(id, { manual_notes: notesWithDowngrade, classification: target });
+        // Structured downgrade marker (anchors the attempts counter; the note above
+        // is journal-only). Completed action, created AFTER the triggering attempt so
+        // it sorts after it → the new chain starts at 0.
+        try {
+          const dg = await api.createAction({ lead_id: id, title: `${DOWNGRADE_TITLE} → ${target}`, due_at: new Date().toISOString(), description: `after ${attempts} no-answer attempts` });
+          const dgDone = await api.updateAction(dg.id, { done: true });
+          setActions(xs => [...xs, dgDone]);
+        } catch { /* best-effort; the journal note still records it */ }
         clearTimeout(downgradeToastTimer.current);
         setDowngradeToast({ id, from: lead.classification, to: target, attempts, prevNotes: notesWithAttempt });
         downgradeToastTimer.current = setTimeout(() => setDowngradeToast(null), 8000);
@@ -413,6 +421,31 @@ export default function Dashboard({ onLogout }) {
     clearTimeout(downgradeToastTimer.current);
     setDowngradeToast(null);
     await updateLead(info.id, { classification: info.from, manual_notes: info.prevNotes });
+  };
+  // Deleting a prefilled "no answer" note from the drawer history also removes its
+  // paired attempt-action (nearest attempt by timestamp), so the dots decrease.
+  // Deleting a normal note never reaches here (the drawer only calls this for the
+  // prefilled text). Downgrade/other notes never touch actions.
+  const deleteAttemptForNote = async (leadId, noteStamp) => {
+    const id = String(leadId);
+    const lead = (dedupeOn && enrichedById && enrichedById.get(id)) || activeLeads.find(l => String(l.id) === id) || leads.find(l => String(l.id) === id);
+    if (!lead) return;
+    const ids = leadIdsOf(lead);
+    const m = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})$/.exec(noteStamp || "");
+    const noteMs = m ? Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]) : Date.now();
+    const attempts = actions.filter(a => a && a.done && (a.title || "") === ATTEMPT_TITLE && ids.includes(String(a.lead_id)));
+    if (!attempts.length) return;
+    let best = null, bestDiff = Infinity;
+    for (const a of attempts) {
+      const ms = new Date(a.done_at || a.created_at).getTime();
+      const diff = Math.abs((isNaN(ms) ? 0 : ms) - noteMs);
+      if (diff < bestDiff) { bestDiff = diff; best = a; }
+    }
+    if (!best) return;
+    try {
+      await api.deleteAction(best.id);
+      setActions(xs => xs.filter(x => String(x.id) !== String(best.id)));
+    } catch { /* best-effort */ }
   };
 
   // ── Archive (hide without deleting) ── Optimistic. Archiving a merged primary
@@ -708,6 +741,7 @@ export default function Dashboard({ onLogout }) {
             onUnmerge={unmergeLink}
             followup={followupCadenceOn && followupsView ? (followupsView.get(id) || null) : null}
             onLogNoAnswer={followupCadenceOn ? logNoAnswer : undefined}
+            onDeleteAttempt={followupCadenceOn ? deleteAttemptForNote : undefined}
             leadActions={actionsOn && actionsView ? (actionsView.get(id)?.pending || []) : []}
             onActionCreate={(fields) => createAction({ lead_id: id, ...fields })}
             onActionEdit={editAction}
