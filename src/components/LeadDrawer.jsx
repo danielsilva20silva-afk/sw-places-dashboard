@@ -245,6 +245,16 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
     savedRef.current.manual_notes = v;
   }, [lead.manual_notes, followupCadenceOn]);
 
+  // Same for classification: an auto-downgrade (or its Undo) changes the lead's
+  // class from OUTSIDE the drawer, so re-sync the local pills live — same render,
+  // no reopen — exactly as if the user had picked the pill. (The attempt dots come
+  // straight from the `followup` prop, so they already reset to the new chain when
+  // it recomputes.) Idempotent for the user's own pick (prop settles to the same).
+  useEffect(() => {
+    if (!followupCadenceOn) return;
+    setClassification(lead.classification || "");
+  }, [lead.classification, followupCadenceOn]);
+
   const suggestOn = hasFeature("classSuggest");
   const suggestedClass = suggestOn ? suggestClassification(lead) : null;
   const handleArchive = async () => {
