@@ -1,28 +1,39 @@
 import { useState } from "react";
 import { t } from "../labels";
+import { NO_ANSWER_STATUS } from "../followups";
 import ClassificationBadge from "./ClassificationBadge";
 
 // Dashboard "Due today" panel (brandon only, gated by the caller on the
 // followupCadence flag). Lists leads due today or overdue — derived, never stored.
 // `items` is a pre-sorted [{ lead, fu }] (overdue first, then A/B/C, then classify).
-// Clicking a row opens the lead drawer. With a large backlog the card stays
-// compact: it shows the first PREVIEW rows by default and a count summary in the
-// header, expanding to a scrollable full list on demand.
+// Clicking a row opens the lead drawer. Compact so a big backlog stays usable:
+// first PREVIEW rows + a count summary header, expanding to a scrollable list.
+// Cadence rows for "Contacted — no answer" leads get attempt dots and a compact
+// one-click "No answer" button.
 const PREVIEW = 15;
 
-function Row({ item, onOpenLead }) {
+function Dots({ attempts, threshold }) {
+  const total = Math.max(threshold || 0, attempts || 0);
+  if (!total) return null;
+  return (
+    <span title={`${attempts}${threshold ? ` / ${threshold}` : ""} ${t("fu_attempts_title")}`} style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+      {Array.from({ length: total }).map((_, i) => (
+        <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i < attempts ? "#DC2626" : "#E5E7EB" }} />
+      ))}
+    </span>
+  );
+}
+
+function Row({ item, onOpenLead, onLogNoAnswer }) {
   const { lead, fu } = item;
   const label = fu.isOverdue ? `${fu.daysOverdue}d ${t("fu_overdue_suffix")}` : t("fu_today");
+  const noAnswer = !fu.overridden && lead.status === NO_ANSWER_STATUS;
   return (
-    <button
-      type="button"
+    <div
       onClick={() => onOpenLead(lead)}
-      style={{
-        display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
-        background: "none", border: "none", cursor: "pointer", padding: "9px 4px", borderRadius: 8,
-      }}
+      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", cursor: "pointer", padding: "9px 4px", borderRadius: 8 }}
       onMouseEnter={(e) => (e.currentTarget.style.background = "#FAFAFA")}
-      onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13, fontWeight: 600, color: "#111" }}>
         {lead.name || "—"}
@@ -33,14 +44,22 @@ function Row({ item, onOpenLead }) {
           {t("fu_classify")}
         </span>
       )}
-      <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: fu.isOverdue ? "#DC2626" : "#B45309" }}>
-        {label}
-      </span>
-    </button>
+      {noAnswer && <Dots attempts={fu.attempts || 0} threshold={fu.attemptThreshold} />}
+      <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: fu.isOverdue ? "#DC2626" : "#B45309" }}>{label}</span>
+      {noAnswer && onLogNoAnswer && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onLogNoAnswer(lead.id); }}
+          style={{ flexShrink: 0, background: "white", color: "#92400E", border: "1px solid #FDE68A", borderRadius: 8, padding: "4px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+        >
+          {t("na_no_answer")}
+        </button>
+      )}
+    </div>
   );
 }
 
-export default function DueTodayCard({ items, onOpenLead }) {
+export default function DueTodayCard({ items, onOpenLead, onLogNoAnswer }) {
   const list = items || [];
   const [expanded, setExpanded] = useState(false); // collapsed on every load
   const overdueCount = list.filter((it) => it.fu.isOverdue).length;
@@ -66,7 +85,7 @@ export default function DueTodayCard({ items, onOpenLead }) {
         ) : (
           <>
             <div style={expanded ? { maxHeight: "60vh", overflowY: "auto" } : undefined}>
-              {shown.map((it) => <Row key={String(it.lead.id)} item={it} onOpenLead={onOpenLead} />)}
+              {shown.map((it) => <Row key={String(it.lead.id)} item={it} onOpenLead={onOpenLead} onLogNoAnswer={onLogNoAnswer} />)}
             </div>
             {hasMore && (
               <button

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { STATUSES, STATUS_CONFIG, CLASSIFICATION_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { suggestClassification } from "../suggestClassification";
+import { NO_ANSWER_STATUS } from "../followups";
 import { t } from "../labels";
 import { leadWhen, relDate, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab, sourceCampaignLabel } from "../utils";
 import { appendNote } from "../notesFormat";
@@ -29,7 +30,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, followup, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, followup, onLogNoAnswer, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -231,6 +232,19 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
     if (fu.cadenceDays) return `${fu.classification} · ${t("fu_every")} ${fu.cadenceDays} ${t("fu_days")}`;
     return "";
   };
+  // Keep the notes field in sync when the lead's manual_notes changes from OUTSIDE
+  // the drawer (the one-click "No answer" log / an auto-downgrade note) so history
+  // refreshes immediately without reopening. Gated on the cadence feature so other
+  // clients' drawer behaviour is unchanged; safe because notes are committed
+  // atomically here (NotesHistory), never typed char-by-char.
+  useEffect(() => {
+    if (!followupCadenceOn) return;
+    const v = lead.manual_notes || "";
+    setManualNotes(v);
+    fieldsRef.current.manual_notes = v;
+    savedRef.current.manual_notes = v;
+  }, [lead.manual_notes, followupCadenceOn]);
+
   const suggestOn = hasFeature("classSuggest");
   const suggestedClass = suggestOn ? suggestClassification(lead) : null;
   const handleArchive = async () => {
@@ -466,7 +480,13 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               busy={save === "saving"}
             />
           ) : (
-            <NotesHistory value={manualNotes} onChange={commitNotes} busy={save === "saving"} />
+            <NotesHistory
+              value={manualNotes}
+              onChange={commitNotes}
+              busy={save === "saving"}
+              onNoAnswer={followupCadenceOn && onLogNoAnswer ? () => onLogNoAnswer(lead.id) : undefined}
+              attemptsInfo={followupCadenceOn && followup && lead.status === NO_ANSWER_STATUS ? { attempts: followup.attempts, threshold: followup.attemptThreshold } : null}
+            />
           )}
           {sourceOk && (
             <div>

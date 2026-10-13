@@ -19,7 +19,7 @@ import ActionsCard from "../components/ActionsCard";
 import DueTodayCard from "../components/DueTodayCard";
 import useIsMobile from "../useIsMobile";
 
-export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, actionItems, dueList }) {
+export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChange, onViewAllLeads, calRefreshKey, onCalendarChanged, actionsView, actionItems, dueList, onLogNoAnswer }) {
   const isMobile = useIsMobile();
   const nextActionFor = (lead) => (actionsView ? (actionsView.get(String(lead.id))?.next || null) : null);
   // Hide contact-less "DM · ANA" entries (reel-flow / logged DMs) from the leads
@@ -56,7 +56,7 @@ export default function DashboardTab({ leads: allLeads, onOpenLead, onStatusChan
     <>
       {/* Due today — derived follow-up cadence (brandon only; gated on
           followupCadence). Off clients render nothing (swplaces unaffected). */}
-      {hasFeature("followupCadence") && <DueTodayCard items={dueList || []} onOpenLead={onOpenLead} />}
+      {hasFeature("followupCadence") && <DueTodayCard items={dueList || []} onOpenLead={onOpenLead} onLogNoAnswer={onLogNoAnswer} />}
 
       {/* Next actions — Today / Overdue (loud) + upcoming count. Only when the
           feature is on; when off this renders nothing (swplaces unaffected). */}

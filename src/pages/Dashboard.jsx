@@ -5,8 +5,9 @@ import { t } from "../labels";
 import { eventTitle } from "../calendarUtils";
 import { relDate, buildMeetingPrefill } from "../utils";
 import { computeDedupe } from "../dedupe";
-import { computeFollowup } from "../followups";
+import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS } from "../followups";
 import { compareActions } from "../actions";
+import { appendNote } from "../notesFormat";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
 import LeadDrawer from "../components/LeadDrawer";
@@ -45,6 +46,9 @@ export default function Dashboard({ onLogout }) {
   const [links, setLinks] = useState([]); // lead-merge links (dedupe feature)
   const [actions, setActions] = useState([]); // per-lead next-action tasks
   const [archivedIds, setArchivedIds] = useState(() => new Set()); // hidden lead ids (archive feature)
+  const [downgradeToast, setDowngradeToast] = useState(null); // { id, from, to, attempts, prevNotes } | null
+  const downgradeToastTimer = useRef(null);
+  useEffect(() => () => clearTimeout(downgradeToastTimer.current), []);
   const calendarOn = hasFeature("calendar"); // false clients skip the whole calendar flow
   const dedupeOn = hasFeature("dedupe"); // false clients: zero dedupe UI / no link fetch
   const actionsOn = hasFeature("actions"); // false clients: no fetch, no actions UI
@@ -360,6 +364,55 @@ export default function Dashboard({ onLogout }) {
     } catch (e) { return { ok: false, error: e?.message || "erro" }; }
   };
 
+  // ── "No answer" one-click log + auto-downgrade (brandon followup cadence) ──
+  // Atomic for the user: appends the prefilled no-answer note AND logs a completed
+  // attempt-action (the structured counter source). Then, at the 4th (A) / 3rd (B)
+  // attempt since the last real contact, auto-downgrades classification with a note
+  // in history and an undoable toast. All derived — nothing new is stored.
+  const leadIdsOf = (lead) => [String(lead.id), ...((lead.mergedSecondaries || []).map((s) => String(s.lead.id)))];
+  const fmt = (tpl, vars) => Object.keys(vars).reduce((s, k) => s.replaceAll(`{${k}}`, vars[k]), tpl);
+  const logNoAnswer = async (leadId) => {
+    const id = String(leadId);
+    const lead = (dedupeOn && enrichedById && enrichedById.get(id)) || activeLeads.find(l => String(l.id) === id) || leads.find(l => String(l.id) === id);
+    if (!lead) return { ok: false };
+    const ids = leadIdsOf(lead);
+    // 1. prefilled note (persisted via the normal PATCH flow).
+    const notesWithAttempt = appendNote(lead.manual_notes || "", PREFILLED_NO_ANSWER_NOTE);
+    await updateLead(id, { manual_notes: notesWithAttempt });
+    // 2. completed attempt-action (create, then mark done).
+    let acts = actions.filter(a => ids.includes(String(a.lead_id)));
+    try {
+      const created = await api.createAction({ lead_id: id, title: ATTEMPT_TITLE, due_at: new Date().toISOString(), description: "" });
+      const done = await api.updateAction(created.id, { done: true });
+      setActions(xs => [...xs, done]);
+      acts = [...acts, done];
+    } catch { /* note already saved; attempt logging best-effort */ }
+    // 3. auto-downgrade at threshold (no-answer leads only).
+    const target = downgradeTarget(lead.classification);
+    const threshold = downgradeThreshold(lead.classification);
+    if (lead.status === NO_ANSWER_STATUS && target && threshold) {
+      const { attempts } = attemptStats({ ...lead, manual_notes: notesWithAttempt }, acts, lead.classification);
+      if (attempts >= threshold) {
+        const note = fmt(t("fu_downgrade_note"), { to: target, n: attempts });
+        const notesWithDowngrade = appendNote(notesWithAttempt, note);
+        await updateLead(id, { manual_notes: notesWithDowngrade, classification: target });
+        clearTimeout(downgradeToastTimer.current);
+        setDowngradeToast({ id, from: lead.classification, to: target, attempts, prevNotes: notesWithAttempt });
+        downgradeToastTimer.current = setTimeout(() => setDowngradeToast(null), 8000);
+      }
+    }
+    return { ok: true };
+  };
+  // Undo the last auto-downgrade: restore classification + the pre-downgrade notes
+  // (removes the downgrade note; the attempt + its note stay).
+  const undoDowngrade = async () => {
+    const info = downgradeToast;
+    if (!info) return;
+    clearTimeout(downgradeToastTimer.current);
+    setDowngradeToast(null);
+    await updateLead(info.id, { classification: info.from, manual_notes: info.prevNotes });
+  };
+
   // ── Archive (hide without deleting) ── Optimistic. Archiving a merged primary
   // archives the whole composite (its id is the primary's); unarchive restores it
   // (and its actions + dedupe eligibility, since active === visible everywhere).
@@ -608,6 +661,7 @@ export default function Dashboard({ onLogout }) {
                 actionsView={actionsView}
                 actionItems={actionItems}
                 dueList={dueList}
+                onLogNoAnswer={logNoAnswer}
               />
             )}
 
@@ -651,6 +705,7 @@ export default function Dashboard({ onLogout }) {
             onMerge={mergeLeads}
             onUnmerge={unmergeLink}
             followup={followupCadenceOn && followupsView ? (followupsView.get(id) || null) : null}
+            onLogNoAnswer={followupCadenceOn ? logNoAnswer : undefined}
             leadActions={actionsOn && actionsView ? (actionsView.get(id)?.pending || []) : []}
             onActionCreate={(fields) => createAction({ lead_id: id, ...fields })}
             onActionEdit={editAction}
@@ -674,6 +729,21 @@ export default function Dashboard({ onLogout }) {
             setMeetingFlow(null);
           }}
         />
+      )}
+
+      {/* Auto-downgrade toast with Undo (fixed bottom-center; mobile-safe). */}
+      {downgradeToast && (
+        <div style={{
+          position: "fixed", left: "50%", transform: "translateX(-50%)",
+          bottom: "calc(20px + env(safe-area-inset-bottom))", zIndex: 300,
+          display: "flex", alignItems: "center", gap: 14,
+          background: "#111", color: "white", borderRadius: 12,
+          padding: "12px 16px", boxShadow: "0 10px 40px rgba(0,0,0,0.28)",
+          fontSize: 13, maxWidth: "calc(100vw - 32px)",
+        }}>
+          <span>{t("fu_downgraded").replaceAll("{to}", downgradeToast.to).replaceAll("{n}", downgradeToast.attempts)}</span>
+          <button onClick={undoDowngrade} style={{ background: "none", border: "none", color: GOLD, fontSize: 13, fontWeight: 700, cursor: "pointer", padding: 0 }}>{t("fu_undo")}</button>
+        </div>
       )}
     </div>
   );

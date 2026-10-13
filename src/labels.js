@@ -242,6 +242,12 @@ const DEFAULTS = {
   fu_classify_within: "classificar em 48h",
   fu_show_all: "Ver todos",                  // "Ver todos ({n})"
   fu_show_less: "Ver menos",
+  // No-answer one-click log + attempts + auto-downgrade
+  na_no_answer: "📞 Sem resposta",
+  fu_attempts_title: "tentativas sem resposta",
+  fu_undo: "Anular",
+  fu_downgraded: "Movido para {to} após {n} tentativas sem resposta",       // toast
+  fu_downgrade_note: "Movido automaticamente para {to} após {n} tentativas sem resposta", // stored note
   d_last_contacted: "Último contacto",
   d_next_followup: "Próximo seguimento",
 

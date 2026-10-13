@@ -1,20 +1,39 @@
 // Derived follow-up cadence engine (pure, node-testable). brandon-only — the
 // caller gates everything on hasFeature('followupCadence'). NOTHING is stored:
-// lastContacted / nextFollowUp are computed at read time from data we already
-// have (the lead's notes-history timestamps, its completed actions, its creation
-// date, and its classification). Imports only the shared action comparator (also
-// a pure helper) so the chosen override action orders identically everywhere.
-//
-// Cadence (days) by classification: A=7, B=28, C=75. Unclassified leads must be
-// classified within 48h of creation. A lead's PENDING action with a due date
-// overrides the computed cadence (manual intent wins). Closed/Lost are never due.
+// lastContacted / nextFollowUp / the attempts counter are computed at read time
+// from data we already have (the lead's notes-history timestamps, its completed
+// actions, its creation date, classification and status). Imports only the shared
+// action comparator (also a pure helper) so the chosen override action orders
+// identically everywhere.
 
 import { compareActions } from "./actions.js";
 
 const DAY = 86400000;
+// Normal cadence (days) by classification; the retry chain used while a lead is
+// "Contacted — no answer" is longer (give the lead room between call attempts).
 const CADENCE_DAYS = { A: 7, B: 28, C: 75 };
+export const RETRY_DAYS = { A: 7, B: 30, C: 180 };
 const UNCLASSIFIED_HOURS = 48;
 const DEFAULT_TERMINAL = ["Closed", "Lost"];
+
+// The status whose cadence is the no-answer retry chain (brandon label). Overridable
+// via opts.noAnswerStatus for tests.
+export const NO_ANSWER_STATUS = "Contacted — no answer";
+
+// Conventions for the "No answer" one-click log: a completed action with this exact
+// title is an ATTEMPT (structured counter source); a notes-history entry with this
+// exact text is the prefilled no-answer note (NOT a "real contact"). The counter is
+// derived from attempt ACTIONS, never from note text.
+export const ATTEMPT_TITLE = "📞 No-answer attempt";
+export const PREFILLED_NO_ANSWER_NOTE = "Tried calling, no answer";
+
+// Auto-downgrade thresholds: classification A moves to B on the 4th no-answer
+// attempt since the last real contact; B moves to C on the 3rd. C is terminal for
+// the chain (no further downgrade).
+const DOWNGRADE_TARGET = { A: "B", B: "C" };
+const DOWNGRADE_THRESHOLD = { A: 4, B: 3 };
+export function downgradeTarget(cls) { return DOWNGRADE_TARGET[cls] || null; }
+export function downgradeThreshold(cls) { return DOWNGRADE_THRESHOLD[cls] || null; }
 
 // Launch floor (Europe/Lisbon day): the cadence baseline is never older than this,
 // so at launch the "Due today" list drains gradually from the reset instead of
@@ -30,26 +49,33 @@ function dateStrMs(s) {
 }
 
 // Europe/Lisbon day index (days since epoch). Mirrors utils.lisbonDayIndex;
-// inlined so this module imports nothing and stays trivially testable.
+// inlined so this module imports nothing (beyond the comparator) and stays testable.
 function lisbonDayIndex(ms) {
   const s = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
   const [y, m, d] = s.split("-").map(Number);
   return Math.floor(Date.UTC(y, m - 1, d) / DAY);
 }
 
-// Latest notes-history timestamp → ms, or null. Matches notesFormat's stored
-// marker "[DD/MM/YYYY HH:mm]" (optionally " · editada"), Lisbon wall-clock. The
-// wall-clock parts are read as an instant (good to the day for cadence math).
-const STAMP_RE = /\[(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})(?: · editada)?\]/g;
-function latestNoteMs(notes) {
+// All dated notes-history entries → [{ ms, text }], matching notesFormat's stored
+// marker "[DD/MM/YYYY HH:mm]" (optionally " · editada"), Lisbon wall-clock.
+const MARK_RE = /\[(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})(?: · editada)?\]/g;
+function datedNoteEntries(notes) {
   const s = String(notes || "");
-  let m, best = null;
-  STAMP_RE.lastIndex = 0;
-  while ((m = STAMP_RE.exec(s)) !== null) {
-    const dd = +m[1], mo = +m[2], yyyy = +m[3], hh = +m[4], mi = +m[5];
-    const ms = Date.UTC(yyyy, mo - 1, dd, hh, mi);
-    if (best == null || ms > best) best = ms;
+  const marks = [];
+  let m;
+  MARK_RE.lastIndex = 0;
+  while ((m = MARK_RE.exec(s)) !== null) {
+    marks.push({ ms: Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5]), start: m.index, end: MARK_RE.lastIndex });
   }
+  return marks.map((mk, i) => ({
+    ms: mk.ms,
+    text: s.slice(mk.end, i + 1 < marks.length ? marks[i + 1].start : s.length).trim(),
+  }));
+}
+
+function latestNoteMs(notes) {
+  let best = null;
+  for (const e of datedNoteEntries(notes)) if (best == null || e.ms > best) best = e.ms;
   return best;
 }
 
@@ -64,19 +90,43 @@ function creationMs(lead) {
   return toMs(lead && lead.created_at) ?? toMs(lead && lead.date);
 }
 
-// computeFollowup(lead, actions, opts?) → { lastContacted, nextFollowUp,
-// isOverdue, isDueToday, daysOverdue, reason, classification, cadenceDays,
-// overridden }. `actions` = the lead's action rows (as returned by
-// api.getActions: { done, done_at, due_at, created_at, ... }); the caller passes
-// the composite's aggregated actions for merged leads. Times are ms (or null).
-// reason ∈ "cadence" | "classify" | "scheduled" | "terminal".
+// Attempts since the last REAL contact. Real contact = a manual notes entry whose
+// text is NOT the prefilled no-answer note, OR a completed action that is NOT an
+// attempt (a normal completed action, or the downgrade log). Attempts = completed
+// attempt-actions dated after that anchor. Derived from actions, never note text.
+export function attemptStats(lead, actions = [], cls = (lead && lead.classification) || "") {
+  const list = Array.isArray(actions) ? actions : [];
+  let resetMs = -Infinity;
+  for (const e of datedNoteEntries(lead && lead.manual_notes)) {
+    if (e.text && e.text !== PREFILLED_NO_ANSWER_NOTE && e.ms > resetMs) resetMs = e.ms;
+  }
+  const attemptTimes = [];
+  for (const a of list) {
+    if (!a || !a.done) continue;
+    const ms = toMs(a.done_at) ?? toMs(a.created_at);
+    if (ms == null) continue;
+    if ((a.title || "") === ATTEMPT_TITLE) attemptTimes.push(ms);
+    else if (ms > resetMs) resetMs = ms; // completed non-attempt action = real contact
+  }
+  const attempts = attemptTimes.filter((ms) => ms > resetMs).length;
+  return { attempts, threshold: DOWNGRADE_THRESHOLD[cls] || null };
+}
+
+// computeFollowup(lead, actions, opts?) → { lastContacted, nextFollowUp, isOverdue,
+// isDueToday, daysOverdue, reason, classification, cadenceDays, overridden,
+// nextAction, attempts, attemptThreshold }. Times are ms (or null). reason ∈
+// "cadence" | "classify" | "scheduled" | "terminal".
 export function computeFollowup(lead, actions = [], opts = {}) {
   const now = opts.now != null ? opts.now : Date.now();
   const terminal = new Set(opts.terminalStatuses || DEFAULT_TERMINAL);
+  const noAnswerStatus = opts.noAnswerStatus != null ? opts.noAnswerStatus : NO_ANSWER_STATUS;
   const list = Array.isArray(actions) ? actions : [];
   const cls = (lead && lead.classification) || "";
   const classified = cls === "A" || cls === "B" || cls === "C";
-  const cadenceDays = classified ? CADENCE_DAYS[cls] : null;
+  // Status-aware cadence: the no-answer retry chain is longer than the normal one.
+  const noAnswer = !!lead && lead.status === noAnswerStatus;
+  const cadenceDays = classified ? (noAnswer ? RETRY_DAYS[cls] : CADENCE_DAYS[cls]) : null;
+  const stats = attemptStats(lead, list, cls);
 
   // lastContacted = latest of note timestamps and completed-action timestamps.
   let lastContacted = latestNoteMs(lead && lead.manual_notes);
@@ -88,23 +138,18 @@ export function computeFollowup(lead, actions = [], opts = {}) {
 
   const base = {
     lastContacted, nextFollowUp: null, isOverdue: false, isDueToday: false,
-    daysOverdue: 0, reason: "cadence", classification: cls, cadenceDays, overridden: false, nextAction: null,
+    daysOverdue: 0, reason: "cadence", classification: cls, cadenceDays, overridden: false,
+    nextAction: null, attempts: stats.attempts, attemptThreshold: stats.threshold,
   };
 
   // Closed / Lost are never due.
   if (lead && terminal.has(lead.status)) return { ...base, reason: "terminal" };
 
-  // Baseline = most recent contact (or creation), FLOORED at the cadence reset:
-  //   baseline = max(lastContacted ?? creation, resetDate)
-  // The floor only LIFTS baselines older than the reset; a newer contact/creation
-  // is kept as-is (never pushed back). Applies to every lead, including the
-  // unclassified 48h rule (an unclassified lead older than the reset counts 48h
-  // from the reset, not from its creation).
+  // Baseline = most recent contact (or creation), FLOORED at the cadence reset.
   const resetMs = dateStrMs(opts.resetDate != null ? opts.resetDate : CADENCE_RESET_DATE) ?? 0;
   const contactedOrCreated = lastContacted != null ? lastContacted : creationMs(lead);
   const baseline = Math.max(contactedOrCreated != null ? contactedOrCreated : resetMs, resetMs);
 
-  // Computed next follow-up.
   let nextFollowUp;
   let reason;
   if (classified) {
@@ -117,8 +162,7 @@ export function computeFollowup(lead, actions = [], opts = {}) {
 
   // A pending (not-done) action with a due date overrides the cadence. Pick the
   // lead's winning action with the SHARED comparator (due_at, then created_at,
-  // then id) — the same order the Actions card uses — and expose it as nextAction
-  // so the Due-today list can tie-break identically across leads.
+  // then id) and expose it as nextAction so the Today list tie-breaks identically.
   let nextAction = null;
   for (const a of list) {
     if (!a || a.done || toMs(a.due_at) == null) continue;
