@@ -131,7 +131,9 @@ export default function Dashboard({ onLogout }) {
   // Actions joined to the DISPLAY leads: a Map (display lead id → { pending, next })
   // for the row column / drawer, and a flat [{ action, lead }] for the dashboard
   // card. A merged lead aggregates its secondaries' actions under the primary.
-  const { actionsView, actionItems } = useMemo(() => {
+  // actionItems is still returned (kept for any other consumer) but the dashboard
+  // now surfaces actions through the single Today panel, so only actionsView is read.
+  const { actionsView } = useMemo(() => {
     if (!actionsOn) return { actionsView: null, actionItems: [] };
     const pendingByRawId = new Map();
     for (const a of actions) {
@@ -659,9 +661,9 @@ export default function Dashboard({ onLogout }) {
                 calRefreshKey={calReload}
                 onCalendarChanged={() => setCalReload(r => r + 1)}
                 actionsView={actionsView}
-                actionItems={actionItems}
                 dueList={dueList}
                 onLogNoAnswer={logNoAnswer}
+                onCompleteAction={completeAction}
               />
             )}
 

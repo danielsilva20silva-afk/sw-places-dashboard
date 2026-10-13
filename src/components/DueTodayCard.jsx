@@ -24,10 +24,12 @@ function Dots({ attempts, threshold }) {
   );
 }
 
-function Row({ item, onOpenLead, onLogNoAnswer }) {
+function Row({ item, onOpenLead, onLogNoAnswer, onCompleteAction }) {
   const { lead, fu } = item;
   const label = fu.isOverdue ? `${fu.daysOverdue}d ${t("fu_overdue_suffix")}` : t("fu_today");
   const noAnswer = !fu.overridden && lead.status === NO_ANSWER_STATUS;
+  // Scheduled-action rows keep a complete-checkbox (like the old Actions card).
+  const scheduled = fu.overridden && fu.nextAction;
   return (
     <div
       onClick={() => onOpenLead(lead)}
@@ -35,6 +37,11 @@ function Row({ item, onOpenLead, onLogNoAnswer }) {
       onMouseEnter={(e) => (e.currentTarget.style.background = "#FAFAFA")}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
+      {scheduled && onCompleteAction && (
+        <label onClick={(e) => e.stopPropagation()} title={t("na_complete")} style={{ display: "inline-flex", padding: 2, cursor: "pointer", flexShrink: 0 }}>
+          <input type="checkbox" checked={false} onChange={() => onCompleteAction(fu.nextAction.id)} aria-label={t("na_complete")} style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#16A34A" }} />
+        </label>
+      )}
       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13, fontWeight: 600, color: "#111" }}>
         {lead.name || "—"}
       </span>
@@ -59,7 +66,7 @@ function Row({ item, onOpenLead, onLogNoAnswer }) {
   );
 }
 
-export default function DueTodayCard({ items, onOpenLead, onLogNoAnswer }) {
+export default function DueTodayCard({ items, onOpenLead, onLogNoAnswer, onCompleteAction }) {
   const list = items || [];
   const [expanded, setExpanded] = useState(false); // collapsed on every load
   const overdueCount = list.filter((it) => it.fu.isOverdue).length;
@@ -70,7 +77,7 @@ export default function DueTodayCard({ items, onOpenLead, onLogNoAnswer }) {
   return (
     <div style={{ background: "white", borderRadius: 16, border: "1px solid #EBEBEB", marginBottom: 20 }}>
       <div style={{ padding: "16px 20px 8px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>{t("fu_due_today_title")}</p>
+        <p style={{ fontSize: 14, fontWeight: 700, color: "#111", margin: 0 }}>{t("fu_today_panel_title")}</p>
         {list.length > 0 && (
           <span style={{ fontSize: 12, fontWeight: 600, display: "flex", gap: 6, flexShrink: 0 }}>
             <span style={{ color: "#DC2626" }}>{overdueCount} {t("fu_overdue_suffix")}</span>
@@ -85,7 +92,7 @@ export default function DueTodayCard({ items, onOpenLead, onLogNoAnswer }) {
         ) : (
           <>
             <div style={expanded ? { maxHeight: "60vh", overflowY: "auto" } : undefined}>
-              {shown.map((it) => <Row key={String(it.lead.id)} item={it} onOpenLead={onOpenLead} onLogNoAnswer={onLogNoAnswer} />)}
+              {shown.map((it) => <Row key={String(it.lead.id)} item={it} onOpenLead={onOpenLead} onLogNoAnswer={onLogNoAnswer} onCompleteAction={onCompleteAction} />)}
             </div>
             {hasMore && (
               <button

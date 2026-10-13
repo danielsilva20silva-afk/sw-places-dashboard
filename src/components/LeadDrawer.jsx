@@ -443,7 +443,9 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               <ClassificationSelect value={classification} onChange={pickClassification} />
             </div>
           )}
-          {hasFeature("followups") && <FollowUpScheduler lead={lead} />}
+          {/* Legacy "Schedule follow-up" — removed for brandon (followupCadence on);
+              "Next action" is the only way to schedule now. Other clients keep it. */}
+          {hasFeature("followups") && !followupCadenceOn && <FollowUpScheduler lead={lead} />}
           {/* Form answers / summary. Merged → grouped per record; else the single summary. */}
           {isMerged ? (
             answerRecords.length > 0 && (

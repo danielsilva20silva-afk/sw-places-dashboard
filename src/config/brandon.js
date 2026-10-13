@@ -214,6 +214,7 @@ export default {
     fu_error: "Couldn't schedule. Please try again.",
     fu_upcoming_title: "Upcoming follow-ups",
     // Follow-up cadence (derived)
+    fu_today_panel_title: "Today",           // title of the single "Today" panel
     fu_due_today_title: "Due today",
     fu_empty: "No follow-ups due today.",
     fu_today: "today",

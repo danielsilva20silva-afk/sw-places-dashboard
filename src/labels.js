@@ -230,6 +230,7 @@ const DEFAULTS = {
   fu_error: "Não foi possível agendar. Tenta de novo.",
   fu_upcoming_title: "Próximos seguimentos",
   // ── Cadência de seguimento (derivada) ──
+  fu_today_panel_title: "Hoje",              // título do painel único "Today"
   fu_due_today_title: "Para hoje",
   fu_empty: "Nenhum seguimento para hoje.",
   fu_today: "hoje",
