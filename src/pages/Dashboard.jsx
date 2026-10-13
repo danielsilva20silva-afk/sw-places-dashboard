@@ -177,14 +177,21 @@ export default function Dashboard({ onLogout }) {
       view.set(String(lead.id), fu);
       if (fu.isOverdue || fu.isDueToday) due.push({ lead, fu });
     }
-    // Overdue first, then by classification A→B→C→(classify/none), then most overdue.
+    // Ordering: overdue before today; across different due days, most overdue
+    // first (today rows tie). Then, WITHIN the same due date, rows whose date comes
+    // from a scheduled action (overridden) sort first by that action's due time
+    // ascending — so the order matches the Actions card exactly — and the rest sort
+    // by classification (A → B → C → classify/none).
     const classRank = (c) => (c === "A" ? 0 : c === "B" ? 1 : c === "C" ? 2 : 3);
-    due.sort((x, y) =>
-      (x.fu.isOverdue === y.fu.isOverdue ? 0 : x.fu.isOverdue ? -1 : 1) ||
-      (classRank(x.fu.classification) - classRank(y.fu.classification)) ||
-      (y.fu.daysOverdue - x.fu.daysOverdue) ||
-      ((x.fu.nextFollowUp || 0) - (y.fu.nextFollowUp || 0))
-    );
+    due.sort((x, y) => {
+      const a = x.fu, b = y.fu;
+      if (a.isOverdue !== b.isOverdue) return a.isOverdue ? -1 : 1;        // overdue first
+      if (a.daysOverdue !== b.daysOverdue) return b.daysOverdue - a.daysOverdue; // more overdue first (today ties)
+      // same due date from here:
+      if (!!a.overridden !== !!b.overridden) return a.overridden ? -1 : 1; // scheduled-action rows first
+      if (a.overridden && b.overridden) return (a.nextFollowUp || 0) - (b.nextFollowUp || 0); // by action due time asc
+      return classRank(a.classification) - classRank(b.classification);    // rest by classification
+    });
     return { followupsView: view, dueList: due };
   }, [followupCadenceOn, actions, activeLeads]);
 
