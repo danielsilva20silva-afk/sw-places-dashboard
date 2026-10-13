@@ -5,7 +5,9 @@ import { computeFollowup } from "./followups.js";
 const DAY = 86400000;
 // Fixed "now": 2026-10-12 12:00 Lisbon-ish. Use a midday instant to avoid TZ edge.
 const NOW = Date.UTC(2026, 9, 12, 11, 0); // 11:00 UTC = 12:00 Lisbon (WEST)
-const opts = { now: NOW };
+// Pin a far-past reset for the cadence tests so the launch floor is inert here;
+// the reset-floor behavior is covered by its own block below.
+const opts = { now: NOW, resetDate: "2000-01-01" };
 const daysAgo = (n) => new Date(NOW - n * DAY).toISOString();
 let n = 0; const ok = (name) => { n++; console.log("✓", name); };
 
@@ -109,6 +111,72 @@ for (const status of ["Closed", "Lost"]) {
   const fu = computeFollowup({ classification: "B", created_at: daysAgo(60), manual_notes: "[01/09/2026 09:00] old note" }, [{ done: true, done_at: daysAgo(2) }], opts);
   assert.equal(fu.lastContacted, NOW - 2 * DAY, "latest should be the 2-day-ago action");
   ok("lastContacted = max(note, completed action)");
+}
+
+// ── Cadence reset floor ──
+// Reset = 2026-10-13; "now" = 2026-10-25 12:00 Lisbon unless stated.
+const RESET = "2026-10-13";
+const utc = (y, mo, d, h = 11, mi = 0) => Date.UTC(y, mo - 1, d, h, mi);
+const ropts = (nowMs) => ({ now: nowMs, resetDate: RESET });
+const OCT25 = utc(2026, 10, 25);
+{
+  // A, contacted + created BEFORE reset → baseline lifted to reset (Oct13) → +7 = Oct20 → overdue by 5 on Oct25.
+  const fu = computeFollowup({ classification: "A", created_at: "2026-05-01T09:00:00Z", manual_notes: "[01/09/2026 10:00] called" }, [], ropts(OCT25));
+  assert.equal(fu.isOverdue, true);
+  assert.equal(fu.daysOverdue, 5, `expected 5, got ${fu.daysOverdue}`);
+  ok("reset floor: A baseline lifted to reset (overdue by 5)");
+}
+{
+  // B (28) from reset → Oct13 + 28 = Nov10 → not due on Oct25.
+  const fu = computeFollowup({ classification: "B", created_at: "2026-01-01T00:00:00Z", manual_notes: "" }, [], ropts(OCT25));
+  assert.equal(fu.isOverdue, false);
+  assert.equal(fu.isDueToday, false);
+  ok("reset floor: B from reset not yet due");
+}
+{
+  // Unclassified older than reset → 48h from reset (Oct15), overdue on Oct25.
+  const fu = computeFollowup({ classification: "", created_at: "2026-05-01T09:00:00Z", manual_notes: "" }, [], ropts(OCT25));
+  assert.equal(fu.reason, "classify");
+  assert.equal(fu.isOverdue, true);
+  ok("reset floor: unclassified 48h from reset (overdue)");
+}
+{
+  // Unclassified, now = Oct14 (reset+1, within the 48h) → not yet due.
+  const fu = computeFollowup({ classification: "", created_at: "2026-05-01T09:00:00Z", manual_notes: "" }, [], ropts(utc(2026, 10, 14)));
+  assert.equal(fu.isOverdue, false);
+  assert.equal(fu.isDueToday, false);
+  ok("reset floor: unclassified within 48h of reset not overdue");
+}
+{
+  // Created AFTER reset → uses its OWN creation (Oct20), not the reset. A+7 = Oct27 → not due on Oct25.
+  // (If it had floored to reset, Oct13+7=Oct20 would be overdue on Oct25.)
+  const fu = computeFollowup({ classification: "A", created_at: "2026-10-20T09:00:00Z", manual_notes: "" }, [], ropts(OCT25));
+  assert.equal(fu.isOverdue, false, "lead created after reset must use its own creation date");
+  ok("reset floor: lead created after reset uses own creation date");
+}
+{
+  // Last contact AFTER reset (Oct24) → floor does NOT push it back. A+7 = Oct31 → not due on Oct25.
+  const fu = computeFollowup({ classification: "A", created_at: "2026-01-01T00:00:00Z", manual_notes: "" }, [{ done: true, done_at: "2026-10-24T09:00:00Z" }], ropts(OCT25));
+  assert.equal(fu.isOverdue, false, "a contact newer than the reset must win over the floor");
+  ok("reset floor: newer last-contact kept (floor only lifts older)");
+}
+{
+  // Pending scheduled action still overrides everything, floor irrelevant.
+  const fu = computeFollowup(
+    { classification: "A", created_at: "2026-05-01T09:00:00Z", manual_notes: "[01/09/2026 10:00] called" },
+    [{ done: false, due_at: "2026-10-30T10:00:00Z" }],
+    ropts(OCT25)
+  );
+  assert.equal(fu.reason, "scheduled");
+  assert.equal(fu.overridden, true);
+  assert.equal(fu.isOverdue, false);
+  ok("reset floor: pending action override unaffected");
+}
+{
+  // Default reset constant is wired when opts.resetDate is omitted.
+  const fu = computeFollowup({ classification: "A", created_at: "2026-05-01T09:00:00Z", manual_notes: "" }, [], { now: OCT25 });
+  assert.equal(fu.isOverdue, true); // default reset 2026-10-13 → Oct20 → overdue on Oct25
+  ok("reset floor: default CADENCE_RESET_DATE applies when opts.resetDate omitted");
 }
 
 console.log(`\nALL ${n} TESTS PASSED ✓`);

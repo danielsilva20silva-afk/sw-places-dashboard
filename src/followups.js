@@ -13,6 +13,19 @@ const CADENCE_DAYS = { A: 7, B: 28, C: 75 };
 const UNCLASSIFIED_HOURS = 48;
 const DEFAULT_TERMINAL = ["Closed", "Lost"];
 
+// Launch floor (Europe/Lisbon day): the cadence baseline is never older than this,
+// so at launch the "Due today" list drains gradually from the reset instead of
+// dumping the entire historical backlog as overdue on day one. Overridable per
+// call via opts.resetDate (for tests).
+export const CADENCE_RESET_DATE = "2026-10-13";
+
+// "YYYY-MM-DD" → ms at UTC midnight (comparable with the ms instants we use; the
+// final overdue/today check is day-indexed in Lisbon, so midnight-UTC is fine).
+function dateStrMs(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ""));
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
+}
+
 // Europe/Lisbon day index (days since epoch). Mirrors utils.lisbonDayIndex;
 // inlined so this module imports nothing and stays trivially testable.
 function lisbonDayIndex(ms) {
@@ -78,16 +91,24 @@ export function computeFollowup(lead, actions = [], opts = {}) {
   // Closed / Lost are never due.
   if (lead && terminal.has(lead.status)) return { ...base, reason: "terminal" };
 
+  // Baseline = most recent contact (or creation), FLOORED at the cadence reset:
+  //   baseline = max(lastContacted ?? creation, resetDate)
+  // The floor only LIFTS baselines older than the reset; a newer contact/creation
+  // is kept as-is (never pushed back). Applies to every lead, including the
+  // unclassified 48h rule (an unclassified lead older than the reset counts 48h
+  // from the reset, not from its creation).
+  const resetMs = dateStrMs(opts.resetDate != null ? opts.resetDate : CADENCE_RESET_DATE) ?? 0;
+  const contactedOrCreated = lastContacted != null ? lastContacted : creationMs(lead);
+  const baseline = Math.max(contactedOrCreated != null ? contactedOrCreated : resetMs, resetMs);
+
   // Computed next follow-up.
-  let nextFollowUp = null;
+  let nextFollowUp;
   let reason;
   if (classified) {
-    const baseline = lastContacted != null ? lastContacted : creationMs(lead);
-    nextFollowUp = baseline != null ? baseline + cadenceDays * DAY : null;
+    nextFollowUp = baseline + cadenceDays * DAY;
     reason = "cadence";
   } else {
-    const created = creationMs(lead);
-    nextFollowUp = created != null ? created + UNCLASSIFIED_HOURS * 3600000 : null;
+    nextFollowUp = baseline + UNCLASSIFIED_HOURS * 3600000;
     reason = "classify";
   }
 
