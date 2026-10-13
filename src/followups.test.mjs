@@ -1,6 +1,7 @@
 // Unit tests for the follow-up cadence engine. Run: node src/followups.test.mjs
 import assert from "node:assert/strict";
 import { computeFollowup } from "./followups.js";
+import { compareActions } from "./actions.js";
 
 const DAY = 86400000;
 // Fixed "now": 2026-10-12 12:00 Lisbon-ish. Use a midday instant to avoid TZ edge.
@@ -177,6 +178,35 @@ const OCT25 = utc(2026, 10, 25);
   const fu = computeFollowup({ classification: "A", created_at: "2026-05-01T09:00:00Z", manual_notes: "" }, [], { now: OCT25 });
   assert.equal(fu.isOverdue, true); // default reset 2026-10-13 → Oct20 → overdue on Oct25
   ok("reset floor: default CADENCE_RESET_DATE applies when opts.resetDate omitted");
+}
+
+// ── Shared comparator / nextAction (Due today ↔ Actions card parity) ──
+{
+  // compareActions: due_at asc, then created_at asc, then id.
+  const a = { due_at: "2026-10-13T11:00:00Z", created_at: "2026-10-01T00:00:00Z", id: "x" };
+  const b = { due_at: "2026-10-13T11:00:00Z", created_at: "2026-10-02T00:00:00Z", id: "a" };
+  assert.ok(compareActions(a, b) < 0, "earlier created_at wins on equal due_at");
+  // a.id 'x' vs c.id 'b' with equal due_at + equal created_at → id tie-break: 'b' < 'x'.
+  const c = { due_at: "2026-10-13T11:00:00Z", created_at: "2026-10-01T00:00:00Z", id: "b" };
+  assert.ok(compareActions(a, c) > 0, "id tie-break: 'b' before 'x'");
+  const earlier = { due_at: "2026-10-13T10:00:00Z", created_at: "2099-01-01", id: "z" };
+  assert.ok(compareActions(earlier, a) < 0, "earlier due_at always wins");
+  ok("compareActions: due_at → created_at → id");
+}
+{
+  // computeFollowup picks the lead's winning pending action by the shared
+  // comparator and exposes it as nextAction (nextFollowUp = its due_at).
+  const pendingLater = { done: false, due_at: "2026-10-13T11:00:00Z", created_at: "2026-10-05", id: "later" };
+  const pendingEarlierCreated = { done: false, due_at: "2026-10-13T11:00:00Z", created_at: "2026-10-01", id: "early" };
+  const fu = computeFollowup(
+    { classification: "A", created_at: "2026-05-01", manual_notes: "" },
+    [pendingLater, pendingEarlierCreated],
+    { now: utc(2026, 10, 13, 9), resetDate: RESET }
+  );
+  assert.equal(fu.overridden, true);
+  assert.equal(fu.nextAction.id, "early", "same due_at → earlier created_at action chosen");
+  assert.equal(fu.nextFollowUp, new Date("2026-10-13T11:00:00Z").getTime());
+  ok("nextAction = winning pending action via shared comparator");
 }
 
 console.log(`\nALL ${n} TESTS PASSED ✓`);

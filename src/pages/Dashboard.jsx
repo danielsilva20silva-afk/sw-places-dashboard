@@ -6,6 +6,7 @@ import { eventTitle } from "../calendarUtils";
 import { relDate, buildMeetingPrefill } from "../utils";
 import { computeDedupe } from "../dedupe";
 import { computeFollowup } from "../followups";
+import { compareActions } from "../actions";
 import * as api from "../api";
 import Avatar from "../components/Avatar";
 import LeadDrawer from "../components/LeadDrawer";
@@ -189,7 +190,7 @@ export default function Dashboard({ onLogout }) {
       if (a.daysOverdue !== b.daysOverdue) return b.daysOverdue - a.daysOverdue; // more overdue first (today ties)
       // same due date from here:
       if (!!a.overridden !== !!b.overridden) return a.overridden ? -1 : 1; // scheduled-action rows first
-      if (a.overridden && b.overridden) return (a.nextFollowUp || 0) - (b.nextFollowUp || 0); // by action due time asc
+      if (a.overridden && b.overridden) return compareActions(a.nextAction, b.nextAction); // SAME comparator as the Actions card (due time, then created_at, id)
       return classRank(a.classification) - classRank(b.classification);    // rest by classification
     });
     return { followupsView: view, dueList: due };

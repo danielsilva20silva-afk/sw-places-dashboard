@@ -1,12 +1,15 @@
-// Derived follow-up cadence engine (pure, node-testable, zero imports). brandon-
-// only — the caller gates everything on hasFeature('followups'). NOTHING is
-// stored: lastContacted / nextFollowUp are computed at read time from data we
-// already have (the lead's notes-history timestamps, its completed actions, its
-// creation date, and its classification).
+// Derived follow-up cadence engine (pure, node-testable). brandon-only — the
+// caller gates everything on hasFeature('followupCadence'). NOTHING is stored:
+// lastContacted / nextFollowUp are computed at read time from data we already
+// have (the lead's notes-history timestamps, its completed actions, its creation
+// date, and its classification). Imports only the shared action comparator (also
+// a pure helper) so the chosen override action orders identically everywhere.
 //
 // Cadence (days) by classification: A=7, B=28, C=75. Unclassified leads must be
 // classified within 48h of creation. A lead's PENDING action with a due date
 // overrides the computed cadence (manual intent wins). Closed/Lost are never due.
+
+import { compareActions } from "./actions.js";
 
 const DAY = 86400000;
 const CADENCE_DAYS = { A: 7, B: 28, C: 75 };
@@ -85,7 +88,7 @@ export function computeFollowup(lead, actions = [], opts = {}) {
 
   const base = {
     lastContacted, nextFollowUp: null, isOverdue: false, isDueToday: false,
-    daysOverdue: 0, reason: "cadence", classification: cls, cadenceDays, overridden: false,
+    daysOverdue: 0, reason: "cadence", classification: cls, cadenceDays, overridden: false, nextAction: null,
   };
 
   // Closed / Lost are never due.
@@ -112,17 +115,19 @@ export function computeFollowup(lead, actions = [], opts = {}) {
     reason = "classify";
   }
 
-  // A pending (not-done) action with a due date overrides the cadence.
-  let pendingMs = null;
+  // A pending (not-done) action with a due date overrides the cadence. Pick the
+  // lead's winning action with the SHARED comparator (due_at, then created_at,
+  // then id) — the same order the Actions card uses — and expose it as nextAction
+  // so the Due-today list can tie-break identically across leads.
+  let nextAction = null;
   for (const a of list) {
-    if (!a || a.done) continue;
-    const ms = toMs(a.due_at);
-    if (ms != null && (pendingMs == null || ms < pendingMs)) pendingMs = ms;
+    if (!a || a.done || toMs(a.due_at) == null) continue;
+    if (nextAction == null || compareActions(a, nextAction) < 0) nextAction = a;
   }
   let overridden = false;
-  if (pendingMs != null) { nextFollowUp = pendingMs; reason = "scheduled"; overridden = true; }
+  if (nextAction != null) { nextFollowUp = toMs(nextAction.due_at); reason = "scheduled"; overridden = true; }
 
-  if (nextFollowUp == null) return { ...base, reason, overridden };
+  if (nextFollowUp == null) return { ...base, reason, overridden, nextAction };
 
   const todayIdx = lisbonDayIndex(now);
   const nextIdx = lisbonDayIndex(nextFollowUp);
@@ -137,5 +142,6 @@ export function computeFollowup(lead, actions = [], opts = {}) {
     daysOverdue: isOverdue ? todayIdx - nextIdx : 0,
     reason,
     overridden,
+    nextAction,
   };
 }

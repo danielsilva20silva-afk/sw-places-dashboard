@@ -18,10 +18,22 @@ export function dueState(dueISO, now = Date.now()) {
   return "future";
 }
 
-// Sort comparator by due_at ascending (soonest first).
-export function sortByDue(a, b) {
-  return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+// THE shared action comparator: due_at ascending (soonest first), then explicit
+// tie-breakers so equal-due-time actions have a deterministic order — created_at
+// ascending, then id. Used by the Actions card (groupActions), the drawer list,
+// AND the Due-today list (via followups), so those surfaces can never disagree on
+// ties (e.g. three actions all at 11:00 render in the same order everywhere).
+export function compareActions(a, b) {
+  const ms = (v) => { const t = new Date(v == null ? NaN : v).getTime(); return Number.isFinite(t) ? t : Infinity; };
+  const ad = ms(a && a.due_at), bd = ms(b && b.due_at);
+  if (ad !== bd) return ad - bd;
+  const ac = ms(a && a.created_at), bc = ms(b && b.created_at);
+  if (ac !== bc) return ac - bc;
+  return String((a && a.id) ?? "").localeCompare(String((b && b.id) ?? ""));
 }
+
+// Back-compat name for the shared comparator (soonest first, deterministic ties).
+export const sortByDue = compareActions;
 
 // Group {action, lead} items for the dashboard card: overdue, today, and the
 // count/list of upcoming actions within the next 7 days. Each bucket sorted by due.
