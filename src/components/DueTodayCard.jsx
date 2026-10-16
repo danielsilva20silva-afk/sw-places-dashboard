@@ -2,6 +2,7 @@ import { useState } from "react";
 import { t } from "../labels";
 import { NO_ANSWER_STATUS } from "../followups";
 import ClassificationBadge from "./ClassificationBadge";
+import useIsMobile from "../useIsMobile";
 
 // Dashboard "Due today" panel (brandon only, gated by the caller on the
 // followupCadence flag). Lists leads due today or overdue — derived, never stored.
@@ -24,7 +25,7 @@ function Dots({ attempts, threshold }) {
   );
 }
 
-function Row({ item, onOpenLead, onLogNoAnswer, onCompleteAction }) {
+function Row({ item, onOpenLead, onLogNoAnswer, onCompleteAction, isMobile }) {
   const { lead, fu } = item;
   const label = fu.isOverdue ? `${fu.daysOverdue}d ${t("fu_overdue_suffix")}` : t("fu_today");
   const noAnswer = !fu.overridden && lead.status === NO_ANSWER_STATUS;
@@ -33,7 +34,9 @@ function Row({ item, onOpenLead, onLogNoAnswer, onCompleteAction }) {
   return (
     <div
       onClick={() => onOpenLead(lead)}
-      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", cursor: "pointer", padding: "9px 4px", borderRadius: 8 }}
+      // On a phone let the row wrap so the controls never overflow or clip; the
+      // lead name still ellipsizes first so wrapping only happens when truly needed.
+      style={{ display: "flex", alignItems: "center", flexWrap: isMobile ? "wrap" : "nowrap", gap: 8, width: "100%", cursor: "pointer", padding: "9px 4px", borderRadius: 8 }}
       onMouseEnter={(e) => (e.currentTarget.style.background = "#FAFAFA")}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
@@ -57,7 +60,8 @@ function Row({ item, onOpenLead, onLogNoAnswer, onCompleteAction }) {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onLogNoAnswer(lead.id); }}
-          style={{ flexShrink: 0, background: "white", color: "#92400E", border: "1px solid #FDE68A", borderRadius: 8, padding: "4px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+          // Comfortable ~40px touch target on phones; unchanged compact size on desktop.
+          style={{ flexShrink: 0, background: "white", color: "#92400E", border: "1px solid #FDE68A", borderRadius: 8, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", ...(isMobile ? { minHeight: 40, display: "inline-flex", alignItems: "center", padding: "0 14px", fontSize: 13 } : { padding: "4px 8px", fontSize: 11 }) }}
         >
           {t("na_no_answer")}
         </button>
@@ -68,6 +72,7 @@ function Row({ item, onOpenLead, onLogNoAnswer, onCompleteAction }) {
 
 export default function DueTodayCard({ items, onOpenLead, onLogNoAnswer, onCompleteAction }) {
   const list = items || [];
+  const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState(false); // collapsed on every load
   const overdueCount = list.filter((it) => it.fu.isOverdue).length;
   const todayCount = list.length - overdueCount; // dueToday and overdue are exclusive
@@ -92,7 +97,7 @@ export default function DueTodayCard({ items, onOpenLead, onLogNoAnswer, onCompl
         ) : (
           <>
             <div style={expanded ? { maxHeight: "60vh", overflowY: "auto" } : undefined}>
-              {shown.map((it) => <Row key={String(it.lead.id)} item={it} onOpenLead={onOpenLead} onLogNoAnswer={onLogNoAnswer} onCompleteAction={onCompleteAction} />)}
+              {shown.map((it) => <Row key={String(it.lead.id)} item={it} onOpenLead={onOpenLead} onLogNoAnswer={onLogNoAnswer} onCompleteAction={onCompleteAction} isMobile={isMobile} />)}
             </div>
             {hasMore && (
               <button

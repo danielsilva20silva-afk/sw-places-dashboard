@@ -255,6 +255,17 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
     setClassification(lead.classification || "");
   }, [lead.classification, followupCadenceOn]);
 
+  // Status changes from OUTSIDE the drawer too: the "📞 No answer" chip auto-moves a
+  // still-New lead to the no-answer status, and the list dropdown can change it while
+  // the drawer is open. Re-sync the local pills live (same render, no reopen), exactly
+  // like classification above. Idempotent for the user's own pick (the prop settles to
+  // the same value); for a "Viewing booked" pick that is cancelled, the prop never
+  // changed, so this also reverts the optimistic pill to the real status.
+  useEffect(() => {
+    if (!followupCadenceOn) return;
+    setStatus(lead.status);
+  }, [lead.status, followupCadenceOn]);
+
   const suggestOn = hasFeature("classSuggest");
   const suggestedClass = suggestOn ? suggestClassification(lead) : null;
   const handleArchive = async () => {
