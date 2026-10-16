@@ -1,6 +1,6 @@
 // Unit tests for the follow-up cadence engine. Run: node src/followups.test.mjs
 import assert from "node:assert/strict";
-import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS } from "./followups.js";
+import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, STATUS_CHANGE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS, CONTACT_ANCHOR_STATUSES, isContactAnchorStatus, statusChangeActionTitle, noAnswerChipVisible, noAnswerStatusTransition } from "./followups.js";
 import { compareActions } from "./actions.js";
 
 const DAY = 86400000;
@@ -309,6 +309,76 @@ const dgAct = (ms, id) => ({ done: true, title: `${DOWNGRADE_TITLE} → B`, done
   assert.equal(withNote, 1);
   assert.equal(withoutNote, 1, "removing the downgrade note leaves the counter unchanged (action anchors)");
   ok("downgrade anchor: deleting the downgrade note doesn't change the counter");
+}
+
+// ── Status change counts as contact (cadence anchor) ──
+const statusAct = (status, ms, id) => ({ done: true, title: statusChangeActionTitle(status), done_at: new Date(ms).toISOString(), id });
+{
+  // Which statuses anchor the cadence (real contact) vs log nothing.
+  for (const s of CONTACT_ANCHOR_STATUSES) assert.equal(isContactAnchorStatus(s), true, `${s} should anchor`);
+  for (const s of ["Contacted — no answer", "New", "Closed", "Lost", "", null, undefined]) assert.equal(isContactAnchorStatus(s), false, `${s} must NOT anchor`);
+  assert.deepEqual(CONTACT_ANCHOR_STATUSES, ["Contacted — qualifying", "Contacted — answered", "Viewing booked"]);
+  ok("anchor statuses: qualifying/answered/viewing booked only");
+}
+{
+  // A completed "Status changed to {anchor}" action re-anchors the cadence to its
+  // done_at → next follow-up recalculates per class (A7/B28/C75).
+  const cases = [["A", 7], ["B", 28], ["C", 75]];
+  for (const [cls, days] of cases) {
+    const lead = { classification: cls, status: "Contacted — qualifying", manual_notes: "[01/01/2026 09:00] old note", created_at: daysAgo(400) };
+    const acts = [statusAct("Contacted — qualifying", NOW - days * DAY, `s-${cls}`)];
+    const fu = computeFollowup(lead, acts, opts);
+    assert.equal(fu.lastContacted, NOW - days * DAY, `${cls}: anchor = status-action done_at`);
+    assert.equal(fu.cadenceDays, days, `${cls}: normal cadence`);
+    assert.equal(fu.isDueToday, true, `${cls}: contacted exactly ${days}d ago via status change → due today`);
+    assert.equal(fu.isOverdue, false);
+  }
+  ok("status-change anchor: next follow-up recalculates per class (A7/B28/C75)");
+}
+{
+  // Deleting the status-change action reverts the anchor to the previous one (the
+  // older note). Nothing else is stored, so removal fully undoes an accidental
+  // status change. A(7): note Oct1 (overdue), status action Oct10 (not overdue).
+  const lead = { classification: "A", status: "Contacted — answered", manual_notes: "[01/10/2026 10:00] called", created_at: daysAgo(400) };
+  const act = statusAct("Contacted — answered", NOW - 2 * DAY, "sx");
+  const withAct = computeFollowup(lead, [act], opts);
+  assert.equal(withAct.lastContacted, NOW - 2 * DAY, "anchor = status action while present");
+  assert.equal(withAct.isOverdue, false, "Oct10 + 7 = Oct17 → not overdue on Oct12");
+  const withoutAct = computeFollowup(lead, [].filter(() => false), opts); // action removed
+  assert.equal(withoutAct.lastContacted, Date.UTC(2026, 9, 1, 10, 0), "anchor reverts to the older note");
+  assert.equal(withoutAct.isOverdue, true, "Oct1 + 7 = Oct8 → overdue again once the status action is deleted");
+  ok("status-change anchor: deleting the action restores the previous anchor");
+}
+{
+  // The status-change action is a SYSTEM action (recognizable like attempt/downgrade)
+  // → the caller never creates a Google event for it. Mirror Dashboard's predicate.
+  const isSystemAction = (title) => title === ATTEMPT_TITLE || String(title || "").startsWith(DOWNGRADE_TITLE) || String(title || "").startsWith(STATUS_CHANGE_TITLE);
+  assert.equal(statusChangeActionTitle("Viewing booked"), "Status changed to Viewing booked");
+  assert.equal(isSystemAction(statusChangeActionTitle("Viewing booked")), true);
+  assert.equal(isSystemAction(ATTEMPT_TITLE), true);
+  assert.equal(isSystemAction(`${DOWNGRADE_TITLE} → B`), true);
+  assert.equal(isSystemAction("Call back the client"), false, "a real user action is NOT a system action");
+  ok("status-change action is a system action (no Google event)");
+}
+
+// ── No-answer chip visibility + New → no-answer transition ──
+{
+  // Chip renders for EVERY lead when the cadence engine is on, regardless of status.
+  assert.equal(noAnswerChipVisible(true), true);
+  assert.equal(noAnswerChipVisible(false), false);
+  // Status-independent by construction (same result whatever the lead's status is).
+  for (const _ of ["New", NO_ANSWER_STATUS, "Closed", "Viewing booked"]) assert.equal(noAnswerChipVisible(true), true);
+  ok("no-answer chip: visible for all leads when cadence is on");
+}
+{
+  const o = { newStatus: "New", noAnswerStatus: NO_ANSWER_STATUS };
+  assert.equal(noAnswerStatusTransition("New", o), NO_ANSWER_STATUS, "New → no-answer on click");
+  for (const s of ["Contacted — qualifying", "Contacted — answered", "Viewing booked", NO_ANSWER_STATUS, "Closed", "Lost"]) {
+    assert.equal(noAnswerStatusTransition(s, o), null, `${s} stays unchanged on click`);
+  }
+  // Defaults to the "New" label when opts omitted.
+  assert.equal(noAnswerStatusTransition("New"), NO_ANSWER_STATUS);
+  ok("no-answer click: only a New lead transitions to the no-answer status");
 }
 
 console.log(`\nALL ${n} TESTS PASSED ✓`);

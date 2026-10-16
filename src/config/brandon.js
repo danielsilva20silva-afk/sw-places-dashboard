@@ -87,6 +87,7 @@ export default {
     na_overdue: "Overdue",
     na_today: "Today",
     na_card_title: "Actions",
+    na_contact_log: "Contact log",
     na_all_clear: "All caught up ✓",
     na_error: "Couldn't save the action.",
     // Archive leads (hide without deleting)

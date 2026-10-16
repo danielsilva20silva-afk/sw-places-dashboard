@@ -95,6 +95,7 @@ const DEFAULTS = {
   na_overdue: "Em atraso",
   na_today: "Hoje",
   na_card_title: "Ações",
+  na_contact_log: "Registo de contactos",
   na_all_clear: "Tudo em dia ✓",
   na_error: "Não foi possível guardar a ação.",
 
