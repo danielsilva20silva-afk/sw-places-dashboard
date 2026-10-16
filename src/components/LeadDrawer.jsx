@@ -30,7 +30,7 @@ const fieldInput = {
 };
 const fieldLabel = { fontSize: 10, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 5px" };
 
-export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, followup, onLogNoAnswer, onDeleteAttempt, leadActions, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
+export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onRequestMeeting, candidates, onMerge, onUnmerge, followup, onLogNoAnswer, onDeleteAttempt, leadActions, contactLog, onActionCreate, onActionEdit, onActionComplete, onActionDelete, archiveEnabled, isArchived, onArchive, onUnarchive }) {
   const [name, setName] = useState(lead.name || "");
   const [email, setEmail] = useState(lead.email || "");
   const [phone, setPhone] = useState(lead.phone || "");
@@ -428,6 +428,7 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
           {actionsOn && (
             <NextActions
               actions={leadActions || []}
+              contactLog={contactLog || []}
               onCreate={onActionCreate}
               onComplete={completeActionWithNote}
               onEdit={onActionEdit}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../labels";
 import { sortByDue } from "../actions";
+import { STATUS_CHANGE_TITLE } from "../followups";
 import DueBadge from "./DueBadge";
 
 // "Next action" section for the LeadDrawer. Lists the lead's pending actions
@@ -101,9 +102,31 @@ function ActionRow({ action, onComplete, onEdit, onDelete }) {
   );
 }
 
-export default function NextActions({ actions, onCreate, onComplete, onEdit, onDelete }) {
+// Completed "Status changed to {status}" markers (brandon followup cadence). They
+// anchor the cadence to the moment of contact; deleting one reverts that anchor.
+// Shown as a compact, read-only log with a delete control — never a pending task.
+function ContactLogRow({ action, onDelete }) {
+  const status = String(action.title || "").slice(STATUS_CHANGE_TITLE.length).trim() || action.title;
+  const when = action.done_at || action.created_at;
+  let stamp = "";
+  if (when) {
+    const d = new Date(when);
+    if (!isNaN(d.getTime())) stamp = d.toLocaleDateString(t("date_locale"), { day: "numeric", month: "short" });
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: "#FAFAF9", border: "1px solid #F0F0F0", borderRadius: 9 }}>
+      <span style={{ color: "#16A34A", fontSize: 12, flexShrink: 0 }}>✓</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "#555", wordBreak: "break-word" }}>{status}</span>
+      {stamp && <span style={{ fontSize: 11, color: "#AAA", flexShrink: 0 }}>{stamp}</span>}
+      <button type="button" title={t("na_delete")} aria-label={t("na_delete")} onClick={() => onDelete(action.id)} style={{ ...linkBtn, color: "#DC2626", flexShrink: 0 }}>🗑</button>
+    </div>
+  );
+}
+
+export default function NextActions({ actions, contactLog, onCreate, onComplete, onEdit, onDelete }) {
   const [adding, setAdding] = useState(false);
   const pending = [...(actions || [])].sort(sortByDue);
+  const log = contactLog || [];
 
   return (
     <div>
@@ -134,6 +157,17 @@ export default function NextActions({ actions, onCreate, onComplete, onEdit, onD
         <button type="button" onClick={() => setAdding(true)} style={{ width: "100%", textAlign: "left", background: "#FFFBEB", border: "1px dashed #FDE68A", borderRadius: 10, padding: "11px 14px", fontSize: 13, color: "#92400E", cursor: "pointer" }}>
           {t("na_none")}
         </button>
+      )}
+
+      {/* Contact log — completed status-change anchors (brandon followup cadence).
+          Empty for every other client, so nothing renders and they stay unchanged. */}
+      {log.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <p style={{ ...label, margin: "0 0 6px" }}>{t("na_contact_log")}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {log.map((a) => <ContactLogRow key={a.id} action={a} onDelete={onDelete} />)}
+          </div>
+        </div>
       )}
     </div>
   );

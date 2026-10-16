@@ -5,7 +5,7 @@ import { t } from "../labels";
 import { eventTitle } from "../calendarUtils";
 import { relDate, buildMeetingPrefill } from "../utils";
 import { computeDedupe } from "../dedupe";
-import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS } from "../followups";
+import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, STATUS_CHANGE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS, isContactAnchorStatus, statusChangeActionTitle, noAnswerStatusTransition } from "../followups";
 import { compareActions } from "../actions";
 import { appendNote } from "../notesFormat";
 import * as api from "../api";
@@ -136,12 +136,22 @@ export default function Dashboard({ onLogout }) {
   const { actionsView } = useMemo(() => {
     if (!actionsOn) return { actionsView: null, actionItems: [] };
     const pendingByRawId = new Map();
+    // Completed status-change markers (brandon followup cadence) → the per-lead
+    // "contact log" shown in the drawer. Deleting one reverts its cadence anchor.
+    const logByRawId = new Map();
     for (const a of actions) {
-      if (a.done) continue;
-      const arr = pendingByRawId.get(String(a.lead_id)) || [];
-      arr.push(a); pendingByRawId.set(String(a.lead_id), arr);
+      if (!a.done) {
+        const arr = pendingByRawId.get(String(a.lead_id)) || [];
+        arr.push(a); pendingByRawId.set(String(a.lead_id), arr);
+      } else if (followupCadenceOn && String(a.title || "").startsWith(STATUS_CHANGE_TITLE)) {
+        const arr = logByRawId.get(String(a.lead_id)) || [];
+        arr.push(a); logByRawId.set(String(a.lead_id), arr);
+      }
     }
     const byDue = (x, y) => compareActions(x, y); // shared order: due_at, then created_at, id
+    // Newest-first for the contact log (by done_at, then created_at).
+    const logMs = (a) => new Date(a.done_at || a.created_at || 0).getTime() || 0;
+    const byRecent = (x, y) => logMs(y) - logMs(x);
     const view = new Map();
     const leadByAnyId = new Map();
     // Built over ACTIVE leads only, so an archived lead's pending actions vanish
@@ -151,8 +161,10 @@ export default function Dashboard({ onLogout }) {
       leadByAnyId.set(String(lead.id), lead);
       const secIds = (lead.mergedSecondaries || []).map((s) => String(s.lead.id));
       for (const sid of secIds) leadByAnyId.set(sid, lead);
-      const pending = [String(lead.id), ...secIds].flatMap((id) => pendingByRawId.get(id) || []).sort(byDue);
-      view.set(String(lead.id), { pending, next: pending[0] || null });
+      const allIds = [String(lead.id), ...secIds];
+      const pending = allIds.flatMap((id) => pendingByRawId.get(id) || []).sort(byDue);
+      const contactLog = followupCadenceOn ? allIds.flatMap((id) => logByRawId.get(id) || []).sort(byRecent) : [];
+      view.set(String(lead.id), { pending, next: pending[0] || null, contactLog });
     }
     const items = [];
     for (const a of actions) {
@@ -161,7 +173,7 @@ export default function Dashboard({ onLogout }) {
       if (lead) items.push({ action: a, lead });
     }
     return { actionsView: view, actionItems: items };
-  }, [actionsOn, actions, activeLeads]);
+  }, [actionsOn, followupCadenceOn, actions, activeLeads]);
 
   // Derived follow-up cadence (brandon only). For each active lead compute its
   // follow-up state from notes/actions/creation/classification (nothing stored,
@@ -252,6 +264,23 @@ export default function Dashboard({ onLogout }) {
   // Edit lead details (from the drawer). Optimistic, persists via PATCH, and
   // reconciles with the server row. Returns {ok} so the drawer can show errors
   // without discarding the user's typed values.
+  // Log a completed system action when the user sets a "real contact" status, so the
+  // cadence re-anchors to now (next follow-up = now + A7/B28/C75). Completed at
+  // creation → never a pending task; a system action → never a Google event. Nothing
+  // else is stored, so deleting this action from the lead's contact log reverts the
+  // anchor (the undo path for an accidental status change). Best-effort: a failed log
+  // never blocks the status change. brandon-only (followupCadence).
+  const anchorStatusContact = (leadId, status) => {
+    if (!followupCadenceOn || !isContactAnchorStatus(status)) return;
+    const id = String(leadId);
+    (async () => {
+      try {
+        const created = await api.createAction({ lead_id: id, title: statusChangeActionTitle(status), due_at: new Date().toISOString(), description: "" });
+        const done = await api.updateAction(created.id, { done: true });
+        setActions(xs => [...xs, done]);
+      } catch (e) { console.warn("status-anchor action failed (status still changed):", e?.message || e); }
+    })();
+  };
   const updateLead = async (id, fields) => {
     const snapshot = leads;
     setLeads(ls => ls.map(l => String(l.id) === String(id) ? { ...l, ...fields } : l));
@@ -260,6 +289,9 @@ export default function Dashboard({ onLogout }) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const updated = await res.json();
       setLeads(ls => ls.map(l => String(l.id) === String(id) ? { ...l, ...updated } : l));
+      // Drawer status edits persist through here (discrete { status } patch). Anchor
+      // the cadence on a real-contact status; no-op for every other field/status.
+      if (fields && isContactAnchorStatus(fields.status)) anchorStatusContact(id, fields.status);
       return { ok: true };
     } catch (e) {
       setLeads(snapshot); // revert on failure
@@ -292,6 +324,9 @@ export default function Dashboard({ onLogout }) {
   const updateStatus = (id, status) => {
     setLeads(leads.map(l => l.id === id ? { ...l, status } : l));
     api.updateLead(id, { status }).catch(() => {});
+    // List-dropdown + meeting-flow status changes flow through here; anchor the
+    // cadence when the new status counts as real contact (no-op otherwise).
+    anchorStatusContact(id, status);
   };
   // Status change with smart actions. When calendar is enabled, selecting the
   // client's meeting status (config: calendarTriggerStatus) first opens the event
@@ -387,8 +422,10 @@ export default function Dashboard({ onLogout }) {
   const leadForEvent = (leadId) =>
     (dedupeOn && enrichedById && enrichedById.get(String(leadId))) ||
     leads.find((l) => String(l.id) === String(leadId)) || null;
-  // Attempt + downgrade marker actions must NEVER get a calendar event.
-  const isSystemAction = (title) => title === ATTEMPT_TITLE || String(title || "").startsWith(DOWNGRADE_TITLE);
+  // Attempt + downgrade + status-change marker actions must NEVER get a calendar
+  // event (the status-change action is also completed-at-creation, so createAction's
+  // !a.done guard already skips it — this keeps the convention explicit).
+  const isSystemAction = (title) => title === ATTEMPT_TITLE || String(title || "").startsWith(DOWNGRADE_TITLE) || String(title || "").startsWith(STATUS_CHANGE_TITLE);
 
   const createAction = async (payload) => {
     try {
@@ -461,9 +498,16 @@ export default function Dashboard({ onLogout }) {
     const lead = (dedupeOn && enrichedById && enrichedById.get(id)) || activeLeads.find(l => String(l.id) === id) || leads.find(l => String(l.id) === id);
     if (!lead) return { ok: false };
     const ids = leadIdsOf(lead);
-    // 1. prefilled note (persisted via the normal PATCH flow).
+    // 1. prefilled note (persisted via the normal PATCH flow). If the lead is still
+    // "New", this click IS the first contact attempt → transition it to the no-answer
+    // status in the SAME patch (atomic; avoids a racing second write). Any other
+    // status is left unchanged. The no-answer status is not a contact anchor, so this
+    // never logs a status-change action.
     const notesWithAttempt = appendNote(lead.manual_notes || "", PREFILLED_NO_ANSWER_NOTE);
-    await updateLead(id, { manual_notes: notesWithAttempt });
+    const transition = noAnswerStatusTransition(lead.status, { newStatus: statusRoles.new, noAnswerStatus: NO_ANSWER_STATUS });
+    const leadPatch = { manual_notes: notesWithAttempt };
+    if (transition) leadPatch.status = transition;
+    await updateLead(id, leadPatch);
     // 2. completed attempt-action (create, then mark done).
     let acts = actions.filter(a => ids.includes(String(a.lead_id)));
     try {
@@ -827,6 +871,7 @@ export default function Dashboard({ onLogout }) {
             onLogNoAnswer={followupCadenceOn ? logNoAnswer : undefined}
             onDeleteAttempt={followupCadenceOn ? deleteAttemptForNote : undefined}
             leadActions={actionsOn && actionsView ? (actionsView.get(id)?.pending || []) : []}
+            contactLog={followupCadenceOn && actionsView ? (actionsView.get(id)?.contactLog || []) : []}
             onActionCreate={(fields) => createAction({ lead_id: id, ...fields })}
             onActionEdit={editAction}
             onActionComplete={completeAction}

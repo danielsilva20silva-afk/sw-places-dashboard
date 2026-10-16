@@ -39,6 +39,36 @@ const DOWNGRADE_THRESHOLD = { A: 4, B: 3 };
 export function downgradeTarget(cls) { return DOWNGRADE_TARGET[cls] || null; }
 export function downgradeThreshold(cls) { return DOWNGRADE_THRESHOLD[cls] || null; }
 
+// Statuses that count as REAL CONTACT the moment the user selects them (brandon
+// labels). Setting one logs a completed system action (see STATUS_CHANGE_TITLE)
+// which anchors the cadence to now — next follow-up recalculates from that moment
+// (A +7 / B +28 / C +75). "Contacted — no answer", "New", "Closed" and "Lost" are
+// intentionally absent: selecting them logs nothing.
+export const CONTACT_ANCHOR_STATUSES = ["Contacted — qualifying", "Contacted — answered", "Viewing booked"];
+export function isContactAnchorStatus(status) { return CONTACT_ANCHOR_STATUSES.includes(String(status || "")); }
+
+// Title convention for that completed system action. Recognizable as a system
+// action (like ATTEMPT_TITLE / DOWNGRADE_TITLE): it anchors the cadence as a real
+// completed non-attempt contact, never creates a Google event, and never appears
+// as a pending task (it is completed at creation). Deleting it reverts the anchor.
+export const STATUS_CHANGE_TITLE = "Status changed to";
+export function statusChangeActionTitle(status) { return `${STATUS_CHANGE_TITLE} ${status}`; }
+
+// The drawer's "📞 No answer" chip is visible for EVERY lead when the cadence
+// engine is on — regardless of status (an attempt can be logged from any status).
+// (The compact Today-panel button keeps its own no-answer-only gating.)
+export function noAnswerChipVisible(followupCadenceOn) { return !!followupCadenceOn; }
+
+// Clicking "No answer" transitions a brand-new lead to the no-answer status (he
+// tried calling a new lead and nobody picked up); any other status is unchanged.
+// Returns the status to set, or null to leave it as is. newStatus defaults to the
+// brandon "New" label; both are overridable for tests / other clients.
+export function noAnswerStatusTransition(currentStatus, opts = {}) {
+  const newStatus = opts.newStatus != null ? opts.newStatus : "New";
+  const noAnswerStatus = opts.noAnswerStatus != null ? opts.noAnswerStatus : NO_ANSWER_STATUS;
+  return String(currentStatus || "") === String(newStatus) ? noAnswerStatus : null;
+}
+
 // Launch floor (Europe/Lisbon day): the cadence baseline is never older than this,
 // so at launch the "Due today" list drains gradually from the reset instead of
 // dumping the entire historical backlog as overdue on day one. Overridable per
