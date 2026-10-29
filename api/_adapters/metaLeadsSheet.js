@@ -1,5 +1,6 @@
 import { getSheetsContext } from "./googleAuth.js";
 import { getContext as getSupabaseContext } from "./supabase.js";
+import { combineStatusClass, stripClassSuffix } from "./leadStatusSignal.js";
 
 // Meta Ads Instant Forms → Google Sheet(s) adapter (READ + status write-back).
 // The Meta Ads sync owns these sheets; their column layout is FIXED by Meta —
@@ -237,7 +238,10 @@ function isTestRow(row, idx) {
 // anything unrecognized map to "New"; a value already in the dashboard set is
 // kept as-is (so a status set from the dashboard round-trips).
 function mapStatus(raw) {
-  const v = s(raw).trim();
+  // Tolerate the appended classification signal ("Contacted — qualifying — A"):
+  // strip a trailing " — A|B|C" before matching, so the combined value we write
+  // for Meta round-trips to the same dashboard status (never re-imported wrongly).
+  const v = stripClassSuffix(s(raw).trim());
   // Legacy single "Contacted" (pre status-split) → the conservative granular one.
   if (v === "Contacted") return "Contacted — no answer";
   return DASHBOARD_STATUSES.includes(v) ? v : "New";
@@ -492,26 +496,15 @@ export async function updateLead(ctx, id, b) {
       manualNotes = await upsertNote(ctx, id, b.manual_notes);
     }
 
-    // status → the lead_status cell of the exact TAB where the lead lives.
-    let status = current.status;
-    if (b.status !== undefined) {
-      const statusColIdx = tab.idx[STATUS_COL];
-      if (statusColIdx == null) throw new DataError(500, `Coluna "${STATUS_COL}" não encontrada no Sheet.`);
-      const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: tab.spreadsheetId,
-        range: `${a1Tab(tab.title)}!${colLetter(statusColIdx)}${sheetRow}`,
-        valueInputOption: "RAW",
-        requestBody: { values: [[b.status]] },
-      });
-      status = mapStatus(b.status);
-    }
+    const statusChanged = b.status !== undefined;
+    const classChanged = b.classification !== undefined;
 
-    // classification → the classification cell (same write-back pattern as
-    // status). If the tab has no such column, ignore silently — the source can't
-    // store it (classification_editable is false, so the UI won't offer it).
+    // classification → its OWN dedicated column (unchanged; the dashboard reads the
+    // lead's classification from here, independent of the combined lead_status). If
+    // the tab has no such column, ignore silently — the source can't store it
+    // (classification_editable is false, so the UI won't offer it).
     let classification = current.classification;
-    if (b.classification !== undefined) {
+    if (classChanged) {
       const classColIdx = tab.idx[CLASS_COL];
       if (classColIdx != null) {
         const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
@@ -522,6 +515,34 @@ export async function updateLead(ctx, id, b) {
           requestBody: { values: [[s(b.classification)]] },
         });
         classification = s(b.classification);
+      }
+    }
+
+    // lead_status (column Q) → the COMBINED quality signal Meta's CAPI watches:
+    // "<status>" or "<status> — <A|B|C>". Refreshed on a status change AND on a
+    // classification change (a reclassification is a quality signal too — it must
+    // reach Meta), reusing this single write-back path. Effective status/class are
+    // the post-patch values: whichever the request changed, else the lead's current
+    // value (so a status-only change keeps the existing class, and a class-only
+    // change keeps the existing status).
+    let status = current.status;
+    if (statusChanged) status = mapStatus(b.status);
+    if (statusChanged || classChanged) {
+      const statusColIdx = tab.idx[STATUS_COL];
+      if (statusColIdx == null) {
+        // A status change still requires the column (preserve the old contract); a
+        // classification-only change on a tab lacking lead_status is a silent no-op.
+        if (statusChanged) throw new DataError(500, `Coluna "${STATUS_COL}" não encontrada no Sheet.`);
+      } else {
+        const effStatus = statusChanged ? b.status : current.status;
+        const effClass = classChanged ? b.classification : current.classification;
+        const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: tab.spreadsheetId,
+          range: `${a1Tab(tab.title)}!${colLetter(statusColIdx)}${sheetRow}`,
+          valueInputOption: "RAW",
+          requestBody: { values: [[combineStatusClass(effStatus, effClass)]] },
+        });
       }
     }
 
