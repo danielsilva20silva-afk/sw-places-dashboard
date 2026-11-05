@@ -367,6 +367,13 @@ function rowToLead(row, idx, header) {
   const areaCol = areaFromForm ? null : findCol(header, idx, AREA_COL);
   const intentCol = intentFromForm ? null : findCol(header, idx, INTENT_COL);
   const budgetCol = findCol(header, idx, BUDGET_COL);
+  // Classification: matched with the SAME tolerant, normalized header lookup as
+  // budget/area/intent — so a sheet whose header is "Classification" (or any
+  // casing/spacing variant) is still read, editable and (critically) available to
+  // build the combined lead_status signal. An exact "classification[idx]" match
+  // used to miss such variants, leaving classification "" at write time → the
+  // lead_status combo silently degraded to the plain status.
+  const classCol = findCol(header, idx, CLASS_COL);
 
   const area = areaFromForm
     ? humanizeArea(answerFor(row, idx, header, AREA_Q))
@@ -403,8 +410,8 @@ function rowToLead(row, idx, header) {
     source_content: "", // no column
     manual_notes: "", // filled from the meta_lead_notes side table in getLeads
     manual_notes_editable: true, // notes live in our Supabase side table now
-    classification: cell(row, idx, CLASS_COL), // "" unless the tab has the column
-    classification_editable: idx[CLASS_COL] != null, // only if the sheet has the column
+    classification: classCol ? cell(row, idx, classCol.name) : "", // "" unless the tab has the column
+    classification_editable: !!classCol, // only if the sheet has the column (any casing)
     source_url: "", // no reel-link column for brandon (uniform shape only)
   };
 }
@@ -505,12 +512,14 @@ export async function updateLead(ctx, id, b) {
     // (classification_editable is false, so the UI won't offer it).
     let classification = current.classification;
     if (classChanged) {
-      const classColIdx = tab.idx[CLASS_COL];
-      if (classColIdx != null) {
+      // Tolerant header match (findCol), same as the read side — so a "Classification"
+      // (or other casing) column is still written. Missing column → ignore silently.
+      const classCol = findCol(tab.header, tab.idx, CLASS_COL);
+      if (classCol && classCol.index != null) {
         const sheetRow = dataIdx + 2; // +1 header, +1 for 1-based rows
         await sheets.spreadsheets.values.update({
           spreadsheetId: tab.spreadsheetId,
-          range: `${a1Tab(tab.title)}!${colLetter(classColIdx)}${sheetRow}`,
+          range: `${a1Tab(tab.title)}!${colLetter(classCol.index)}${sheetRow}`,
           valueInputOption: "RAW",
           requestBody: { values: [[s(b.classification)]] },
         });
