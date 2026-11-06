@@ -357,30 +357,30 @@ export function topPerformers(ads, { minImpressions = 1000 } = {}) {
 export const DIAGNOSES = [
   {
     code: "weak_hook",
-    text: "Primeiros 3s fracos: quem fica, fica até ao fim. O problema é o gancho inicial, não o vídeo.",
+    text: "Weak first 3 seconds: viewers who stay, stay to the end — fix the hook, not the video.",
     test: (a, b) => b.hook != null && b.hold != null && a.hookRate != null && a.holdRate != null
       && a.hookRate < b.hook && a.holdRate > b.hold,
   },
   {
     code: "weak_middle",
-    text: "Gancho forte, meio do vídeo perde as pessoas: encurtar ou acelerar o miolo.",
+    text: "Strong hook but the middle loses people: tighten or speed up the mid-section.",
     test: (a, b) => b.hook != null && b.hold != null && a.hookRate != null && a.holdRate != null
       && a.hookRate > b.hook && a.holdRate < b.hold,
   },
   {
     code: "form_friction",
-    text: "O vídeo vende mas o formulário trava: rever o instant form / fricção pós-clique.",
+    text: "The video sells but the form blocks: review the instant form / post-click friction.",
     test: (a, b) => b.ctr != null && b.cpl != null && a.ctr != null && a.cpl != null
       && a.ctr > b.ctr && a.cpl > b.cpl,
   },
   {
     code: "fatigue",
-    text: "Sinais de fadiga: o público já viu isto demasiadas vezes, preparar criativo novo.",
+    text: "Fatigue signs: the audience has seen this too many times — prepare fresh creative.",
     test: (a) => num(a.frequency) > 2.5 && a.ctr != null && a.ctr30 != null && a.ctr < a.ctr30,
   },
   {
     code: "low_quality",
-    text: "Gera volume mas pouca qualidade: rever a promessa do anúncio vs o produto.",
+    text: "Volume without quality: review the ad's promise vs the product.",
     test: (a, b) => {
       const qShare = num(a.sysLeads) > 0 ? num(a.qualified) / num(a.sysLeads) : null;
       const volFloor = Math.max(5, num(b.leadsPerAd));

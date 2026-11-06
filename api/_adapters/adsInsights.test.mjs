@@ -333,6 +333,17 @@ test("an average ad trips no diagnosis; rules are independent", () => {
   assert.equal(DIAGNOSES.length, 5);
 });
 
+test("diagnosis copy is the English wording (locks the translation; all ASCII)", () => {
+  const byCode = Object.fromEntries(DIAGNOSES.map((d) => [d.code, d.text]));
+  assert.equal(byCode.weak_hook, "Weak first 3 seconds: viewers who stay, stay to the end — fix the hook, not the video.");
+  assert.equal(byCode.weak_middle, "Strong hook but the middle loses people: tighten or speed up the mid-section.");
+  assert.equal(byCode.form_friction, "The video sells but the form blocks: review the instant form / post-click friction.");
+  assert.equal(byCode.fatigue, "Fatigue signs: the audience has seen this too many times — prepare fresh creative.");
+  assert.equal(byCode.low_quality, "Volume without quality: review the ad's promise vs the product.");
+  // No accented/Portuguese characters remain in any diagnosis text (— em-dash allowed).
+  for (const d of DIAGNOSES) assert.ok(!/[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/.test(d.text), `${d.code} has non-English chars`);
+});
+
 // ── assembly surfaces thumbnails, ctr30, benchmarks, topPerformers, per-ad insights ──
 test("assembleAdsInsights attaches thumbnails + ctr30 and emits benchmarks/topPerformers/insights", () => {
   const main = { data: [

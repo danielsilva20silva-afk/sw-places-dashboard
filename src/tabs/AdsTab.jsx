@@ -152,7 +152,7 @@ function TopPerformers({ performers, onSelect }) {
           return (
             <div key={c.key} style={{ ...base, opacity: 0.55 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase", letterSpacing: "0.4px" }}>{c.icon} {c.label}</span>
-              <span style={{ fontSize: 12, color: "#B4AE9F", marginTop: "auto" }}>sem amostra suficiente</span>
+              <span style={{ fontSize: 12, color: "#B4AE9F", marginTop: "auto" }}>not enough data</span>
             </div>
           );
         }
@@ -180,8 +180,8 @@ function InsightsBox({ insights }) {
   return (
     <div style={{ ...card, padding: "16px 18px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "#111", margin: 0 }}>💡 Leituras automáticas</p>
-        <span style={{ fontSize: 11, color: muted }}>baseado em médias do período</span>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "#111", margin: 0 }}>💡 Automatic insights</p>
+        <span style={{ fontSize: 11, color: muted }}>based on period averages</span>
       </div>
       {list.length ? (
         <ul style={{ margin: "12px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -193,7 +193,7 @@ function InsightsBox({ insights }) {
           ))}
         </ul>
       ) : (
-        <p style={{ fontSize: 12, color: muted, margin: "10px 0 0" }}>Sem sinais fora do normal para este anúncio.</p>
+        <p style={{ fontSize: 12, color: muted, margin: "10px 0 0" }}>No unusual signals for this ad.</p>
       )}
     </div>
   );
@@ -569,7 +569,7 @@ export default function AdsTab() {
               <div style={{ marginBottom: 12 }}>
                 <div style={{ ...card, padding: "14px 16px" }}><MiniStats ad={selected} wide /></div>
               </div>
-              {/* Auto-insights ("leituras automáticas") — the "why" layer */}
+              {/* Automatic insights — the "why" layer */}
               <div style={{ marginBottom: 12 }}><InsightsBox insights={selected.insights} /></div>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
                 <Panel title="Video retention" sub="% of plays still watching"><RetentionChart ads={[{ adName: selected.adName, retention: selected.retention, color: GOLD }]} /></Panel>

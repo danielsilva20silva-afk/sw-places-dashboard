@@ -449,10 +449,10 @@ async function metaFetchAll(params, token, edge = "insights") {
       resp = await fetch(url);
       json = await resp.json();
     } catch (err) {
-      throw new MetaError(`Falha a contactar o Meta: ${err?.message || err}`, "network");
+      throw new MetaError(`Couldn't reach Meta: ${err?.message || err}`, "network");
     }
     if (json?.error) {
-      throw new MetaError(s(json.error.message) || "Erro do Meta.", isTokenError(json.error) ? "token" : "meta");
+      throw new MetaError(s(json.error.message) || "Meta API error.", isTokenError(json.error) ? "token" : "meta");
     }
     if (Array.isArray(json?.data)) out.push(...json.data);
     url = json?.paging?.next || "";
@@ -529,7 +529,7 @@ async function handleAdsInsights(req, res, supabase) {
     return res.status(200).json({
       ok: false,
       errorCode: "token_expired",
-      error: "Token do Meta em falta ou expirado — renova no Apps Script.",
+      error: "Meta token missing or expired — renew it in Apps Script.",
     });
   }
 
@@ -570,14 +570,14 @@ async function handleAdsInsights(req, res, supabase) {
       return res.status(200).json({
         ok: false,
         errorCode: "token_expired",
-        error: "Token do Meta expirado — renova no Apps Script.",
+        error: "Meta token expired — renew it in Apps Script.",
       });
     }
     console.error("ads-insights fetch error:", err?.message || err);
     return res.status(200).json({
       ok: false,
       errorCode: "meta_error",
-      error: "Não foi possível obter os dados do Meta. Tenta novamente daqui a pouco.",
+      error: "Couldn't fetch data from Meta. Please try again shortly.",
     });
   }
 }
