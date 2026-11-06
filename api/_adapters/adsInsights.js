@@ -208,7 +208,7 @@ function mapDailyRow(r) {
   return { date: s(r.date_start), spend: num(r.spend), leads: leadCount(r.actions) };
 }
 
-function buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap }) {
+function buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap, thumbnails, baseline30 }) {
   const adId = s(r.ad_id);
   const adName = s(r.ad_name);
   const spend = num(r.spend);
@@ -267,11 +267,137 @@ function buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap }) {
     aLeads,
     costPerQualified: ratio(spend, qualified),
     costPerA: ratio(spend, aLeads),
+    // Creative thumbnail (signed Meta CDN URL — fetched fresh each cache rebuild,
+    // never persisted beyond the cache TTL). "" when the ad has no creative/thumb;
+    // the UI shows a neutral placeholder.
+    thumbnailUrl: s((thumbnails && thumbnails.get(adId)) || ""),
+    // The ad's OWN trailing-30d link CTR — a fatigue baseline, independent of the
+    // selected period (null when the ad had no 30d impressions). Used by the
+    // "sinais de fadiga" diagnosis.
+    ctr30: baseline30 && baseline30.has(adId) ? baseline30.get(adId) : null,
     // Detail-panel breakdowns.
     platforms: (platformByAd.get(adId) || []).map(mapPlatformRow),
     hours: aggregateHours(hourlyByAd.get(adId) || []),
     daily: (dailyByAd.get(adId) || []).map(mapDailyRow).sort((a, b) => a.date.localeCompare(b.date)),
+    // Filled in after benchmarks are known (assembleAdsInsights).
+    insights: [],
   };
+}
+
+// ── Account benchmarks (period averages) ────────────────────────────────────
+// Impression/spend-weighted aggregates — i.e. the account rate, not a mean of
+// per-ad rates (a 50-impression ad can't skew the average). hook/ctr weight by
+// impressions, hold by 3s plays, avgWatch by video plays, cpl is spend ÷ leads.
+// Each is null when its denominator is 0. `leadsPerAd` is a plain mean, used only
+// as a volume floor by the diagnoses.
+export function weightedBenchmarks(ads) {
+  let imp = 0, three = 0, thru = 0, clicks = 0, spend = 0, leads = 0, plays = 0, watchW = 0;
+  for (const a of Array.isArray(ads) ? ads : []) {
+    imp += num(a.impressions);
+    three += num(a.threeSecPlays);
+    thru += num(a.thruPlays);
+    clicks += num(a.clicks);
+    spend += num(a.spend);
+    leads += num(a.leads);
+    plays += num(a.videoPlays);
+    watchW += num(a.avgWatchTime) * num(a.videoPlays);
+  }
+  const n = (Array.isArray(ads) ? ads : []).length;
+  return {
+    hook: ratio(three, imp),
+    hold: ratio(thru, three),
+    avgWatch: ratio(watchW, plays),
+    ctr: ratio(clicks, imp),
+    cpl: ratio(spend, leads),
+    leadsPerAd: n ? leads / n : 0,
+  };
+}
+
+// ── Top performers ("quadro de honra") ──────────────────────────────────────
+// One winner per category over the period. A sample floor (≥1000 impressions,
+// default) keeps a lucky 50-impression ad off the podium; some categories add
+// their own floor (≥1 qualified, ≥3 classified). A category with no eligible ad
+// returns null → the UI greys that card.
+const classifiedCount = (a) => num(a.byClass?.A) + num(a.byClass?.B) + num(a.byClass?.C);
+
+export function topPerformers(ads, { minImpressions = 1000 } = {}) {
+  const list = Array.isArray(ads) ? ads : [];
+  const eligible = list.filter((a) => num(a.impressions) >= minImpressions);
+
+  const pick = (cands, valueFn, better) => {
+    let best = null, bestV = null;
+    for (const a of cands) {
+      const v = valueFn(a);
+      if (v == null) continue;
+      if (best === null || better(v, bestV)) { best = a; bestV = v; }
+    }
+    return best ? { adId: best.adId, adName: best.adName, thumbnailUrl: best.thumbnailUrl || "", value: bestV } : null;
+  };
+  const higher = (x, y) => x > y;
+  const lower = (x, y) => x < y;
+
+  return {
+    bestHook: pick(eligible, (a) => a.hookRate, higher),
+    bestRetention: pick(eligible, (a) => a.holdRate, higher),
+    bestCtr: pick(eligible, (a) => a.ctr, higher),
+    cheapestQualified: pick(eligible.filter((a) => num(a.qualified) >= 1), (a) => a.costPerQualified, lower),
+    bestQuality: pick(
+      eligible.filter((a) => classifiedCount(a) >= 3),
+      (a) => (classifiedCount(a) > 0 ? num(a.byClass.A) / classifiedCount(a) : null),
+      higher
+    ),
+  };
+}
+
+// ── Auto-insights ("leituras automáticas") ──────────────────────────────────
+// Rule-based diagnoses (Portuguese) comparing one ad to the period benchmarks.
+// Heuristics only — the UI labels them as such. Each rule is a pure predicate so
+// it unit-tests as fires / doesn't-fire / boundary. A rule needing a benchmark it
+// doesn't have (null) simply doesn't fire.
+export const DIAGNOSES = [
+  {
+    code: "weak_hook",
+    text: "Primeiros 3s fracos: quem fica, fica até ao fim. O problema é o gancho inicial, não o vídeo.",
+    test: (a, b) => b.hook != null && b.hold != null && a.hookRate != null && a.holdRate != null
+      && a.hookRate < b.hook && a.holdRate > b.hold,
+  },
+  {
+    code: "weak_middle",
+    text: "Gancho forte, meio do vídeo perde as pessoas: encurtar ou acelerar o miolo.",
+    test: (a, b) => b.hook != null && b.hold != null && a.hookRate != null && a.holdRate != null
+      && a.hookRate > b.hook && a.holdRate < b.hold,
+  },
+  {
+    code: "form_friction",
+    text: "O vídeo vende mas o formulário trava: rever o instant form / fricção pós-clique.",
+    test: (a, b) => b.ctr != null && b.cpl != null && a.ctr != null && a.cpl != null
+      && a.ctr > b.ctr && a.cpl > b.cpl,
+  },
+  {
+    code: "fatigue",
+    text: "Sinais de fadiga: o público já viu isto demasiadas vezes, preparar criativo novo.",
+    test: (a) => num(a.frequency) > 2.5 && a.ctr != null && a.ctr30 != null && a.ctr < a.ctr30,
+  },
+  {
+    code: "low_quality",
+    text: "Gera volume mas pouca qualidade: rever a promessa do anúncio vs o produto.",
+    test: (a, b) => {
+      const qShare = num(a.sysLeads) > 0 ? num(a.qualified) / num(a.sysLeads) : null;
+      const volFloor = Math.max(5, num(b.leadsPerAd));
+      return num(a.leads) >= volFloor && qShare != null && classifiedCount(a) >= 1 && qShare < 0.2;
+    },
+  },
+];
+
+export function adDiagnoses(ad, benchmarks) {
+  const b = benchmarks || {};
+  const out = [];
+  for (const d of DIAGNOSES) {
+    let fired;
+    try { fired = !!d.test(ad, b); } catch { fired = false; }
+    if (fired) out.push({ code: d.code, text: d.text });
+  }
+  return out;
 }
 
 function computeTotals(ads) {
@@ -308,16 +434,32 @@ function computeTotals(ads) {
 // Only ads with spend > 0 in the period make the table (per the brief); the join
 // still exposes lead-only ad names (paused creatives that still produced leads)
 // via `unmatchedLeadAds`, so nothing is silently dropped.
-export function assembleAdsInsights({ main, platform, hourly, daily, leads, preset, cachedAt } = {}) {
+//
+// `thumbnails` (Map adId→url) and `baseline` (last-30d `main` payload, for each
+// ad's own trailing CTR) are optional — the page degrades gracefully without them
+// (placeholder thumbs; the fatigue diagnosis just can't fire).
+export function assembleAdsInsights({ main, platform, hourly, daily, leads, preset, cachedAt, thumbnails, baseline } = {}) {
   const joinMap = joinLeadsByAd(leads);
   const platformByAd = groupByAd(rowsOf(platform));
   const hourlyByAd = groupByAd(rowsOf(hourly));
   const dailyByAd = groupByAd(rowsOf(daily));
+  const thumbMap = thumbnails instanceof Map ? thumbnails : new Map(Object.entries(thumbnails || {}));
+
+  // Each ad's own trailing-30d link CTR (fatigue baseline), keyed by ad id.
+  const baseline30 = new Map();
+  for (const r of rowsOf(baseline)) {
+    const id = s(r.ad_id);
+    if (id) baseline30.set(id, ratio(num(r.inline_link_clicks), num(r.impressions)));
+  }
 
   const ads = rowsOf(main)
-    .map((r) => buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap }))
+    .map((r) => buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap, thumbnails: thumbMap, baseline30 }))
     .filter((a) => a.spend > 0)
     .sort((a, b) => b.spend - a.spend);
+
+  // Benchmarks need every (built) ad; diagnoses then compare each ad to them.
+  const benchmarks = weightedBenchmarks(ads);
+  for (const a of ads) a.insights = adDiagnoses(a, benchmarks);
 
   const insightNames = new Set(ads.map((a) => normAdName(a.adName)));
   const unmatchedLeadAds = [];
@@ -331,6 +473,8 @@ export function assembleAdsInsights({ main, platform, hourly, daily, leads, pres
     preset: s(preset),
     cachedAt: cachedAt || new Date().toISOString(),
     totals: computeTotals(ads),
+    benchmarks,
+    topPerformers: topPerformers(ads),
     ads,
     unmatchedLeadAds,
   };

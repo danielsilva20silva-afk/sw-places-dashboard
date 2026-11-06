@@ -213,3 +213,155 @@ test("metaDatePreset maps the UI range to Meta's enum, defaults to last_7d", () 
   assert.equal(metaDatePreset("maximum"), "maximum");
   assert.equal(metaDatePreset("bogus"), "last_7d");
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// v2: thumbnails, benchmarks, top performers, auto-insights
+// ════════════════════════════════════════════════════════════════════════════
+import {
+  weightedBenchmarks,
+  topPerformers,
+  adDiagnoses,
+  DIAGNOSES,
+} from "./adsInsights.js";
+
+// ── weighted benchmarks ──
+test("weightedBenchmarks are impression/spend-weighted account rates, not a mean of rates", () => {
+  const ads = [
+    // big ad: 10000 impr, 3000 3s, 900 thru, 300 clicks, €100, 10 leads, 5000 plays, 8s
+    { impressions: 10000, threeSecPlays: 3000, thruPlays: 900, clicks: 300, spend: 100, leads: 10, videoPlays: 5000, avgWatchTime: 8 },
+    // tiny ad with a wild rate that must NOT skew the weighted average
+    { impressions: 100, threeSecPlays: 100, thruPlays: 100, clicks: 100, spend: 1, leads: 0, videoPlays: 50, avgWatchTime: 20 },
+  ];
+  const b = weightedBenchmarks(ads);
+  assert.equal(b.hook, 3100 / 10100); // ≈0.307, close to the big ad's 0.30 (tiny ad barely moves it)
+  assert.equal(b.hold, 1000 / 3100);
+  assert.equal(b.ctr, 400 / 10100);
+  assert.equal(b.cpl, 101 / 10); // total spend / total leads
+  assert.equal(b.avgWatch, (8 * 5000 + 20 * 50) / 5050); // play-weighted
+  assert.equal(b.leadsPerAd, 10 / 2);
+});
+
+test("weightedBenchmarks on empty input → null rates, never throws", () => {
+  const b = weightedBenchmarks([]);
+  assert.equal(b.hook, null);
+  assert.equal(b.cpl, null);
+  assert.equal(b.leadsPerAd, 0);
+});
+
+// ── top performers ──
+function ad(over = {}) {
+  return {
+    adId: "x", adName: "Ad", thumbnailUrl: "t", impressions: 2000,
+    hookRate: 0.2, holdRate: 0.2, ctr: 0.02, qualified: 2, costPerQualified: 50,
+    byClass: { A: 1, B: 1, C: 1, unclassified: 0 }, ...over,
+  };
+}
+
+test("topPerformers picks the winner per category and respects the ≥1000-impression floor", () => {
+  const ads = [
+    ad({ adId: "1", adName: "A", impressions: 5000, hookRate: 0.4, holdRate: 0.1, ctr: 0.01, qualified: 2, costPerQualified: 80, byClass: { A: 5, B: 1, C: 0, unclassified: 0 } }),
+    ad({ adId: "2", adName: "B", impressions: 5000, hookRate: 0.1, holdRate: 0.5, ctr: 0.05, qualified: 4, costPerQualified: 20, byClass: { A: 1, B: 3, C: 2, unclassified: 0 } }),
+    // tiny but amazing — must be excluded by the impression floor
+    ad({ adId: "3", adName: "Tiny", impressions: 200, hookRate: 0.99, holdRate: 0.99, ctr: 0.99, qualified: 9, costPerQualified: 1, byClass: { A: 9, B: 0, C: 0, unclassified: 0 } }),
+  ];
+  const tp = topPerformers(ads);
+  assert.equal(tp.bestHook.adId, "1"); // 0.4 (Tiny's 0.99 excluded)
+  assert.equal(tp.bestRetention.adId, "2"); // 0.5
+  assert.equal(tp.bestCtr.adId, "2"); // 0.05
+  assert.equal(tp.cheapestQualified.adId, "2"); // €20 < €80
+  assert.equal(tp.bestQuality.adId, "1"); // 5/6 A-share vs 1/6
+  assert.equal(tp.bestHook.thumbnailUrl, "t");
+});
+
+test("topPerformers category floors: ≥1 qualified and ≥3 classified; null when none eligible", () => {
+  const ads = [
+    ad({ adId: "1", impressions: 3000, qualified: 0, byClass: { A: 1, B: 1, C: 0, unclassified: 0 } }), // 0 qualified, 2 classified
+  ];
+  const tp = topPerformers(ads);
+  assert.equal(tp.cheapestQualified, null); // no ad with ≥1 qualified
+  assert.equal(tp.bestQuality, null); // no ad with ≥3 classified
+  assert.equal(tp.bestHook.adId, "1"); // hook has no extra floor
+});
+
+test("topPerformers with no ad over the impression floor → all null", () => {
+  const tp = topPerformers([ad({ impressions: 10 })]);
+  assert.equal(tp.bestHook, null);
+  assert.equal(tp.bestCtr, null);
+});
+
+// ── auto-insights (each rule: fires / doesn't / boundary) ──
+const BENCH = { hook: 0.3, hold: 0.3, ctr: 0.02, cpl: 20, avgWatch: 5, leadsPerAd: 4 };
+const codes = (a, b = BENCH) => adDiagnoses(a, b).map((d) => d.code);
+// a fully-average ad that trips no rule — spread + override per test
+const baseAd = { hookRate: 0.3, holdRate: 0.3, ctr: 0.02, cpl: 20, frequency: 1, ctr30: 0.02, sysLeads: 4, qualified: 2, leads: 4, byClass: { A: 1, B: 1, C: 1, unclassified: 0 } };
+
+test("diagnosis weak_hook: fires / doesn't / boundary", () => {
+  assert.ok(codes({ ...baseAd, hookRate: 0.2, holdRate: 0.4 }).includes("weak_hook")); // hook<avg, hold>avg
+  assert.ok(!codes({ ...baseAd, hookRate: 0.4, holdRate: 0.4 }).includes("weak_hook")); // hook>avg → no
+  assert.ok(!codes({ ...baseAd, hookRate: 0.3, holdRate: 0.4 }).includes("weak_hook")); // hook==avg (boundary) → no
+});
+
+test("diagnosis weak_middle: fires / doesn't / boundary", () => {
+  assert.ok(codes({ ...baseAd, hookRate: 0.4, holdRate: 0.2 }).includes("weak_middle")); // hook>avg, hold<avg
+  assert.ok(!codes({ ...baseAd, hookRate: 0.2, holdRate: 0.2 }).includes("weak_middle")); // hook<avg → no
+  assert.ok(!codes({ ...baseAd, hookRate: 0.4, holdRate: 0.3 }).includes("weak_middle")); // hold==avg (boundary) → no
+});
+
+test("diagnosis form_friction: fires / doesn't / boundary", () => {
+  assert.ok(codes({ ...baseAd, ctr: 0.05, cpl: 40 }).includes("form_friction")); // ctr>avg, cpl>avg
+  assert.ok(!codes({ ...baseAd, ctr: 0.05, cpl: 10 }).includes("form_friction")); // cpl<avg → no
+  assert.ok(!codes({ ...baseAd, ctr: 0.02, cpl: 40 }).includes("form_friction")); // ctr==avg (boundary) → no
+});
+
+test("diagnosis fatigue: fires / doesn't / boundary", () => {
+  assert.ok(codes({ ...baseAd, frequency: 3, ctr: 0.01, ctr30: 0.03 }).includes("fatigue")); // freq>2.5 & ctr<own 30d
+  assert.ok(!codes({ ...baseAd, frequency: 3, ctr: 0.04, ctr30: 0.03 }).includes("fatigue")); // ctr≥ctr30 → no
+  assert.ok(!codes({ ...baseAd, frequency: 2.5, ctr: 0.01, ctr30: 0.03 }).includes("fatigue")); // freq==2.5 (boundary) → no
+  assert.ok(!codes({ ...baseAd, frequency: 3, ctr: 0.01, ctr30: null }).includes("fatigue")); // no 30d baseline → no
+});
+
+test("diagnosis low_quality: fires / doesn't / boundary", () => {
+  // leads≥max(5,4)=5, qualified/sys = 1/10 = 0.1 < 0.2, classified≥1
+  assert.ok(codes({ ...baseAd, leads: 6, sysLeads: 10, qualified: 1 }).includes("low_quality"));
+  assert.ok(!codes({ ...baseAd, leads: 6, sysLeads: 10, qualified: 5 }).includes("low_quality")); // share 0.5 → no
+  assert.ok(!codes({ ...baseAd, leads: 4, sysLeads: 10, qualified: 1 }).includes("low_quality")); // volume below floor (4<5) → no
+  assert.ok(!codes({ ...baseAd, leads: 6, sysLeads: 10, qualified: 2 }).includes("low_quality")); // share==0.2 (boundary) → no
+});
+
+test("an average ad trips no diagnosis; rules are independent", () => {
+  assert.deepEqual(codes(baseAd), []);
+  assert.equal(DIAGNOSES.length, 5);
+});
+
+// ── assembly surfaces thumbnails, ctr30, benchmarks, topPerformers, per-ad insights ──
+test("assembleAdsInsights attaches thumbnails + ctr30 and emits benchmarks/topPerformers/insights", () => {
+  const main = { data: [
+    { ad_id: "1", ad_name: "Reel A", spend: "100", impressions: "4000", inline_link_clicks: "40", frequency: "3",
+      actions: [{ action_type: "video_view", value: "2000" }, { action_type: "lead", value: "10" }],
+      video_play_actions: [{ value: "3000" }], video_thruplay_watched_actions: [{ value: "1200" }] },
+  ] };
+  const baseline = { data: [{ ad_id: "1", impressions: "9000", inline_link_clicks: "180" }] }; // 30d ctr = 0.02
+  const thumbnails = new Map([["1", "https://cdn/thumb1.jpg"]]);
+  const leads = [
+    { source: "Meta Ads · Reel A", classification: "A", status: "Viewing booked" },
+    { source: "Meta Ads · Reel A", classification: "B", status: "New" },
+    { source: "Meta Ads · Reel A", classification: "C", status: "New" },
+  ];
+  const out = assembleAdsInsights({ main, baseline, thumbnails, leads, preset: "7d" });
+  const a = out.ads[0];
+  assert.equal(a.thumbnailUrl, "https://cdn/thumb1.jpg");
+  assert.equal(a.ctr30, 180 / 9000); // 0.02
+  assert.ok(out.benchmarks && typeof out.benchmarks.hook === "number");
+  assert.ok(out.topPerformers && "bestHook" in out.topPerformers);
+  assert.ok(Array.isArray(a.insights));
+  // current ctr = 40/4000 = 0.01 < own 30d 0.02, frequency 3 > 2.5 → fatigue fires
+  assert.ok(a.insights.some((d) => d.code === "fatigue"));
+});
+
+test("assembleAdsInsights without thumbnails/baseline degrades (placeholder url, no fatigue)", () => {
+  const main = { data: [{ ad_id: "1", ad_name: "Reel A", spend: "50", impressions: "2000", inline_link_clicks: "40", frequency: "3", actions: [] }] };
+  const out = assembleAdsInsights({ main, leads: [], preset: "7d" });
+  assert.equal(out.ads[0].thumbnailUrl, "");
+  assert.equal(out.ads[0].ctr30, null);
+  assert.ok(!out.ads[0].insights.some((d) => d.code === "fatigue")); // no 30d baseline → can't fire
+});

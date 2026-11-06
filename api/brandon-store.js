@@ -438,8 +438,8 @@ function isTokenError(errObj) {
   return code === 190 || code === 102 || code === 10 || msg.includes("access token") || msg.includes("session has expired");
 }
 
-async function metaFetchAll(params, token) {
-  const base = `https://graph.facebook.com/${META_API_VERSION}/act_${META_AD_ACCOUNT_ID}/insights`;
+async function metaFetchAll(params, token, edge = "insights") {
+  const base = `https://graph.facebook.com/${META_API_VERSION}/act_${META_AD_ACCOUNT_ID}/${edge}`;
   const qs = new URLSearchParams({ ...params, access_token: token, limit: String(META_PAGE_LIMIT) });
   let url = `${base}?${qs.toString()}`;
   const out = [];
@@ -458,6 +458,33 @@ async function metaFetchAll(params, token) {
     url = json?.paging?.next || "";
   }
   return { data: out };
+}
+
+// Fetch every ad's creative thumbnail → Map(adId → url). The ads edge carries no
+// date filter, so we map ALL ads and let the caller use only the ids that have
+// spend. thumbnail_width/height ask Meta for a larger (~256px) image; Meta serves
+// the default size when it can't honour them. Signed CDN URLs expire, so this is
+// re-fetched on every cache rebuild (never persisted beyond the 15-min TTL).
+// Best-effort: any failure yields an empty map → the UI shows placeholders.
+async function fetchAdThumbnails(token) {
+  const map = new Map();
+  try {
+    const { data } = await metaFetchAll(
+      { fields: "id,creative{thumbnail_url}", thumbnail_width: "256", thumbnail_height: "256" },
+      token,
+      "ads"
+    );
+    for (const ad of data) {
+      const id = s(ad?.id);
+      const url = s(ad?.creative?.thumbnail_url);
+      if (id && url) map.set(id, url);
+    }
+  } catch (err) {
+    // A token error is surfaced by the parallel insights calls; here we just
+    // degrade thumbnails to placeholders rather than sink the whole page.
+    console.error("ads-insights fetchAdThumbnails:", err?.message || err);
+  }
+  return map;
 }
 
 // Build the lead list exactly as the dashboard sees it (the client's configured
@@ -516,19 +543,25 @@ async function handleAdsInsights(req, res, supabase) {
     "video_p75_watched_actions", "video_p95_watched_actions", "video_p100_watched_actions",
   ].join(",");
 
+  // A non-token breakdown failure degrades to empty (the main table still
+  // renders); a token error from any insights call bubbles to the catch.
+  const softBreakdown = (label) => (e) => { if (e.code === "token") throw e; console.error(`ads-insights ${label}:`, e.message); return { data: [] }; };
+
   try {
-    // The four Meta calls run in parallel with the composite-leads read. A failed
-    // BREAKDOWN call degrades to empty (the main table still renders); a failed
-    // MAIN call is surfaced. Token errors from any call bubble to the catch.
-    const [main, platform, hourly, daily, leads] = await Promise.all([
+    // Meta calls + the composite-leads read run in parallel. `main` is the heavy
+    // per-ad call; `baseline` is a last-30d CTR reference (fatigue); `thumbnails`
+    // maps ad → creative thumbnail. Breakdowns/baseline/thumbnails are best-effort.
+    const [main, platform, hourly, daily, baseline, thumbnails, leads] = await Promise.all([
       metaFetchAll({ level: "ad", date_preset: datePreset, fields: videoFields }, token),
-      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,impressions,actions", breakdowns: "publisher_platform,platform_position" }, token).catch((e) => { if (e.code === "token") throw e; console.error("ads-insights platform breakdown:", e.message); return { data: [] }; }),
-      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,impressions,actions", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone" }, token).catch((e) => { if (e.code === "token") throw e; console.error("ads-insights hourly breakdown:", e.message); return { data: [] }; }),
-      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,actions", time_increment: "1" }, token).catch((e) => { if (e.code === "token") throw e; console.error("ads-insights daily series:", e.message); return { data: [] }; }),
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,impressions,actions", breakdowns: "publisher_platform,platform_position" }, token).catch(softBreakdown("platform breakdown")),
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,impressions,actions", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone" }, token).catch(softBreakdown("hourly breakdown")),
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,actions", time_increment: "1" }, token).catch(softBreakdown("daily series")),
+      metaFetchAll({ level: "ad", date_preset: "last_30d", fields: "ad_id,impressions,inline_link_clicks" }, token).catch(softBreakdown("30d baseline")),
+      fetchAdThumbnails(token),
       fetchCompositeLeads(),
     ]);
 
-    const payload = assembleAdsInsights({ main, platform, hourly, daily, leads, preset, cachedAt: new Date().toISOString() });
+    const payload = assembleAdsInsights({ main, platform, hourly, daily, baseline, thumbnails, leads, preset, cachedAt: new Date().toISOString() });
     adsMemCache.set(preset, { at: Date.parse(payload.cachedAt), payload });
     await writeAdsCache(supabase, preset, payload);
     return res.status(200).json({ ...payload, cached: false });

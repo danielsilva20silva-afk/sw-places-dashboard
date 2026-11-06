@@ -43,6 +43,33 @@ const fmtPct = (frac) => {
 };
 const fmtSec = (n) => (n == null || n === 0 ? "—" : `${Number(n).toFixed(1)}s`);
 
+// Creative thumbnail with graceful fallback: a missing/expired/broken signed CDN
+// URL degrades to a neutral placeholder tile, never a broken-image icon.
+function Thumb({ url, name, size = 32, radius = 7 }) {
+  const [broken, setBroken] = useState(false);
+  const common = {
+    width: size, height: size, borderRadius: radius, flexShrink: 0,
+    objectFit: "cover", background: "#EDEAE3", border: "1px solid #ECE7DC", display: "block",
+  };
+  if (!url || broken) {
+    return (
+      <div title={name} style={{ ...common, display: "flex", alignItems: "center", justifyContent: "center", color: "#C3BBA9", fontSize: Math.round(size * 0.42) }}>▦</div>
+    );
+  }
+  return <img src={url} alt="" title={name} loading="lazy" onError={() => setBroken(true)} style={common} />;
+}
+
+// Subtle vs-benchmark cell tint: green when better by >10%, red when worse by
+// >10%, nothing inside the ±10% neutral band. `higherBetter` flips direction for
+// cost metrics (lower CPL is better).
+function tintBg(value, benchmark, higherBetter) {
+  if (value == null || benchmark == null || !(benchmark > 0)) return undefined;
+  const r = value / benchmark;
+  if (higherBetter ? r >= 1.1 : r <= 0.9) return "#F0F8F1"; // green tint
+  if (higherBetter ? r <= 0.9 : r >= 1.1) return "#FDF3F2"; // red tint
+  return undefined;
+}
+
 // A/B/C chip cluster + unclassified count.
 function ClassChips({ byClass }) {
   if (!byClass) return <span style={{ color: "#CCC" }}>—</span>;
@@ -75,12 +102,12 @@ const COLUMNS = [
   { key: "adName", label: "Ad", align: "left", get: (a) => a.adName, fmt: (v) => v || "—", text: true },
   { key: "spend", label: "Spend", get: (a) => a.spend, fmt: fmtEur },
   { key: "impressions", label: "Impr.", get: (a) => a.impressions, fmt: fmtNum },
-  { key: "hookRate", label: "Hook", title: "3-second plays ÷ impressions", get: (a) => a.hookRate, fmt: fmtPct },
-  { key: "holdRate", label: "Hold", title: "ThruPlays ÷ 3-second plays", get: (a) => a.holdRate, fmt: fmtPct },
-  { key: "avgWatchTime", label: "Avg watch", get: (a) => a.avgWatchTime, fmt: fmtSec },
-  { key: "ctr", label: "CTR", title: "Link clicks ÷ impressions", get: (a) => a.ctr, fmt: fmtPct },
+  { key: "hookRate", label: "Hook", title: "3-second plays ÷ impressions (tinted vs period average)", get: (a) => a.hookRate, fmt: fmtPct, bench: "hook", higherBetter: true },
+  { key: "holdRate", label: "Hold", title: "ThruPlays ÷ 3-second plays (tinted vs period average)", get: (a) => a.holdRate, fmt: fmtPct, bench: "hold", higherBetter: true },
+  { key: "avgWatchTime", label: "Avg watch", title: "Average watch time (tinted vs period average)", get: (a) => a.avgWatchTime, fmt: fmtSec, bench: "avgWatch", higherBetter: true },
+  { key: "ctr", label: "CTR", title: "Link clicks ÷ impressions (tinted vs period average)", get: (a) => a.ctr, fmt: fmtPct, bench: "ctr", higherBetter: true },
   { key: "leads", label: "Leads", title: "Leads reported by Meta", get: (a) => a.leads, fmt: fmtNum },
-  { key: "cpl", label: "CPL", title: "Cost per lead (spend ÷ Meta leads)", get: (a) => a.cpl, fmt: fmtCost },
+  { key: "cpl", label: "CPL", title: "Cost per lead — spend ÷ Meta leads (tinted vs period average)", get: (a) => a.cpl, fmt: fmtCost, bench: "cpl", higherBetter: false },
   { key: "qualified", label: "Qual.", title: "Leads in a qualified-or-better status (our pipeline)", get: (a) => a.qualified, fmt: fmtNum },
   { key: "costPerQualified", label: "€ / qual.", title: "Spend ÷ qualified leads", get: (a) => a.costPerQualified, fmt: fmtCost },
   { key: "byClass", label: "A / B / C", align: "left", get: (a) => a.aLeads, sortKey: (a) => a.aLeads, chips: true },
@@ -99,6 +126,75 @@ function StatCard({ label, value, sub }) {
       <p style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: "0.5px", margin: "0 0 10px", fontWeight: 600 }}>{label}</p>
       <p style={{ fontSize: 30, fontWeight: 700, color: "#111", letterSpacing: "-1.5px", margin: "0 0 5px", lineHeight: 1 }}>{value}</p>
       <p style={{ fontSize: 11, color: "#BBB", margin: 0 }}>{sub}</p>
+    </div>
+  );
+}
+
+// ── Top performers strip ("quadro de honra") ──
+// One winning ad per category over the period. A null winner (no ad cleared the
+// ≥1000-impression sample floor, or the category's extra floor) renders greyed.
+const PERF_CARDS = [
+  { key: "bestHook", icon: "🪝", label: "Best Hook", fmt: fmtPct },
+  { key: "bestRetention", icon: "🎬", label: "Best Retention", fmt: fmtPct },
+  { key: "bestCtr", icon: "🖱", label: "Best CTR", fmt: fmtPct },
+  { key: "cheapestQualified", icon: "💶", label: "Cheapest Qualified", fmt: fmtCost },
+  { key: "bestQuality", icon: "⭐", label: "Best Lead Quality", fmt: (v) => `${fmtPct(v)} A` },
+];
+
+function TopPerformers({ performers, onSelect }) {
+  if (!performers) return null;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 18 }}>
+      {PERF_CARDS.map((c) => {
+        const w = performers[c.key];
+        const base = { ...card, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8, minHeight: 92 };
+        if (!w) {
+          return (
+            <div key={c.key} style={{ ...base, opacity: 0.55 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase", letterSpacing: "0.4px" }}>{c.icon} {c.label}</span>
+              <span style={{ fontSize: 12, color: "#B4AE9F", marginTop: "auto" }}>sem amostra suficiente</span>
+            </div>
+          );
+        }
+        return (
+          <button key={c.key} onClick={() => onSelect(w.adId)} title={`${c.label}: ${w.adName}`} style={{ ...base, cursor: "pointer", textAlign: "left", font: "inherit" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase", letterSpacing: "0.4px" }}>{c.icon} {c.label}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+              <Thumb url={w.thumbnailUrl} name={w.adName} size={34} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#111", lineHeight: 1 }}>{c.fmt(w.value)}</div>
+                <div style={{ fontSize: 11, color: muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>{w.adName}</div>
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Auto-insights box ("leituras automáticas") ──
+// Rule-based diagnoses (Portuguese), already computed server-side per ad.
+function InsightsBox({ insights }) {
+  const list = insights || [];
+  return (
+    <div style={{ ...card, padding: "16px 18px" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "#111", margin: 0 }}>💡 Leituras automáticas</p>
+        <span style={{ fontSize: 11, color: muted }}>baseado em médias do período</span>
+      </div>
+      {list.length ? (
+        <ul style={{ margin: "12px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+          {list.map((d) => (
+            <li key={d.code} style={{ display: "flex", gap: 8, fontSize: 13, color: "#333", lineHeight: 1.5 }}>
+              <span style={{ color: GOLD, flexShrink: 0 }}>›</span>
+              <span>{d.text}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p style={{ fontSize: 12, color: muted, margin: "10px 0 0" }}>Sem sinais fora do normal para este anúncio.</p>
+      )}
     </div>
   );
 }
@@ -286,6 +382,7 @@ export default function AdsTab() {
 
   const ads = useMemo(() => state.data?.ads || [], [state.data]);
   const totals = state.data?.totals || null;
+  const benchmarks = state.data?.benchmarks || null;
 
   const sortedAds = useMemo(() => {
     const col = COLUMNS.find((c) => c.key === sort.key) || COLUMNS[1];
@@ -383,13 +480,19 @@ export default function AdsTab() {
             <StatCard label="CTR" value={fmtPct(totals.ctr)} sub={`${fmtNum(totals.clicks)} link clicks`} />
           </div>
 
+          {/* Top performers strip ("quadro de honra") — click a card to select */}
+          {!compareMode && <TopPerformers performers={state.data?.topPerformers} onSelect={setSelectedId} />}
+
           {/* Compare view */}
           {compareMode && compareAds.length > 0 && (
             <div style={{ marginBottom: 18 }}>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : `repeat(${compareAds.length}, 1fr)`, gap: 12, marginBottom: 12 }}>
                 {compareAds.map((ad, i) => (
                   <div key={ad.adId} style={{ ...card, padding: "14px 16px", borderTop: `3px solid ${COMPARE_COLORS[i]}` }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: "#111", margin: "0 0 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.adName}</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 10px", minWidth: 0 }}>
+                      <Thumb url={ad.thumbnailUrl} name={ad.adName} size={40} radius={9} />
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.adName}</p>
+                    </div>
                     <MiniStats ad={ad} />
                     <div style={{ marginTop: 12 }}><Funnel ad={ad} /></div>
                   </div>
@@ -425,13 +528,23 @@ export default function AdsTab() {
                       }}
                         onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = "#FAFAFA"; }}
                         onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = "transparent"; }}>
-                        {COLUMNS.map((c) => (
-                          <td key={c.key} style={{ ...td, textAlign: c.align || "right", maxWidth: c.key === "adName" ? 220 : undefined, overflow: c.key === "adName" ? "hidden" : undefined, textOverflow: c.key === "adName" ? "ellipsis" : undefined }}>
-                            {c.chips ? <ClassChips byClass={ad.byClass} />
-                              : c.key === "adName" ? <span style={{ fontWeight: 600, color: "#111" }} title={ad.adName}>{ad.adName || "—"}</span>
-                              : c.fmt(c.get(ad))}
-                          </td>
-                        ))}
+                        {COLUMNS.map((c) => {
+                          // Subtle vs-period-average tint on rate/cost cells (skipped on
+                          // selected rows so the cream highlight stays legible).
+                          const tint = (!isSel && c.bench && benchmarks) ? tintBg(c.get(ad), benchmarks[c.bench], c.higherBetter) : undefined;
+                          return (
+                            <td key={c.key} style={{ ...td, textAlign: c.align || "right", background: tint, maxWidth: c.key === "adName" ? 240 : undefined, overflow: c.key === "adName" ? "hidden" : undefined, textOverflow: c.key === "adName" ? "ellipsis" : undefined }}>
+                              {c.chips ? <ClassChips byClass={ad.byClass} />
+                                : c.key === "adName" ? (
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 9, maxWidth: "100%" }}>
+                                    <Thumb url={ad.thumbnailUrl} name={ad.adName} size={30} />
+                                    <span style={{ fontWeight: 600, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.adName}>{ad.adName || "—"}</span>
+                                  </span>
+                                )
+                                : c.fmt(c.get(ad))}
+                            </td>
+                          );
+                        })}
                       </tr>
                     );
                   })}
@@ -446,13 +559,18 @@ export default function AdsTab() {
           {/* Detail panel for the selected ad (single-select mode) */}
           {!compareMode && selected && (
             <div style={{ marginBottom: 18 }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, gap: 10 }}>
-                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected.adName}</h3>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                  <Thumb url={selected.thumbnailUrl} name={selected.adName} size={52} radius={10} />
+                  <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected.adName}</h3>
+                </div>
                 <button onClick={() => setSelectedId(null)} style={{ border: "none", background: "none", cursor: "pointer", color: muted, fontSize: 13, flexShrink: 0 }}>Close ✕</button>
               </div>
               <div style={{ marginBottom: 12 }}>
                 <div style={{ ...card, padding: "14px 16px" }}><MiniStats ad={selected} wide /></div>
               </div>
+              {/* Auto-insights ("leituras automáticas") — the "why" layer */}
+              <div style={{ marginBottom: 12 }}><InsightsBox insights={selected.insights} /></div>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
                 <Panel title="Video retention" sub="% of plays still watching"><RetentionChart ads={[{ adName: selected.adName, retention: selected.retention, color: GOLD }]} /></Panel>
                 <Panel title="Placements" sub="Spend & leads by platform · position"><PlatformSplit platforms={selected.platforms} /></Panel>
