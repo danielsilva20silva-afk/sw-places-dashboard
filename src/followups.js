@@ -14,7 +14,11 @@ const DAY = 86400000;
 const CADENCE_DAYS = { A: 7, B: 28, C: 75 };
 export const RETRY_DAYS = { A: 7, B: 30, C: 180 };
 const UNCLASSIFIED_HOURS = 48;
-const DEFAULT_TERMINAL = ["Closed", "Lost"];
+// Terminal statuses (brandon): never due, and the "No answer" chip is hidden on
+// them (you don't log call attempts on a Closed/Lost lead). Single source of truth.
+export const TERMINAL_STATUSES = ["Closed", "Lost"];
+export function isTerminalStatus(status) { return TERMINAL_STATUSES.includes(String(status || "")); }
+const DEFAULT_TERMINAL = TERMINAL_STATUSES;
 
 // The status whose cadence is the no-answer retry chain (brandon label). Overridable
 // via opts.noAnswerStatus for tests.
@@ -57,7 +61,13 @@ export function statusChangeActionTitle(status) { return `${STATUS_CHANGE_TITLE}
 // The drawer's "📞 No answer" chip is visible for EVERY lead when the cadence
 // engine is on — regardless of status (an attempt can be logged from any status).
 // (The compact Today-panel button keeps its own no-answer-only gating.)
-export function noAnswerChipVisible(followupCadenceOn) { return !!followupCadenceOn; }
+// Visible for EVERY lead when the cadence engine is on — any status, any
+// classification, single-form OR merged multi-form — EXCEPT the terminal statuses
+// (Closed/Lost). It depends only on the flag + status, never on merge state: that's
+// what keeps merged leads (which render MergedNotes) from silently losing the chip.
+export function noAnswerChipVisible(followupCadenceOn, status) {
+  return !!followupCadenceOn && !isTerminalStatus(status);
+}
 
 // Clicking "No answer" transitions a brand-new lead to the no-answer status (he
 // tried calling a new lead and nobody picked up); any other status is unchanged.

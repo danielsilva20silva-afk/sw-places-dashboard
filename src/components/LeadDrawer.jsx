@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { STATUSES, STATUS_CONFIG, CLASSIFICATION_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { suggestClassification } from "../suggestClassification";
-import { NO_ANSWER_STATUS, PREFILLED_NO_ANSWER_NOTE } from "../followups";
+import { NO_ANSWER_STATUS, PREFILLED_NO_ANSWER_NOTE, noAnswerChipVisible } from "../followups";
 import { t } from "../labels";
 import { leadWhen, relDate, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab, sourceCampaignLabel } from "../utils";
 import { appendNote } from "../notesFormat";
@@ -225,6 +225,14 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   // Follow-up cadence (brandon only; derived, read-only). Muted cadence line:
   // override > classify-deadline > "{class} · every {n} days".
   const followupCadenceOn = hasFeature("followupCadence");
+  // "📞 No answer" quick-log, shared by BOTH notes views (normal + merged) so a
+  // merged multi-form lead never loses the chip. Shown for every lead/status/class
+  // except terminal (Closed/Lost) — see noAnswerChipVisible. Uses the live-synced
+  // local `status`, so it reacts if the status changes while the drawer is open.
+  const onNoAnswerChip = (onLogNoAnswer && noAnswerChipVisible(followupCadenceOn, status))
+    ? () => onLogNoAnswer(lead.id) : undefined;
+  const noAnswerAttemptsInfo = followupCadenceOn && followup && status === NO_ANSWER_STATUS
+    ? { attempts: followup.attempts, threshold: followup.attemptThreshold } : null;
   const followupCadenceText = (fu) => {
     if (!fu) return "";
     if (fu.overridden) return t("fu_from_action");
@@ -502,14 +510,16 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
               secondaries={mergedSecondaries.map((s) => s.lead)}
               onAppend={appendNoteToPrimary}
               busy={save === "saving"}
+              onNoAnswer={onNoAnswerChip}
+              attemptsInfo={noAnswerAttemptsInfo}
             />
           ) : (
             <NotesHistory
               value={manualNotes}
               onChange={commitNotes}
               busy={save === "saving"}
-              onNoAnswer={followupCadenceOn && onLogNoAnswer ? () => onLogNoAnswer(lead.id) : undefined}
-              attemptsInfo={followupCadenceOn && followup && lead.status === NO_ANSWER_STATUS ? { attempts: followup.attempts, threshold: followup.attemptThreshold } : null}
+              onNoAnswer={onNoAnswerChip}
+              attemptsInfo={noAnswerAttemptsInfo}
               onNoteDeleted={followupCadenceOn && onDeleteAttempt ? (entry) => { if (entry && entry.dated && entry.text === PREFILLED_NO_ANSWER_NOTE) onDeleteAttempt(lead.id, entry.stamp); } : undefined}
             />
           )}
