@@ -460,31 +460,76 @@ async function metaFetchAll(params, token, edge = "insights") {
   return { data: out };
 }
 
-// Fetch every ad's creative thumbnail → Map(adId → url). The ads edge carries no
-// date filter, so we map ALL ads and let the caller use only the ids that have
-// spend. thumbnail_width/height ask Meta for a larger (~256px) image; Meta serves
-// the default size when it can't honour them. Signed CDN URLs expire, so this is
-// re-fetched on every cache rebuild (never persisted beyond the 15-min TTL).
-// Best-effort: any failure yields an empty map → the UI shows placeholders.
-async function fetchAdThumbnails(token) {
-  const map = new Map();
+// Fetch every ad's creative thumbnail + (when a video) its video_id. The ads edge
+// carries no date filter, so we map ALL ads and let the caller use only the ids
+// that have spend. thumbnail_width/height ask Meta for a larger (~256px) image;
+// Meta serves the default size when it can't honour them. Returns
+// { thumbs: Map(adId→url), videoIds: Map(adId→video_id) }. Best-effort: any
+// failure yields empty maps → placeholders, no video.
+async function fetchAdCreatives(token) {
+  const thumbs = new Map();
+  const videoIds = new Map();
   try {
     const { data } = await metaFetchAll(
-      { fields: "id,creative{thumbnail_url}", thumbnail_width: "256", thumbnail_height: "256" },
+      { fields: "id,creative{thumbnail_url,video_id}", thumbnail_width: "256", thumbnail_height: "256" },
       token,
       "ads"
     );
     for (const ad of data) {
       const id = s(ad?.id);
+      if (!id) continue;
       const url = s(ad?.creative?.thumbnail_url);
-      if (id && url) map.set(id, url);
+      if (url) thumbs.set(id, url);
+      const vid = s(ad?.creative?.video_id);
+      if (vid) videoIds.set(id, vid);
     }
   } catch (err) {
     // A token error is surfaced by the parallel insights calls; here we just
-    // degrade thumbnails to placeholders rather than sink the whole page.
-    console.error("ads-insights fetchAdThumbnails:", err?.message || err);
+    // degrade media to placeholders rather than sink the whole page.
+    console.error("ads-insights fetchAdCreatives:", err?.message || err);
+  }
+  return { thumbs, videoIds };
+}
+
+// Resolve video ids → playable source URLs via the batch-by-ids endpoint
+// (GET /?ids=v1,v2&fields=source). Signed, expiring CDN URLs (same 15-min TTL
+// treatment as thumbnails). Meta may refuse `source` on a permission quirk — a
+// failed batch logs and is skipped (partial results still flow); the UI falls
+// back to the thumbnail. Returns Map(videoId → sourceUrl).
+async function fetchVideoSources(ids, token) {
+  const map = new Map();
+  const uniq = [...new Set(ids.filter(Boolean))];
+  const CHUNK = 50;
+  for (let i = 0; i < uniq.length; i += CHUNK) {
+    const batch = uniq.slice(i, i + CHUNK);
+    const qs = new URLSearchParams({ ids: batch.join(","), fields: "source", access_token: token });
+    try {
+      const resp = await fetch(`https://graph.facebook.com/${META_API_VERSION}/?${qs.toString()}`);
+      const json = await resp.json();
+      if (json?.error) { console.error("ads-insights fetchVideoSources batch:", s(json.error.message)); continue; }
+      for (const [vid, obj] of Object.entries(json || {})) {
+        const src = s(obj?.source);
+        if (src) map.set(vid, src);
+      }
+    } catch (err) {
+      console.error("ads-insights fetchVideoSources threw:", err?.message || err);
+    }
   }
   return map;
+}
+
+// Creatives + their video sources, resolved to { thumbnails: Map(adId→url),
+// videos: Map(adId→sourceUrl) }. Two Meta round-trips (ads edge, then the video
+// batch); both best-effort so the page never fails on media.
+async function fetchCreativeMedia(token) {
+  const { thumbs, videoIds } = await fetchAdCreatives(token);
+  const srcByVideo = await fetchVideoSources([...videoIds.values()], token);
+  const videos = new Map();
+  for (const [adId, vid] of videoIds) {
+    const src = srcByVideo.get(vid);
+    if (src) videos.set(adId, src);
+  }
+  return { thumbnails: thumbs, videos };
 }
 
 // Build the lead list exactly as the dashboard sees it (the client's configured
@@ -551,17 +596,19 @@ async function handleAdsInsights(req, res, supabase) {
     // Meta calls + the composite-leads read run in parallel. `main` is the heavy
     // per-ad call; `baseline` is a last-30d CTR reference (fatigue); `thumbnails`
     // maps ad → creative thumbnail. Breakdowns/baseline/thumbnails are best-effort.
-    const [main, platform, hourly, daily, baseline, thumbnails, leads] = await Promise.all([
+    const [main, platform, hourly, daily, baseline, media, leads] = await Promise.all([
       metaFetchAll({ level: "ad", date_preset: datePreset, fields: videoFields }, token),
       metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,impressions,actions", breakdowns: "publisher_platform,platform_position" }, token).catch(softBreakdown("platform breakdown")),
       metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,impressions,actions", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone" }, token).catch(softBreakdown("hourly breakdown")),
       metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,actions", time_increment: "1" }, token).catch(softBreakdown("daily series")),
       metaFetchAll({ level: "ad", date_preset: "last_30d", fields: "ad_id,impressions,inline_link_clicks" }, token).catch(softBreakdown("30d baseline")),
-      fetchAdThumbnails(token),
+      fetchCreativeMedia(token),
       fetchCompositeLeads(),
     ]);
 
-    const payload = assembleAdsInsights({ main, platform, hourly, daily, baseline, thumbnails, leads, preset, cachedAt: new Date().toISOString() });
+    const payload = assembleAdsInsights({ main, platform, hourly, daily, baseline, thumbnails: media.thumbnails, videos: media.videos, leads, preset, cachedAt: new Date().toISOString() });
+    // Visibility into whether Meta served video sources for this account's ads.
+    console.log(`ads-insights[${preset}]: ${payload.ads.length} ads, ${payload.ads.filter((a) => a.videoUrl).length} with playable video, ${payload.ads.filter((a) => a.thumbnailUrl).length} with thumbnail`);
     adsMemCache.set(preset, { at: Date.parse(payload.cachedAt), payload });
     await writeAdsCache(supabase, preset, payload);
     return res.status(200).json({ ...payload, cached: false });

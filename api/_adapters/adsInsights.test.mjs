@@ -376,3 +376,18 @@ test("assembleAdsInsights without thumbnails/baseline degrades (placeholder url,
   assert.equal(out.ads[0].ctr30, null);
   assert.ok(!out.ads[0].insights.some((d) => d.code === "fatigue")); // no 30d baseline → can't fire
 });
+
+test("assembleAdsInsights attaches videoUrl from the videos map; null when absent", () => {
+  const main = { data: [
+    { ad_id: "1", ad_name: "Video Ad", spend: "50", impressions: "2000", actions: [] },
+    { ad_id: "2", ad_name: "Image Ad", spend: "30", impressions: "1000", actions: [] },
+  ] };
+  const videos = new Map([["1", "https://cdn/video1.mp4"]]); // only ad 1 is a video
+  const out = assembleAdsInsights({ main, videos, leads: [], preset: "7d" });
+  const byId = Object.fromEntries(out.ads.map((a) => [a.adId, a]));
+  assert.equal(byId["1"].videoUrl, "https://cdn/video1.mp4");
+  assert.equal(byId["2"].videoUrl, null); // no entry → null, never undefined
+  // accepts a plain object too (defensive against a cache round-trip)
+  const out2 = assembleAdsInsights({ main, videos: { 1: "https://cdn/v.mp4" }, leads: [], preset: "7d" });
+  assert.equal(out2.ads.find((a) => a.adId === "1").videoUrl, "https://cdn/v.mp4");
+});

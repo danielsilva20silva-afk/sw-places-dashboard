@@ -44,20 +44,78 @@ const fmtPct = (frac) => {
 const fmtSec = (n) => (n == null || n === 0 ? "—" : `${Number(n).toFixed(1)}s`);
 
 // Creative thumbnail with graceful fallback: a missing/expired/broken signed CDN
-// URL degrades to a neutral placeholder tile, never a broken-image icon.
-function Thumb({ url, name, size = 32, radius = 7 }) {
+// URL degrades to a neutral placeholder tile, never a broken-image icon. A small
+// ▶ badge marks thumbnails whose ad has a playable video.
+function Thumb({ url, name, size = 32, radius = 7, hasVideo = false }) {
   const [broken, setBroken] = useState(false);
   const common = {
     width: size, height: size, borderRadius: radius, flexShrink: 0,
     objectFit: "cover", background: "#EDEAE3", border: "1px solid #ECE7DC", display: "block",
   };
-  if (!url || broken) {
-    return (
-      <div title={name} style={{ ...common, display: "flex", alignItems: "center", justifyContent: "center", color: "#C3BBA9", fontSize: Math.round(size * 0.42) }}>▦</div>
-    );
-  }
-  return <img src={url} alt="" title={name} loading="lazy" onError={() => setBroken(true)} style={common} />;
+  const badge = hasVideo ? (
+    <span style={{
+      position: "absolute", right: -3, bottom: -3, width: 15, height: 15, borderRadius: "50%",
+      background: "rgba(17,17,17,0.82)", color: "white", fontSize: 8, display: "flex",
+      alignItems: "center", justifyContent: "center", border: "1.5px solid white",
+    }}>▶</span>
+  ) : null;
+  const inner = (!url || broken)
+    ? <div title={name} style={{ ...common, display: "flex", alignItems: "center", justifyContent: "center", color: "#C3BBA9", fontSize: Math.round(size * 0.42) }}>▦</div>
+    : <img src={url} alt="" title={name} loading="lazy" onError={() => setBroken(true)} style={common} />;
+  if (!badge) return inner;
+  return <span style={{ position: "relative", display: "inline-block", flexShrink: 0, lineHeight: 0 }}>{inner}{badge}</span>;
 }
+
+// Large creative media: a muted <video> player (poster = thumbnail, preload none
+// so nothing downloads until play) when a source exists, else the thumbnail
+// image, else a placeholder. Used in the top-performer modal, the detail panel
+// and the compare cards.
+function AdMedia({ ad, maxHeight = 260 }) {
+  const [broken, setBroken] = useState(false);
+  const box = { width: "100%", maxHeight, borderRadius: 12, display: "block", background: "#121212" };
+  if (ad.videoUrl) {
+    return <video key={ad.videoUrl} src={ad.videoUrl} poster={ad.thumbnailUrl || undefined} controls muted preload="none" playsInline style={{ ...box, objectFit: "contain" }} />;
+  }
+  if (ad.thumbnailUrl && !broken) {
+    return <img src={ad.thumbnailUrl} alt="" onError={() => setBroken(true)} style={{ ...box, height: maxHeight, objectFit: "cover", background: "#EDEAE3" }} />;
+  }
+  return <div style={{ ...box, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#C3BBA9", fontSize: 40, background: "#EDEAE3" }}>▦</div>;
+}
+
+// Generic modal overlay: dim backdrop, click-outside + Esc to close, body-scroll
+// locked while open, content scrolls on small screens.
+function Modal({ onClose, children, maxWidth = 680 }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(20,18,14,0.55)", zIndex: 300, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "5vh 16px 16px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...card, maxWidth, width: "100%", padding: 0, overflow: "hidden" }}>{children}</div>
+    </div>
+  );
+}
+
+// Column legend — one marketer-friendly line per column. Reused for header
+// title= tooltips and the "Legend" modal.
+const LEGEND = [
+  { key: "adName", label: "Ad", text: "The ad creative and its name." },
+  { key: "spend", label: "Spend", text: "Amount spent on this ad in the selected period." },
+  { key: "impressions", label: "Impr.", text: "Number of times the ad was shown." },
+  { key: "hookRate", label: "Hook", text: "% of impressions that watched at least 3 seconds. Does the first moment grab attention?" },
+  { key: "holdRate", label: "Hold", text: "% of 3s viewers that watched to the end (ThruPlay). Does the video keep people?" },
+  { key: "avgWatchTime", label: "Avg watch", text: "Average seconds watched per play." },
+  { key: "ctr", label: "CTR", text: "% of impressions that clicked the link." },
+  { key: "leads", label: "Leads", text: "Form submissions (leads) reported by Meta." },
+  { key: "cpl", label: "CPL", text: "Cost per lead (spend ÷ leads)." },
+  { key: "qualified", label: "Qual.", text: "Leads Brandon marked as qualified or better." },
+  { key: "costPerQualified", label: "€ per qual.", text: "Spend ÷ qualified leads." },
+  { key: "byClass", label: "A / B / C", text: "Brandon's lead-quality classification counts (+N = not yet classified)." },
+];
+const LEGEND_TEXT = Object.fromEntries(LEGEND.map((l) => [l.key, l.text]));
 
 // Subtle vs-benchmark cell tint: green when better by >10%, red when worse by
 // >10%, nothing inside the ±10% neutral band. `higherBetter` flips direction for
@@ -133,15 +191,17 @@ function StatCard({ label, value, sub }) {
 // ── Top performers strip ("quadro de honra") ──
 // One winning ad per category over the period. A null winner (no ad cleared the
 // ≥1000-impression sample floor, or the category's extra floor) renders greyed.
+// `metricLabel` + `bench` (how to find the account average) + `higherBetter` drive
+// the "vs account average" delta shown in the modal. bestQuality has no benchmark.
 const PERF_CARDS = [
-  { key: "bestHook", icon: "🪝", label: "Best Hook", fmt: fmtPct },
-  { key: "bestRetention", icon: "🎬", label: "Best Retention", fmt: fmtPct },
-  { key: "bestCtr", icon: "🖱", label: "Best CTR", fmt: fmtPct },
-  { key: "cheapestQualified", icon: "💶", label: "Cheapest Qualified", fmt: fmtCost },
-  { key: "bestQuality", icon: "⭐", label: "Best Lead Quality", fmt: (v) => `${fmtPct(v)} A` },
+  { key: "bestHook", icon: "🪝", label: "Best Hook", metricLabel: "Hook rate", fmt: fmtPct, bench: (b) => b?.hook, higherBetter: true },
+  { key: "bestRetention", icon: "🎬", label: "Best Retention", metricLabel: "Hold rate", fmt: fmtPct, bench: (b) => b?.hold, higherBetter: true },
+  { key: "bestCtr", icon: "🖱", label: "Best CTR", metricLabel: "CTR", fmt: fmtPct, bench: (b) => b?.ctr, higherBetter: true },
+  { key: "cheapestQualified", icon: "💶", label: "Cheapest Qualified", metricLabel: "Cost per qualified", fmt: fmtCost, bench: (b, t) => t?.costPerQualified, higherBetter: false },
+  { key: "bestQuality", icon: "⭐", label: "Best Lead Quality", metricLabel: "A-lead share", fmt: (v) => `${fmtPct(v)} A`, bench: () => null, higherBetter: true },
 ];
 
-function TopPerformers({ performers, onSelect }) {
+function TopPerformers({ performers, onOpen }) {
   if (!performers) return null;
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 18 }}>
@@ -157,10 +217,10 @@ function TopPerformers({ performers, onSelect }) {
           );
         }
         return (
-          <button key={c.key} onClick={() => onSelect(w.adId)} title={`${c.label}: ${w.adName}`} style={{ ...base, cursor: "pointer", textAlign: "left", font: "inherit" }}>
+          <button key={c.key} onClick={() => onOpen(c.key)} title={`${c.label}: ${w.adName}`} style={{ ...base, cursor: "pointer", textAlign: "left", font: "inherit" }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase", letterSpacing: "0.4px" }}>{c.icon} {c.label}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-              <Thumb url={w.thumbnailUrl} name={w.adName} size={34} />
+              <Thumb url={w.thumbnailUrl} name={w.adName} size={34} hasVideo={!!w.videoUrl} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: "#111", lineHeight: 1 }}>{c.fmt(w.value)}</div>
                 <div style={{ fontSize: 11, color: muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>{w.adName}</div>
@@ -170,6 +230,24 @@ function TopPerformers({ performers, onSelect }) {
         );
       })}
     </div>
+  );
+}
+
+// "vs account average" delta pill. Green/red by direction; "—" when no benchmark.
+function Delta({ value, benchmark, higherBetter }) {
+  if (value == null || benchmark == null || !(benchmark > 0)) {
+    return <span style={{ fontSize: 12, color: muted }}>vs average: —</span>;
+  }
+  const pct = (value / benchmark - 1) * 100;
+  const good = higherBetter ? pct > 0 : pct < 0;
+  const neutral = Math.abs(pct) < 0.5;
+  const color = neutral ? muted : good ? "#15803D" : "#B91C1C";
+  const bg = neutral ? "#F2EFE9" : good ? "#F0F8F1" : "#FDF3F2";
+  const arrow = neutral ? "·" : pct > 0 ? "▲" : "▼";
+  return (
+    <span style={{ fontSize: 12, fontWeight: 600, color, background: bg, borderRadius: 7, padding: "3px 9px" }}>
+      {arrow} {Math.abs(pct).toFixed(0)}% vs account average
+    </span>
   );
 }
 
@@ -196,6 +274,68 @@ function InsightsBox({ insights }) {
         <p style={{ fontSize: 12, color: muted, margin: "10px 0 0" }}>No unusual signals for this ad.</p>
       )}
     </div>
+  );
+}
+
+// ── Top-performer modal ──
+// Opened from a top-performer card. Large media, the winning metric with its
+// "vs account average" delta, the full stat grid, retention curve and automatic
+// insights — all reusing the detail-panel pieces. "Show in table" closes and
+// selects/scrolls the row; Esc / click-outside close (via Modal).
+function AdModal({ ad, perfCard, metricValue, benchmark, onClose, onShowInTable }) {
+  return (
+    <Modal onClose={onClose} maxWidth={620}>
+      <div style={{ padding: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.adName}</h3>
+          <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", color: muted, fontSize: 15, flexShrink: 0, lineHeight: 1 }} aria-label="Close">✕</button>
+        </div>
+
+        <AdMedia ad={ad} maxHeight={260} />
+
+        {/* Winning metric highlight */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", margin: "14px 0", padding: "12px 14px", background: "#FBF8F1", border: "1px solid #EADFC2", borderRadius: 12 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase", letterSpacing: "0.4px" }}>{perfCard.icon} {perfCard.metricLabel}</span>
+          <span style={{ fontSize: 24, fontWeight: 700, color: "#111", letterSpacing: "-1px", lineHeight: 1 }}>{perfCard.fmt(metricValue)}</span>
+          <Delta value={metricValue} benchmark={benchmark} higherBetter={perfCard.higherBetter} />
+        </div>
+
+        <div style={{ ...card, padding: "14px 16px", marginBottom: 12 }}><MiniStats ad={ad} wide /></div>
+        <div style={{ marginBottom: 12 }}><InsightsBox insights={ad.insights} /></div>
+        <Panel title="Video retention" sub="% of plays still watching">
+          <RetentionChart ads={[{ adName: ad.adName, retention: ad.retention, color: GOLD }]} />
+        </Panel>
+      </div>
+
+      {/* Footer */}
+      <div style={{ borderTop: "1px solid #F0EEE8", padding: "12px 16px", display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={() => onShowInTable(ad.adId)} style={{ border: "none", background: GOLD, color: "white", cursor: "pointer", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600 }}>
+          Show in table
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Column legend modal ──
+function LegendModal({ onClose }) {
+  return (
+    <Modal onClose={onClose} maxWidth={520}>
+      <div style={{ padding: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: "#111", margin: 0 }}>What the columns mean</h3>
+          <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", color: muted, fontSize: 15, lineHeight: 1 }} aria-label="Close">✕</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {LEGEND.map((l) => (
+            <div key={l.key} style={{ display: "flex", gap: 10 }}>
+              <span style={{ flexShrink: 0, width: 72, fontSize: 12, fontWeight: 700, color: "#111" }}>{l.label}</span>
+              <span style={{ fontSize: 12.5, color: "#444", lineHeight: 1.5 }}>{l.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -360,6 +500,8 @@ export default function AdsTab() {
   const [selectedId, setSelectedId] = useState(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState([]);
+  const [perfModalKey, setPerfModalKey] = useState(null); // open top-performer modal (PERF_CARDS key)
+  const [legendOpen, setLegendOpen] = useState(false);
 
   const load = useCallback((preset, { force = false } = {}) => {
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -418,6 +560,27 @@ export default function AdsTab() {
   };
 
   const exitCompare = () => { setCompareMode(false); setCompareIds([]); };
+
+  // Top-performer modal: resolve the card config + winner + full ad + benchmark.
+  const perfModal = useMemo(() => {
+    if (!perfModalKey || !state.data) return null;
+    const perfCard = PERF_CARDS.find((c) => c.key === perfModalKey);
+    const winner = state.data.topPerformers?.[perfModalKey];
+    if (!perfCard || !winner) return null;
+    const ad = ads.find((a) => a.adId === winner.adId);
+    if (!ad) return null;
+    return { perfCard, ad, metricValue: winner.value, benchmark: perfCard.bench(benchmarks, totals) };
+  }, [perfModalKey, state.data, ads, benchmarks, totals]);
+
+  // "Show in table": close the modal, select the row, scroll it into view.
+  const showInTable = (adId) => {
+    setPerfModalKey(null);
+    setSelectedId(adId);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`adrow-${adId}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
 
   return (
     <div>
@@ -481,7 +644,7 @@ export default function AdsTab() {
           </div>
 
           {/* Top performers strip ("quadro de honra") — click a card to select */}
-          {!compareMode && <TopPerformers performers={state.data?.topPerformers} onSelect={setSelectedId} />}
+          {!compareMode && <TopPerformers performers={state.data?.topPerformers} onOpen={setPerfModalKey} />}
 
           {/* Compare view */}
           {compareMode && compareAds.length > 0 && (
@@ -490,9 +653,10 @@ export default function AdsTab() {
                 {compareAds.map((ad, i) => (
                   <div key={ad.adId} style={{ ...card, padding: "14px 16px", borderTop: `3px solid ${COMPARE_COLORS[i]}` }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 10px", minWidth: 0 }}>
-                      <Thumb url={ad.thumbnailUrl} name={ad.adName} size={40} radius={9} />
+                      <Thumb url={ad.thumbnailUrl} name={ad.adName} size={40} radius={9} hasVideo={!!ad.videoUrl} />
                       <p style={{ fontSize: 13, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.adName}</p>
                     </div>
+                    {ad.videoUrl && <div style={{ marginBottom: 10 }}><AdMedia ad={ad} maxHeight={150} /></div>}
                     <MiniStats ad={ad} />
                     <div style={{ marginTop: 12 }}><Funnel ad={ad} /></div>
                   </div>
@@ -506,12 +670,17 @@ export default function AdsTab() {
 
           {/* Main table */}
           <div style={{ ...card, marginBottom: 18, overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 14px 0" }}>
+              <button onClick={() => setLegendOpen(true)} title="What the columns mean" style={{ border: "1px solid #E5E0D6", background: "white", cursor: "pointer", borderRadius: 9, padding: "5px 11px", fontSize: 12, color: "#555", fontWeight: 600 }}>
+                ⓘ Legend
+              </button>
+            </div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 860 }}>
                 <thead>
                   <tr>
                     {COLUMNS.map((c) => (
-                      <th key={c.key} title={c.title || ""} onClick={() => toggleSort(c.key)}
+                      <th key={c.key} title={LEGEND_TEXT[c.key] || c.title || ""} onClick={() => toggleSort(c.key)}
                         style={{ ...th, textAlign: c.align || "right" }}>
                         {c.label}{sort.key === c.key ? (sort.dir === "desc" ? " ▾" : " ▴") : ""}
                       </th>
@@ -522,7 +691,7 @@ export default function AdsTab() {
                   {sortedAds.map((ad, i) => {
                     const isSel = compareMode ? compareIds.includes(ad.adId) : ad.adId === selectedId;
                     return (
-                      <tr key={ad.adId} onClick={() => onRowClick(ad)} style={{
+                      <tr key={ad.adId} id={`adrow-${ad.adId}`} onClick={() => onRowClick(ad)} style={{
                         cursor: "pointer", borderTop: i === 0 ? "none" : "1px solid #F3F1EC",
                         background: isSel ? "#FBF6EA" : "transparent",
                       }}
@@ -537,7 +706,7 @@ export default function AdsTab() {
                               {c.chips ? <ClassChips byClass={ad.byClass} />
                                 : c.key === "adName" ? (
                                   <span style={{ display: "inline-flex", alignItems: "center", gap: 9, maxWidth: "100%" }}>
-                                    <Thumb url={ad.thumbnailUrl} name={ad.adName} size={30} />
+                                    <Thumb url={ad.thumbnailUrl} name={ad.adName} size={30} hasVideo={!!ad.videoUrl} />
                                     <span style={{ fontWeight: 600, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.adName}>{ad.adName || "—"}</span>
                                   </span>
                                 )
@@ -561,11 +730,15 @@ export default function AdsTab() {
             <div style={{ marginBottom: 18 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  <Thumb url={selected.thumbnailUrl} name={selected.adName} size={52} radius={10} />
+                  <Thumb url={selected.thumbnailUrl} name={selected.adName} size={52} radius={10} hasVideo={!!selected.videoUrl} />
                   <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected.adName}</h3>
                 </div>
                 <button onClick={() => setSelectedId(null)} style={{ border: "none", background: "none", cursor: "pointer", color: muted, fontSize: 13, flexShrink: 0 }}>Close ✕</button>
               </div>
+              {/* Playable creative when the ad is a video (poster = thumbnail). */}
+              {selected.videoUrl && (
+                <div style={{ ...card, padding: 10, marginBottom: 12, maxWidth: 440 }}><AdMedia ad={selected} maxHeight={240} /></div>
+              )}
               <div style={{ marginBottom: 12 }}>
                 <div style={{ ...card, padding: "14px 16px" }}><MiniStats ad={selected} wide /></div>
               </div>
@@ -596,6 +769,19 @@ export default function AdsTab() {
           )}
         </>
       )}
+
+      {/* Overlays */}
+      {perfModal && (
+        <AdModal
+          ad={perfModal.ad}
+          perfCard={perfModal.perfCard}
+          metricValue={perfModal.metricValue}
+          benchmark={perfModal.benchmark}
+          onClose={() => setPerfModalKey(null)}
+          onShowInTable={showInTable}
+        />
+      )}
+      {legendOpen && <LegendModal onClose={() => setLegendOpen(false)} />}
     </div>
   );
 }

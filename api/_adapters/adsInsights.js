@@ -208,7 +208,7 @@ function mapDailyRow(r) {
   return { date: s(r.date_start), spend: num(r.spend), leads: leadCount(r.actions) };
 }
 
-function buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap, thumbnails, baseline30 }) {
+function buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap, thumbnails, videos, baseline30 }) {
   const adId = s(r.ad_id);
   const adName = s(r.ad_name);
   const spend = num(r.spend);
@@ -271,6 +271,10 @@ function buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap, thumbnails, 
     // never persisted beyond the cache TTL). "" when the ad has no creative/thumb;
     // the UI shows a neutral placeholder.
     thumbnailUrl: s((thumbnails && thumbnails.get(adId)) || ""),
+    // Playable video source (signed, expiring CDN URL — same TTL treatment as the
+    // thumbnail). null when the ad isn't a video, has no video_id, or Meta refused
+    // the `source` field; the UI then just shows the thumbnail.
+    videoUrl: (videos && videos.get(adId)) || null,
     // The ad's OWN trailing-30d link CTR — a fatigue baseline, independent of the
     // selected period (null when the ad had no 30d impressions). Used by the
     // "sinais de fadiga" diagnosis.
@@ -331,7 +335,7 @@ export function topPerformers(ads, { minImpressions = 1000 } = {}) {
       if (v == null) continue;
       if (best === null || better(v, bestV)) { best = a; bestV = v; }
     }
-    return best ? { adId: best.adId, adName: best.adName, thumbnailUrl: best.thumbnailUrl || "", value: bestV } : null;
+    return best ? { adId: best.adId, adName: best.adName, thumbnailUrl: best.thumbnailUrl || "", videoUrl: best.videoUrl || null, value: bestV } : null;
   };
   const higher = (x, y) => x > y;
   const lower = (x, y) => x < y;
@@ -438,12 +442,13 @@ function computeTotals(ads) {
 // `thumbnails` (Map adId→url) and `baseline` (last-30d `main` payload, for each
 // ad's own trailing CTR) are optional — the page degrades gracefully without them
 // (placeholder thumbs; the fatigue diagnosis just can't fire).
-export function assembleAdsInsights({ main, platform, hourly, daily, leads, preset, cachedAt, thumbnails, baseline } = {}) {
+export function assembleAdsInsights({ main, platform, hourly, daily, leads, preset, cachedAt, thumbnails, videos, baseline } = {}) {
   const joinMap = joinLeadsByAd(leads);
   const platformByAd = groupByAd(rowsOf(platform));
   const hourlyByAd = groupByAd(rowsOf(hourly));
   const dailyByAd = groupByAd(rowsOf(daily));
   const thumbMap = thumbnails instanceof Map ? thumbnails : new Map(Object.entries(thumbnails || {}));
+  const videoMap = videos instanceof Map ? videos : new Map(Object.entries(videos || {}));
 
   // Each ad's own trailing-30d link CTR (fatigue baseline), keyed by ad id.
   const baseline30 = new Map();
@@ -453,7 +458,7 @@ export function assembleAdsInsights({ main, platform, hourly, daily, leads, pres
   }
 
   const ads = rowsOf(main)
-    .map((r) => buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap, thumbnails: thumbMap, baseline30 }))
+    .map((r) => buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap, thumbnails: thumbMap, videos: videoMap, baseline30 }))
     .filter((a) => a.spend > 0)
     .sort((a, b) => b.spend - a.spend);
 
