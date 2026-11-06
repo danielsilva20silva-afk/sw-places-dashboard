@@ -1,5 +1,7 @@
 import serverConfig from "./_config.js";
 import { getContext } from "./_adapters/supabase.js";
+import dataAdapter from "./_adapters/index.js";
+import { assembleAdsInsights, metaDatePreset } from "./_adapters/adsInsights.js";
 
 // Combined Supabase-backed store for two brandon-only features, behind ONE
 // serverless function (Vercel Hobby caps deployments at 12 functions). Dispatch
@@ -351,6 +353,202 @@ async function handleArchive(req, res, supabase) {
   return res.status(405).json({ error: "Method not allowed" });
 }
 
+// ─────────────────────────── ads insights ───────────────────────────
+// Creative-performance analysis: Meta Ads insights (level=ad) joined with our own
+// lead-quality data (classification A/B/C + pipeline status). Meta rate limits are
+// real, so the assembled JSON is cached 15 min — a per-instance memory cache plus
+// a best-effort Supabase app_config row (cross-instance). The Meta access token is
+// read from app_config (key='meta_ads_token'), kept fresh by an external weekly
+// job — never hardcoded, never sent to the client. All pure maths lives in
+// api/_adapters/adsInsights.js (underscore-pathed → not a Vercel function).
+const META_API_VERSION = "v21.0";
+const META_AD_ACCOUNT_ID = "1694636325217643";
+const META_TOKEN_KEY = "meta_ads_token";
+const ADS_CACHE_TTL_MS = 15 * 60 * 1000;
+const ADS_CACHE_PREFIX = "ads_insights_cache:";
+const CONFIG_TABLE = "app_config";
+const META_PRESETS = new Set(["7d", "14d", "30d", "maximum"]);
+const META_PAGE_LIMIT = 200;
+const META_MAX_PAGES = 25;
+
+// Per-instance (warm) cache: preset → { at, payload }. Survives within one lambda
+// instance only; the app_config row below covers cross-instance reuse.
+const adsMemCache = new Map();
+
+const isFresh = (at) => typeof at === "number" && Date.now() - at < ADS_CACHE_TTL_MS;
+
+// Read the Meta token from app_config. Defensive about the value column name
+// (value | token | access_token) since the external job owns this table.
+async function readMetaToken(supabase) {
+  try {
+    const { data, error } = await supabase
+      .from(CONFIG_TABLE)
+      .select("*")
+      .eq("key", META_TOKEN_KEY)
+      .maybeSingle();
+    if (error) {
+      console.error("ads-insights readMetaToken:", error.message);
+      return "";
+    }
+    if (!data) return "";
+    return s(data.value || data.token || data.access_token || data.data).trim();
+  } catch (err) {
+    console.error("ads-insights readMetaToken threw:", err?.message || err);
+    return "";
+  }
+}
+
+// Persistent cache in app_config (best-effort both ways — a different table shape
+// or a missing row just means we fetch fresh; it never breaks the request).
+async function readAdsCache(supabase, preset) {
+  try {
+    const { data, error } = await supabase
+      .from(CONFIG_TABLE)
+      .select("value")
+      .eq("key", ADS_CACHE_PREFIX + preset)
+      .maybeSingle();
+    if (error || !data) return null;
+    const raw = data.value;
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (parsed && isFresh(Date.parse(parsed.cachedAt))) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+async function writeAdsCache(supabase, preset, payload) {
+  try {
+    await supabase
+      .from(CONFIG_TABLE)
+      .upsert({ key: ADS_CACHE_PREFIX + preset, value: JSON.stringify(payload) }, { onConflict: "key" });
+  } catch {
+    /* best-effort: caching is an optimisation, never a hard dependency */
+  }
+}
+
+// One Meta insights request, following paging.next to completion (capped). Returns
+// { data } with every page concatenated. Throws a MetaError the caller maps to a
+// clean, UI-showable message (never a 500 crash).
+class MetaError extends Error {
+  constructor(message, code) { super(message); this.code = code; }
+}
+function isTokenError(errObj) {
+  const code = Number(errObj?.code);
+  const msg = s(errObj?.message).toLowerCase();
+  return code === 190 || code === 102 || code === 10 || msg.includes("access token") || msg.includes("session has expired");
+}
+
+async function metaFetchAll(params, token) {
+  const base = `https://graph.facebook.com/${META_API_VERSION}/act_${META_AD_ACCOUNT_ID}/insights`;
+  const qs = new URLSearchParams({ ...params, access_token: token, limit: String(META_PAGE_LIMIT) });
+  let url = `${base}?${qs.toString()}`;
+  const out = [];
+  for (let page = 0; page < META_MAX_PAGES && url; page++) {
+    let resp, json;
+    try {
+      resp = await fetch(url);
+      json = await resp.json();
+    } catch (err) {
+      throw new MetaError(`Falha a contactar o Meta: ${err?.message || err}`, "network");
+    }
+    if (json?.error) {
+      throw new MetaError(s(json.error.message) || "Erro do Meta.", isTokenError(json.error) ? "token" : "meta");
+    }
+    if (Array.isArray(json?.data)) out.push(...json.data);
+    url = json?.paging?.next || "";
+  }
+  return { data: out };
+}
+
+// Build the lead list exactly as the dashboard sees it (the client's configured
+// adapter — for brandon the Supabase-subscribers + Meta-sheet composite), so the
+// join uses the same `source`/classification/status the UI shows.
+async function fetchCompositeLeads() {
+  try {
+    const cc = dataAdapter.getContext();
+    if (!cc) return [];
+    return await dataAdapter.getLeads(cc);
+  } catch (err) {
+    console.error("ads-insights fetchCompositeLeads:", err?.message || err);
+    return []; // the page still renders Meta spend/creative metrics without the join
+  }
+}
+
+async function handleAdsInsights(req, res, supabase) {
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const rawPreset = s(req.query?.preset).trim();
+  const preset = META_PRESETS.has(rawPreset) ? rawPreset : "7d";
+  const force = s(req.query?.force).trim() === "1";
+
+  // Cache: memory first (per-instance), then the app_config row (cross-instance).
+  if (!force) {
+    const mem = adsMemCache.get(preset);
+    if (mem && isFresh(mem.at)) {
+      return res.status(200).json({ ...mem.payload, cached: true });
+    }
+    const persisted = await readAdsCache(supabase, preset);
+    if (persisted) {
+      adsMemCache.set(preset, { at: Date.parse(persisted.cachedAt), payload: persisted });
+      return res.status(200).json({ ...persisted, cached: true });
+    }
+  }
+
+  const token = await readMetaToken(supabase);
+  if (!token) {
+    return res.status(200).json({
+      ok: false,
+      errorCode: "token_expired",
+      error: "Token do Meta em falta ou expirado — renova no Apps Script.",
+    });
+  }
+
+  const datePreset = metaDatePreset(preset);
+  const videoFields = [
+    "ad_id", "ad_name", "spend", "impressions", "reach", "frequency", "ctr",
+    "inline_link_clicks", "actions", "cost_per_action_type",
+    "video_play_actions", "video_continuous_2_sec_watched_actions",
+    "video_thruplay_watched_actions", "video_avg_time_watched_actions",
+    "video_p25_watched_actions", "video_p50_watched_actions",
+    "video_p75_watched_actions", "video_p95_watched_actions", "video_p100_watched_actions",
+  ].join(",");
+
+  try {
+    // The four Meta calls run in parallel with the composite-leads read. A failed
+    // BREAKDOWN call degrades to empty (the main table still renders); a failed
+    // MAIN call is surfaced. Token errors from any call bubble to the catch.
+    const [main, platform, hourly, daily, leads] = await Promise.all([
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: videoFields }, token),
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,impressions,actions", breakdowns: "publisher_platform,platform_position" }, token).catch((e) => { if (e.code === "token") throw e; console.error("ads-insights platform breakdown:", e.message); return { data: [] }; }),
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,impressions,actions", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone" }, token).catch((e) => { if (e.code === "token") throw e; console.error("ads-insights hourly breakdown:", e.message); return { data: [] }; }),
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,actions", time_increment: "1" }, token).catch((e) => { if (e.code === "token") throw e; console.error("ads-insights daily series:", e.message); return { data: [] }; }),
+      fetchCompositeLeads(),
+    ]);
+
+    const payload = assembleAdsInsights({ main, platform, hourly, daily, leads, preset, cachedAt: new Date().toISOString() });
+    adsMemCache.set(preset, { at: Date.parse(payload.cachedAt), payload });
+    await writeAdsCache(supabase, preset, payload);
+    return res.status(200).json({ ...payload, cached: false });
+  } catch (err) {
+    if (err instanceof MetaError && err.code === "token") {
+      return res.status(200).json({
+        ok: false,
+        errorCode: "token_expired",
+        error: "Token do Meta expirado — renova no Apps Script.",
+      });
+    }
+    console.error("ads-insights fetch error:", err?.message || err);
+    return res.status(200).json({
+      ok: false,
+      errorCode: "meta_error",
+      error: "Não foi possível obter os dados do Meta. Tenta novamente daqui a pouco.",
+    });
+  }
+}
+
 // ───────────────────────────── dispatch ─────────────────────────────
 export default async function handler(req, res) {
   const resource = s(req.query?.resource).trim();
@@ -368,9 +566,12 @@ export default async function handler(req, res) {
   if (resource === "archive" && !serverConfig.archive) {
     return res.status(403).json({ error: "Arquivo não está disponível para este cliente." });
   }
-  const KNOWN = ["links", "templates", "greetings", "actions", "archive"];
+  if (resource === "ads-insights" && !serverConfig.adsInsights) {
+    return res.status(403).json({ error: "Ads não está disponível para este cliente." });
+  }
+  const KNOWN = ["links", "templates", "greetings", "actions", "archive", "ads-insights"];
   if (!KNOWN.includes(resource)) {
-    return res.status(400).json({ error: "resource inválido (usa 'links', 'templates', 'greetings', 'actions' ou 'archive')." });
+    return res.status(400).json({ error: "resource inválido (usa 'links', 'templates', 'greetings', 'actions', 'archive' ou 'ads-insights')." });
   }
 
   // Supabase configured? (missing env → friendly, never a crash)
@@ -384,6 +585,7 @@ export default async function handler(req, res) {
     if (resource === "greetings") return await handleGreetings(req, res, ctx.supabase);
     if (resource === "actions") return await handleActions(req, res, ctx.supabase);
     if (resource === "archive") return await handleArchive(req, res, ctx.supabase);
+    if (resource === "ads-insights") return await handleAdsInsights(req, res, ctx.supabase);
     return await handleTemplates(req, res, ctx.supabase);
   } catch (err) {
     if (err?.expose) return res.status(err.status).json({ error: err.message });
