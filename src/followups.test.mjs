@@ -1,6 +1,6 @@
 // Unit tests for the follow-up cadence engine. Run: node src/followups.test.mjs
 import assert from "node:assert/strict";
-import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, STATUS_CHANGE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS, CONTACT_ANCHOR_STATUSES, isContactAnchorStatus, statusChangeActionTitle, noAnswerChipVisible, noAnswerStatusTransition } from "./followups.js";
+import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, STATUS_CHANGE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS, CONTACT_ANCHOR_STATUSES, isContactAnchorStatus, statusChangeActionTitle, noAnswerChipVisible, noAnswerStatusTransition, TERMINAL_STATUSES, isTerminalStatus } from "./followups.js";
 import { compareActions } from "./actions.js";
 
 const DAY = 86400000;
@@ -363,12 +363,25 @@ const statusAct = (status, ms, id) => ({ done: true, title: statusChangeActionTi
 
 // ── No-answer chip visibility + New → no-answer transition ──
 {
-  // Chip renders for EVERY lead when the cadence engine is on, regardless of status.
-  assert.equal(noAnswerChipVisible(true), true);
-  assert.equal(noAnswerChipVisible(false), false);
-  // Status-independent by construction (same result whatever the lead's status is).
-  for (const _ of ["New", NO_ANSWER_STATUS, "Closed", "Viewing booked"]) assert.equal(noAnswerChipVisible(true), true);
-  ok("no-answer chip: visible for all leads when cadence is on");
+  // Off when the cadence engine is off.
+  assert.equal(noAnswerChipVisible(false, "New"), false);
+  assert.equal(noAnswerChipVisible(false, "Contacted — qualifying"), false);
+  // On for EVERY lead/status when the engine is on — new leads (New, and a raw
+  // CREATED that somehow reaches it), the new " — A/B/C" suffixed values, the
+  // no-answer status itself, etc. This is status-only: it does NOT depend on
+  // single-form vs merged (the bug was merged leads silently losing the chip).
+  for (const st of ["New", "CREATED", "", "Contacted — no answer", "Contacted — qualifying", "Contacted — answered", "Viewing booked", "Contacted — qualifying — A", "Viewing booked — C"]) {
+    assert.equal(noAnswerChipVisible(true, st), true, `chip visible for "${st}"`);
+  }
+  // Hidden ONLY on terminal statuses (Closed/Lost) — you don't log call attempts there.
+  assert.equal(noAnswerChipVisible(true, "Closed"), false);
+  assert.equal(noAnswerChipVisible(true, "Lost"), false);
+  assert.equal(isTerminalStatus("Closed"), true);
+  assert.equal(isTerminalStatus("Lost"), true);
+  assert.equal(isTerminalStatus("New"), false);
+  assert.equal(isTerminalStatus("Contacted — no answer"), false);
+  assert.deepEqual(TERMINAL_STATUSES, ["Closed", "Lost"]);
+  ok("no-answer chip: visible for all leads/statuses (incl. merged) except Closed/Lost");
 }
 {
   const o = { newStatus: "New", noAnswerStatus: NO_ANSWER_STATUS };
