@@ -391,3 +391,29 @@ test("assembleAdsInsights attaches videoUrl from the videos map; null when absen
   const out2 = assembleAdsInsights({ main, videos: { 1: "https://cdn/v.mp4" }, leads: [], preset: "7d" });
   assert.equal(out2.ads.find((a) => a.adId === "1").videoUrl, "https://cdn/v.mp4");
 });
+
+test("assembleAdsInsights attaches previewUrl + facebookUrl (two-tier fallback); null when absent", () => {
+  const main = { data: [
+    { ad_id: "1", ad_name: "Video OK", spend: "50", impressions: "2000", actions: [] },     // source served
+    { ad_id: "2", ad_name: "Source refused", spend: "40", impressions: "1500", actions: [] }, // iframe fallback
+    { ad_id: "3", ad_name: "FB only", spend: "20", impressions: "1200", actions: [] },        // only permalink
+  ] };
+  const out = assembleAdsInsights({
+    main, leads: [], preset: "7d",
+    videos: new Map([["1", "https://cdn/v.mp4"]]),
+    previews: new Map([["1", "https://fb/iframe1"], ["2", "https://fb/iframe2"]]),
+    facebookUrls: new Map([["1", "https://www.facebook.com/p_1"], ["2", "https://www.facebook.com/p_2"], ["3", "https://www.facebook.com/p_3"]]),
+  });
+  const byId = Object.fromEntries(out.ads.map((a) => [a.adId, a]));
+  assert.equal(byId["1"].videoUrl, "https://cdn/v.mp4");
+  assert.equal(byId["1"].previewUrl, "https://fb/iframe1");
+  assert.equal(byId["1"].facebookUrl, "https://www.facebook.com/p_1");
+  assert.equal(byId["2"].videoUrl, null);                 // Meta refused source
+  assert.equal(byId["2"].previewUrl, "https://fb/iframe2"); // → iframe fallback
+  assert.equal(byId["3"].videoUrl, null);
+  assert.equal(byId["3"].previewUrl, null);
+  assert.equal(byId["3"].facebookUrl, "https://www.facebook.com/p_3"); // → only the escape hatch
+  // plain-object maps survive a cache round-trip
+  const out2 = assembleAdsInsights({ main, previews: { 2: "https://fb/x" }, leads: [], preset: "7d" });
+  assert.equal(out2.ads.find((a) => a.adId === "2").previewUrl, "https://fb/x");
+});

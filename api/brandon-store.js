@@ -460,18 +460,25 @@ async function metaFetchAll(params, token, edge = "insights") {
   return { data: out };
 }
 
-// Fetch every ad's creative thumbnail + (when a video) its video_id. The ads edge
-// carries no date filter, so we map ALL ads and let the caller use only the ids
-// that have spend. thumbnail_width/height ask Meta for a larger (~256px) image;
-// Meta serves the default size when it can't honour them. Returns
-// { thumbs: Map(adId→url), videoIds: Map(adId→video_id) }. Best-effort: any
-// failure yields empty maps → placeholders, no video.
+// Preview iframe format to request from the previews edge. Tried in order per ad
+// (first one that yields an iframe wins) so an ad with only one placement still
+// resolves. INSTAGRAM_STANDARD suits this IG-reel-heavy account; MOBILE_FEED is
+// the broad fallback.
+const META_PREVIEW_FORMATS = ["INSTAGRAM_STANDARD", "MOBILE_FEED_STANDARD"];
+const MAX_PREVIEW_ADS = 60;      // cap per-ad preview calls (safety for big accounts)
+const PREVIEW_CONCURRENCY = 8;
+
+// Fetch every ad's creative thumbnail, (when a video) its video_id, and its
+// effective_object_story_id (for the Facebook permalink). The ads edge carries no
+// date filter, so we map ALL ads and let the caller use only the ids that have
+// spend. Returns { thumbs, videoIds, storyIds } (all Map(adId→…)). Best-effort.
 async function fetchAdCreatives(token) {
   const thumbs = new Map();
   const videoIds = new Map();
+  const storyIds = new Map();
   try {
     const { data } = await metaFetchAll(
-      { fields: "id,creative{thumbnail_url,video_id}", thumbnail_width: "256", thumbnail_height: "256" },
+      { fields: "id,creative{thumbnail_url,video_id,effective_object_story_id}", thumbnail_width: "256", thumbnail_height: "256" },
       token,
       "ads"
     );
@@ -482,22 +489,25 @@ async function fetchAdCreatives(token) {
       if (url) thumbs.set(id, url);
       const vid = s(ad?.creative?.video_id);
       if (vid) videoIds.set(id, vid);
+      const story = s(ad?.creative?.effective_object_story_id);
+      if (story) storyIds.set(id, story);
     }
   } catch (err) {
     // A token error is surfaced by the parallel insights calls; here we just
     // degrade media to placeholders rather than sink the whole page.
     console.error("ads-insights fetchAdCreatives:", err?.message || err);
   }
-  return { thumbs, videoIds };
+  return { thumbs, videoIds, storyIds };
 }
 
 // Resolve video ids → playable source URLs via the batch-by-ids endpoint
-// (GET /?ids=v1,v2&fields=source). Signed, expiring CDN URLs (same 15-min TTL
-// treatment as thumbnails). Meta may refuse `source` on a permission quirk — a
-// failed batch logs and is skipped (partial results still flow); the UI falls
-// back to the thumbnail. Returns Map(videoId → sourceUrl).
+// (GET /?ids=v1,v2&fields=source). Signed, expiring CDN URLs. Meta commonly
+// REFUSES `source` for ad-account videos (a known permission restriction); a
+// failed batch logs the real error (first one, for diagnostics) and is skipped —
+// the UI then falls back to the preview iframe. Returns { map, sampleError }.
 async function fetchVideoSources(ids, token) {
   const map = new Map();
+  let sampleError = null;
   const uniq = [...new Set(ids.filter(Boolean))];
   const CHUNK = 50;
   for (let i = 0; i < uniq.length; i += CHUNK) {
@@ -506,30 +516,66 @@ async function fetchVideoSources(ids, token) {
     try {
       const resp = await fetch(`https://graph.facebook.com/${META_API_VERSION}/?${qs.toString()}`);
       const json = await resp.json();
-      if (json?.error) { console.error("ads-insights fetchVideoSources batch:", s(json.error.message)); continue; }
+      if (json?.error) {
+        if (!sampleError) sampleError = json.error;
+        continue;
+      }
       for (const [vid, obj] of Object.entries(json || {})) {
+        // Per-id errors can also appear inline under the id key.
+        if (obj?.error && !sampleError) sampleError = obj.error;
         const src = s(obj?.source);
         if (src) map.set(vid, src);
       }
     } catch (err) {
-      console.error("ads-insights fetchVideoSources threw:", err?.message || err);
+      if (!sampleError) sampleError = { message: err?.message || String(err) };
     }
   }
-  return map;
+  return { map, sampleError };
 }
 
-// Creatives + their video sources, resolved to { thumbnails: Map(adId→url),
-// videos: Map(adId→sourceUrl) }. Two Meta round-trips (ads edge, then the video
-// batch); both best-effort so the page never fails on media.
-async function fetchCreativeMedia(token) {
-  const { thumbs, videoIds } = await fetchAdCreatives(token);
-  const srcByVideo = await fetchVideoSources([...videoIds.values()], token);
-  const videos = new Map();
-  for (const [adId, vid] of videoIds) {
-    const src = srcByVideo.get(vid);
-    if (src) videos.set(adId, src);
+// Pull the iframe src out of a previews-edge body (HTML-unescaping &amp; etc.).
+function extractIframeSrc(body) {
+  const m = /<iframe[^>]+src=["']([^"']+)["']/i.exec(s(body));
+  if (!m) return "";
+  return m[1].replace(/&amp;/g, "&").replace(/&#0?38;/g, "&");
+}
+
+// Per-ad rendered ad preview → Map(adId → iframe src). GET /{ad_id}/previews
+// returns a renderable iframe body; these URLs are signed and short-lived, so
+// they get the same cache-TTL treatment as thumbnails. Scoped to the (spend) ad
+// ids the caller passes, capped and concurrency-limited. Best-effort per ad;
+// returns { map, sampleError }.
+async function fetchAdPreviews(adIds, token) {
+  const map = new Map();
+  let sampleError = null;
+  const ids = [...new Set(adIds.filter(Boolean))].slice(0, MAX_PREVIEW_ADS);
+  for (let i = 0; i < ids.length; i += PREVIEW_CONCURRENCY) {
+    const chunk = ids.slice(i, i + PREVIEW_CONCURRENCY);
+    const results = await Promise.all(chunk.map(async (adId) => {
+      for (const fmt of META_PREVIEW_FORMATS) {
+        try {
+          const qs = new URLSearchParams({ ad_format: fmt, access_token: token });
+          const resp = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${adId}/previews?${qs.toString()}`);
+          const json = await resp.json();
+          if (json?.error) { if (!sampleError) sampleError = json.error; continue; }
+          const src = extractIframeSrc(json?.data?.[0]?.body);
+          if (src) return [adId, src];
+        } catch (err) {
+          if (!sampleError) sampleError = { message: err?.message || String(err) };
+        }
+      }
+      return [adId, ""];
+    }));
+    for (const [adId, src] of results) if (src) map.set(adId, src);
   }
-  return { thumbnails: thumbs, videos };
+  return { map, sampleError };
+}
+
+// `effective_object_story_id` → Facebook permalink. The id is "{page}_{post}";
+// facebook.com/{page}_{post} resolves to the post. Stable (not signed).
+function facebookUrlFromStory(storyId) {
+  const id = s(storyId).trim();
+  return id ? `https://www.facebook.com/${id}` : "";
 }
 
 // Build the lead list exactly as the dashboard sees it (the client's configured
@@ -593,22 +639,62 @@ async function handleAdsInsights(req, res, supabase) {
   const softBreakdown = (label) => (e) => { if (e.code === "token") throw e; console.error(`ads-insights ${label}:`, e.message); return { data: [] }; };
 
   try {
-    // Meta calls + the composite-leads read run in parallel. `main` is the heavy
-    // per-ad call; `baseline` is a last-30d CTR reference (fatigue); `thumbnails`
-    // maps ad → creative thumbnail. Breakdowns/baseline/thumbnails are best-effort.
-    const [main, platform, hourly, daily, baseline, media, leads] = await Promise.all([
+    // Phase 1 — insights + creatives + leads in parallel. `main` is the heavy
+    // per-ad call; `baseline` is a last-30d CTR reference (fatigue); `creatives`
+    // carries thumbnails + video ids + story ids. Breakdowns/baseline/creatives
+    // are best-effort; a token error from an insights call bubbles to the catch.
+    const [main, platform, hourly, daily, baseline, creatives, leads] = await Promise.all([
       metaFetchAll({ level: "ad", date_preset: datePreset, fields: videoFields }, token),
       metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,impressions,actions", breakdowns: "publisher_platform,platform_position" }, token).catch(softBreakdown("platform breakdown")),
       metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,impressions,actions", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone" }, token).catch(softBreakdown("hourly breakdown")),
       metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,actions", time_increment: "1" }, token).catch(softBreakdown("daily series")),
       metaFetchAll({ level: "ad", date_preset: "last_30d", fields: "ad_id,impressions,inline_link_clicks" }, token).catch(softBreakdown("30d baseline")),
-      fetchCreativeMedia(token),
+      fetchAdCreatives(token),
       fetchCompositeLeads(),
     ]);
 
-    const payload = assembleAdsInsights({ main, platform, hourly, daily, baseline, thumbnails: media.thumbnails, videos: media.videos, leads, preset, cachedAt: new Date().toISOString() });
-    // Visibility into whether Meta served video sources for this account's ads.
-    console.log(`ads-insights[${preset}]: ${payload.ads.length} ads, ${payload.ads.filter((a) => a.videoUrl).length} with playable video, ${payload.ads.filter((a) => a.thumbnailUrl).length} with thumbnail`);
+    // The ad ids with spend in the period — scope the per-ad preview calls (and
+    // the video-source lookup) to just these, not the whole account.
+    const spendAdIds = [...new Set((main.data || []).map((r) => s(r.ad_id)).filter(Boolean))];
+    const spendVideoIds = spendAdIds.map((id) => creatives.videoIds.get(id)).filter(Boolean);
+
+    // Phase 2 — media that depends on the spend set: video sources (often refused
+    // by Meta → iframe fallback) and the rendered ad-preview iframes. Parallel.
+    const [videoRes, previewRes] = await Promise.all([
+      fetchVideoSources(spendVideoIds, token),
+      fetchAdPreviews(spendAdIds, token),
+    ]);
+
+    // adId → playable video source (only where Meta actually served `source`).
+    const videos = new Map();
+    for (const adId of spendAdIds) {
+      const vid = creatives.videoIds.get(adId);
+      const src = vid && videoRes.map.get(vid);
+      if (src) videos.set(adId, src);
+    }
+    // adId → Facebook permalink (from the story id).
+    const facebookUrls = new Map();
+    for (const [adId, story] of creatives.storyIds) {
+      const url = facebookUrlFromStory(story);
+      if (url) facebookUrls.set(adId, url);
+    }
+
+    const payload = assembleAdsInsights({
+      main, platform, hourly, daily, baseline, leads, preset,
+      thumbnails: creatives.thumbs, videos, previews: previewRes.map, facebookUrls,
+      cachedAt: new Date().toISOString(),
+    });
+
+    // Diagnostics (vercel logs): coverage + the real error Meta returns for the
+    // refused video `source` field, on a sample.
+    const nVideo = payload.ads.filter((a) => a.videoUrl).length;
+    const nPreview = payload.ads.filter((a) => a.previewUrl).length;
+    const nFb = payload.ads.filter((a) => a.facebookUrl).length;
+    const nNone = payload.ads.filter((a) => !a.videoUrl && !a.previewUrl && !a.facebookUrl).length;
+    console.log(`ads-insights[${preset}]: ${payload.ads.length} ads — ${nVideo} video, ${nPreview} preview-iframe, ${nFb} facebook-link, ${nNone} none; thumbs ${payload.ads.filter((a) => a.thumbnailUrl).length}`);
+    if (videoRes.sampleError) console.log(`ads-insights[${preset}] video source refused (sample):`, JSON.stringify(videoRes.sampleError));
+    if (previewRes.sampleError) console.log(`ads-insights[${preset}] preview error (sample):`, JSON.stringify(previewRes.sampleError));
+
     adsMemCache.set(preset, { at: Date.parse(payload.cachedAt), payload });
     await writeAdsCache(supabase, preset, payload);
     return res.status(200).json({ ...payload, cached: false });

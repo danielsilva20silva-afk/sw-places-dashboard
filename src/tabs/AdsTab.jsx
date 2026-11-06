@@ -66,21 +66,48 @@ function Thumb({ url, name, size = 32, radius = 7, hasVideo = false }) {
   return <span style={{ position: "relative", display: "inline-block", flexShrink: 0, lineHeight: 0 }}>{inner}{badge}</span>;
 }
 
-// Large creative media: a muted <video> player (poster = thumbnail, preload none
-// so nothing downloads until play) when a source exists, else the thumbnail
-// image, else a placeholder. Used in the top-performer modal, the detail panel
-// and the compare cards.
-function AdMedia({ ad, maxHeight = 260 }) {
+// Large creative media, in preference order:
+//   1. muted <video> player — when Meta served the raw `source` (preload="none",
+//      poster = thumbnail, so nothing downloads until play);
+//   2. rendered ad-preview iframe — the primary fallback when `source` is refused
+//      (phone-sized, shows the REAL ad, playable). Only mounted when `allowPreview`
+//      (the modal/detail panel — never the always-visible compare cards), and the
+//      component only renders when its parent is open, so the iframe is lazy;
+//   3. the thumbnail image; 4. a neutral placeholder.
+function AdMedia({ ad, maxHeight = 260, allowPreview = false }) {
   const [broken, setBroken] = useState(false);
   const box = { width: "100%", maxHeight, borderRadius: 12, display: "block", background: "#121212" };
   if (ad.videoUrl) {
     return <video key={ad.videoUrl} src={ad.videoUrl} poster={ad.thumbnailUrl || undefined} controls muted preload="none" playsInline style={{ ...box, objectFit: "contain" }} />;
+  }
+  if (allowPreview && ad.previewUrl) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", background: "#F2EFE9", borderRadius: 12, padding: 8 }}>
+        <iframe key={ad.previewUrl} src={ad.previewUrl} title={`Ad preview: ${ad.adName}`} loading="lazy" scrolling="no"
+          style={{ width: 340, maxWidth: "100%", height: 600, border: "none", borderRadius: 10, background: "white" }} />
+      </div>
+    );
   }
   if (ad.thumbnailUrl && !broken) {
     return <img src={ad.thumbnailUrl} alt="" onError={() => setBroken(true)} style={{ ...box, height: maxHeight, objectFit: "cover", background: "#EDEAE3" }} />;
   }
   return <div style={{ ...box, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#C3BBA9", fontSize: 40, background: "#EDEAE3" }}>▦</div>;
 }
+
+// Small "Open ad on Facebook ↗" escape-hatch link (only when a permalink exists).
+function FacebookLink({ ad }) {
+  if (!ad.facebookUrl) return null;
+  return (
+    <a href={ad.facebookUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+      style={{ fontSize: 12, color: "#1877F2", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
+      Open ad on Facebook ↗
+    </a>
+  );
+}
+
+// True when an ad has any playable media (raw video OR a preview iframe) — drives
+// the ▶ badge on thumbnails.
+const hasPlayable = (ad) => !!(ad && (ad.videoUrl || ad.previewUrl));
 
 // Generic modal overlay: dim backdrop, click-outside + Esc to close, body-scroll
 // locked while open, content scrolls on small screens.
@@ -220,7 +247,7 @@ function TopPerformers({ performers, onOpen }) {
           <button key={c.key} onClick={() => onOpen(c.key)} title={`${c.label}: ${w.adName}`} style={{ ...base, cursor: "pointer", textAlign: "left", font: "inherit" }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: "uppercase", letterSpacing: "0.4px" }}>{c.icon} {c.label}</span>
             <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-              <Thumb url={w.thumbnailUrl} name={w.adName} size={34} hasVideo={!!w.videoUrl} />
+              <Thumb url={w.thumbnailUrl} name={w.adName} size={34} hasVideo={!!(w.videoUrl || w.previewUrl)} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: "#111", lineHeight: 1 }}>{c.fmt(w.value)}</div>
                 <div style={{ fontSize: 11, color: muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>{w.adName}</div>
@@ -287,11 +314,14 @@ function AdModal({ ad, perfCard, metricValue, benchmark, onClose, onShowInTable 
     <Modal onClose={onClose} maxWidth={620}>
       <div style={{ padding: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.adName}</h3>
+          <div style={{ minWidth: 0 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.adName}</h3>
+            <div style={{ marginTop: 3 }}><FacebookLink ad={ad} /></div>
+          </div>
           <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", color: muted, fontSize: 15, flexShrink: 0, lineHeight: 1 }} aria-label="Close">✕</button>
         </div>
 
-        <AdMedia ad={ad} maxHeight={260} />
+        <AdMedia ad={ad} maxHeight={260} allowPreview />
 
         {/* Winning metric highlight */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", margin: "14px 0", padding: "12px 14px", background: "#FBF8F1", border: "1px solid #EADFC2", borderRadius: 12 }}>
@@ -653,7 +683,7 @@ export default function AdsTab() {
                 {compareAds.map((ad, i) => (
                   <div key={ad.adId} style={{ ...card, padding: "14px 16px", borderTop: `3px solid ${COMPARE_COLORS[i]}` }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 10px", minWidth: 0 }}>
-                      <Thumb url={ad.thumbnailUrl} name={ad.adName} size={40} radius={9} hasVideo={!!ad.videoUrl} />
+                      <Thumb url={ad.thumbnailUrl} name={ad.adName} size={40} radius={9} hasVideo={hasPlayable(ad)} />
                       <p style={{ fontSize: 13, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ad.adName}</p>
                     </div>
                     {ad.videoUrl && <div style={{ marginBottom: 10 }}><AdMedia ad={ad} maxHeight={150} /></div>}
@@ -706,7 +736,7 @@ export default function AdsTab() {
                               {c.chips ? <ClassChips byClass={ad.byClass} />
                                 : c.key === "adName" ? (
                                   <span style={{ display: "inline-flex", alignItems: "center", gap: 9, maxWidth: "100%" }}>
-                                    <Thumb url={ad.thumbnailUrl} name={ad.adName} size={30} hasVideo={!!ad.videoUrl} />
+                                    <Thumb url={ad.thumbnailUrl} name={ad.adName} size={30} hasVideo={hasPlayable(ad)} />
                                     <span style={{ fontWeight: 600, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.adName}>{ad.adName || "—"}</span>
                                   </span>
                                 )
@@ -730,14 +760,18 @@ export default function AdsTab() {
             <div style={{ marginBottom: 18 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  <Thumb url={selected.thumbnailUrl} name={selected.adName} size={52} radius={10} hasVideo={!!selected.videoUrl} />
-                  <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected.adName}</h3>
+                  <Thumb url={selected.thumbnailUrl} name={selected.adName} size={52} radius={10} hasVideo={hasPlayable(selected)} />
+                  <div style={{ minWidth: 0 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, color: "#111", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected.adName}</h3>
+                    <div style={{ marginTop: 3 }}><FacebookLink ad={selected} /></div>
+                  </div>
                 </div>
                 <button onClick={() => setSelectedId(null)} style={{ border: "none", background: "none", cursor: "pointer", color: muted, fontSize: 13, flexShrink: 0 }}>Close ✕</button>
               </div>
-              {/* Playable creative when the ad is a video (poster = thumbnail). */}
-              {selected.videoUrl && (
-                <div style={{ ...card, padding: 10, marginBottom: 12, maxWidth: 440 }}><AdMedia ad={selected} maxHeight={240} /></div>
+              {/* Playable creative: raw <video> when Meta served the source, else
+                  the rendered ad-preview iframe (allowPreview). */}
+              {(selected.videoUrl || selected.previewUrl) && (
+                <div style={{ ...card, padding: 10, marginBottom: 12, maxWidth: 440 }}><AdMedia ad={selected} maxHeight={240} allowPreview /></div>
               )}
               <div style={{ marginBottom: 12 }}>
                 <div style={{ ...card, padding: "14px 16px" }}><MiniStats ad={selected} wide /></div>
