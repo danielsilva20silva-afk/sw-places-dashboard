@@ -140,6 +140,7 @@ const LEGEND = [
   { key: "cpl", label: "CPL", text: "Cost per lead (spend ÷ leads)." },
   { key: "qualified", label: "Qual.", text: "Leads Brandon marked as qualified or better." },
   { key: "costPerQualified", label: "€ per qual.", text: "Spend ÷ qualified leads." },
+  { key: "costPerA", label: "€ / A", text: "What an A-grade (hot) lead costs from this ad. The single best measure of creative quality." },
   { key: "byClass", label: "A / B / C", text: "Brandon's lead-quality classification counts (+N = not yet classified)." },
 ];
 const LEGEND_TEXT = Object.fromEntries(LEGEND.map((l) => [l.key, l.text]));
@@ -195,6 +196,7 @@ const COLUMNS = [
   { key: "cpl", label: "CPL", title: "Cost per lead — spend ÷ Meta leads (tinted vs period average)", get: (a) => a.cpl, fmt: fmtCost, bench: "cpl", higherBetter: false },
   { key: "qualified", label: "Qual.", title: "Leads in a qualified-or-better status (our pipeline)", get: (a) => a.qualified, fmt: fmtNum },
   { key: "costPerQualified", label: "€ / qual.", title: "Spend ÷ qualified leads", get: (a) => a.costPerQualified, fmt: fmtCost },
+  { key: "costPerA", label: "€ / A", title: "Spend ÷ A-leads — what a hot lead costs (tinted vs period average)", get: (a) => a.costPerA, fmt: fmtCost, bench: "costPerA", higherBetter: false },
   { key: "byClass", label: "A / B / C", align: "left", get: (a) => a.aLeads, sortKey: (a) => a.aLeads, chips: true },
 ];
 
@@ -225,6 +227,7 @@ const PERF_CARDS = [
   { key: "bestRetention", icon: "🎬", label: "Best Retention", metricLabel: "Hold rate", fmt: fmtPct, bench: (b) => b?.hold, higherBetter: true },
   { key: "bestCtr", icon: "🖱", label: "Best CTR", metricLabel: "CTR", fmt: fmtPct, bench: (b) => b?.ctr, higherBetter: true },
   { key: "cheapestQualified", icon: "💶", label: "Cheapest Qualified", metricLabel: "Cost per qualified", fmt: fmtCost, bench: (b, t) => t?.costPerQualified, higherBetter: false },
+  { key: "cheapestALead", icon: "💎", label: "Cheapest A-Lead", metricLabel: "Cost per A-lead", fmt: fmtCost, bench: (b) => b?.costPerA, higherBetter: false },
   { key: "bestQuality", icon: "⭐", label: "Best Lead Quality", metricLabel: "A-lead share", fmt: (v) => `${fmtPct(v)} A`, bench: () => null, higherBetter: true },
 ];
 
@@ -559,14 +562,17 @@ export default function AdsTab() {
   const sortedAds = useMemo(() => {
     const col = COLUMNS.find((c) => c.key === sort.key) || COLUMNS[1];
     const getter = col.sortKey || col.get;
+    const dir = sort.dir === "desc" ? -1 : 1;
     const arr = [...ads].sort((a, b) => {
       const va = getter(a), vb = getter(b);
-      if (col.text) return String(va || "").localeCompare(String(vb || ""));
-      const na = va == null ? -Infinity : va;
-      const nb = vb == null ? -Infinity : vb;
-      return na - nb;
+      if (col.text) return dir * String(va || "").localeCompare(String(vb || ""));
+      // null (e.g. no A-lead → no € / A) always sorts LAST regardless of
+      // direction — never treated as €0, which would fake a "cheapest" ad.
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return dir * (va - vb);
     });
-    if (sort.dir === "desc") arr.reverse();
     return arr;
   }, [ads, sort]);
 

@@ -245,7 +245,21 @@ test("weightedBenchmarks on empty input → null rates, never throws", () => {
   const b = weightedBenchmarks([]);
   assert.equal(b.hook, null);
   assert.equal(b.cpl, null);
+  assert.equal(b.costPerA, null);
   assert.equal(b.leadsPerAd, 0);
+});
+
+test("weightedBenchmarks.costPerA is spend-weighted over ONLY ads with ≥1 A-lead", () => {
+  const ads = [
+    { impressions: 1000, spend: 100, aLeads: 2 },  // included: €100 over 2 A-leads
+    { impressions: 1000, spend: 60, aLeads: 3 },   // included: €60 over 3 A-leads
+    { impressions: 1000, spend: 999, aLeads: 0 },  // excluded: its spend must NOT inflate cost/A
+  ];
+  assert.equal(weightedBenchmarks(ads).costPerA, (100 + 60) / (2 + 3)); // 160/5 = 32
+});
+
+test("weightedBenchmarks.costPerA is null when no ad produced an A-lead", () => {
+  assert.equal(weightedBenchmarks([{ impressions: 500, spend: 80, aLeads: 0 }]).costPerA, null);
 });
 
 // ── top performers ──
@@ -287,6 +301,26 @@ test("topPerformers with no ad over the impression floor → all null", () => {
   const tp = topPerformers([ad({ impressions: 10 })]);
   assert.equal(tp.bestHook, null);
   assert.equal(tp.bestCtr, null);
+});
+
+test("topPerformers cheapestALead: lowest € / A among ads with ≥2 A-leads (floor, ties, null)", () => {
+  const mk = (over) => ad({ impressions: 3000, ...over });
+  const ads = [
+    mk({ adId: "1", aLeads: 3, costPerA: 40 }),
+    mk({ adId: "2", aLeads: 5, costPerA: 25 }), // cheapest & eligible → winner
+    mk({ adId: "3", aLeads: 1, costPerA: 5 }),  // cheaper, but only 1 A-lead → below the ≥2 floor
+  ];
+  assert.equal(topPerformers(ads).cheapestALead.adId, "2");
+  assert.equal(topPerformers(ads).cheapestALead.value, 25);
+
+  // tie on € / A → first-seen keeps the podium (strict < never displaces it)
+  const tied = [mk({ adId: "a", aLeads: 2, costPerA: 30 }), mk({ adId: "b", aLeads: 4, costPerA: 30 })];
+  assert.equal(topPerformers(tied).cheapestALead.adId, "a");
+
+  // exactly 1 A-lead is NOT enough → null (greyed card)
+  assert.equal(topPerformers([mk({ adId: "z", aLeads: 1, costPerA: 10 })]).cheapestALead, null);
+  // zero A-leads → null
+  assert.equal(topPerformers([mk({ adId: "y", aLeads: 0, costPerA: null })]).cheapestALead, null);
 });
 
 // ── auto-insights (each rule: fires / doesn't / boundary) ──
@@ -363,6 +397,9 @@ test("assembleAdsInsights attaches thumbnails + ctr30 and emits benchmarks/topPe
   assert.equal(a.thumbnailUrl, "https://cdn/thumb1.jpg");
   assert.equal(a.ctr30, 180 / 9000); // 0.02
   assert.ok(out.benchmarks && typeof out.benchmarks.hook === "number");
+  assert.equal(out.benchmarks.costPerA, 100); // €100 spend over 1 A-lead, weighted
+  assert.equal(out.totals.costPerA, 100);
+  assert.ok(out.topPerformers && "cheapestALead" in out.topPerformers);
   assert.ok(out.topPerformers && "bestHook" in out.topPerformers);
   assert.ok(Array.isArray(a.insights));
   // current ctr = 40/4000 = 0.01 < own 30d 0.02, frequency 3 > 2.5 → fatigue fires

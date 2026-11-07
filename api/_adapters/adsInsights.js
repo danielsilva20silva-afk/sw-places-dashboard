@@ -301,6 +301,9 @@ function buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap, thumbnails, 
 // as a volume floor by the diagnoses.
 export function weightedBenchmarks(ads) {
   let imp = 0, three = 0, thru = 0, clicks = 0, spend = 0, leads = 0, plays = 0, watchW = 0;
+  // cost-per-A average: spend-weighted over ONLY the ads that produced ≥1 A-lead,
+  // so an ad with zero A-leads never inflates the benchmark with its spend.
+  let aSpend = 0, aLeads = 0;
   for (const a of Array.isArray(ads) ? ads : []) {
     imp += num(a.impressions);
     three += num(a.threeSecPlays);
@@ -310,6 +313,7 @@ export function weightedBenchmarks(ads) {
     leads += num(a.leads);
     plays += num(a.videoPlays);
     watchW += num(a.avgWatchTime) * num(a.videoPlays);
+    if (num(a.aLeads) >= 1) { aSpend += num(a.spend); aLeads += num(a.aLeads); }
   }
   const n = (Array.isArray(ads) ? ads : []).length;
   return {
@@ -318,6 +322,7 @@ export function weightedBenchmarks(ads) {
     avgWatch: ratio(watchW, plays),
     ctr: ratio(clicks, imp),
     cpl: ratio(spend, leads),
+    costPerA: ratio(aSpend, aLeads),
     leadsPerAd: n ? leads / n : 0,
   };
 }
@@ -350,6 +355,9 @@ export function topPerformers(ads, { minImpressions = 1000 } = {}) {
     bestRetention: pick(eligible, (a) => a.holdRate, higher),
     bestCtr: pick(eligible, (a) => a.ctr, higher),
     cheapestQualified: pick(eligible.filter((a) => num(a.qualified) >= 1), (a) => a.costPerQualified, lower),
+    // Cheapest hot (A-grade) lead. Stricter floor than cheapestQualified (≥2
+    // A-leads), since one A-lead is too thin a sample to crown a creative.
+    cheapestALead: pick(eligible.filter((a) => num(a.aLeads) >= 2), (a) => a.costPerA, lower),
     bestQuality: pick(
       eligible.filter((a) => classifiedCount(a) >= 3),
       (a) => (classifiedCount(a) > 0 ? num(a.byClass.A) / classifiedCount(a) : null),
