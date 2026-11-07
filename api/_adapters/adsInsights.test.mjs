@@ -245,8 +245,18 @@ test("weightedBenchmarks on empty input → null rates, never throws", () => {
   const b = weightedBenchmarks([]);
   assert.equal(b.hook, null);
   assert.equal(b.cpl, null);
+  assert.equal(b.costPerQualified, null);
   assert.equal(b.costPerA, null);
   assert.equal(b.leadsPerAd, 0);
+});
+
+test("weightedBenchmarks.costPerQualified is spend-weighted over ONLY ads with ≥1 qualified", () => {
+  const ads = [
+    { impressions: 1000, spend: 100, qualified: 4 }, // included
+    { impressions: 1000, spend: 60, qualified: 2 },  // included
+    { impressions: 1000, spend: 999, qualified: 0 }, // excluded: no qualified → spend must not inflate it
+  ];
+  assert.equal(weightedBenchmarks(ads).costPerQualified, (100 + 60) / (4 + 2)); // 160/6
 });
 
 test("weightedBenchmarks.costPerA is spend-weighted over ONLY ads with ≥1 A-lead", () => {
@@ -341,6 +351,16 @@ test("diagnosis weak_middle: fires / doesn't / boundary", () => {
   assert.ok(!codes({ ...baseAd, hookRate: 0.4, holdRate: 0.3 }).includes("weak_middle")); // hold==avg (boundary) → no
 });
 
+test("diagnosis filtering_hook: fires / doesn't / boundary", () => {
+  // hook<avg AND cpl<avg AND leads≥3 → fires (a filtering hook, not a failing one)
+  assert.ok(codes({ ...baseAd, hookRate: 0.2, cpl: 10, leads: 3 }).includes("filtering_hook"));
+  assert.ok(!codes({ ...baseAd, hookRate: 0.4, cpl: 10, leads: 5 }).includes("filtering_hook")); // hook>avg → no
+  assert.ok(!codes({ ...baseAd, hookRate: 0.2, cpl: 40, leads: 5 }).includes("filtering_hook")); // cpl>avg → no
+  assert.ok(!codes({ ...baseAd, hookRate: 0.3, cpl: 10, leads: 5 }).includes("filtering_hook")); // hook==avg (boundary) → no
+  assert.ok(!codes({ ...baseAd, hookRate: 0.2, cpl: 20, leads: 5 }).includes("filtering_hook")); // cpl==avg (boundary) → no
+  assert.ok(!codes({ ...baseAd, hookRate: 0.2, cpl: 10, leads: 2 }).includes("filtering_hook")); // <3 leads → no
+});
+
 test("diagnosis form_friction: fires / doesn't / boundary", () => {
   assert.ok(codes({ ...baseAd, ctr: 0.05, cpl: 40 }).includes("form_friction")); // ctr>avg, cpl>avg
   assert.ok(!codes({ ...baseAd, ctr: 0.05, cpl: 10 }).includes("form_friction")); // cpl<avg → no
@@ -364,13 +384,14 @@ test("diagnosis low_quality: fires / doesn't / boundary", () => {
 
 test("an average ad trips no diagnosis; rules are independent", () => {
   assert.deepEqual(codes(baseAd), []);
-  assert.equal(DIAGNOSES.length, 5);
+  assert.equal(DIAGNOSES.length, 6);
 });
 
 test("diagnosis copy is the English wording (locks the translation; all ASCII)", () => {
   const byCode = Object.fromEntries(DIAGNOSES.map((d) => [d.code, d.text]));
   assert.equal(byCode.weak_hook, "Weak first 3 seconds: viewers who stay, stay to the end — fix the hook, not the video.");
   assert.equal(byCode.weak_middle, "Strong hook but the middle loses people: tighten or speed up the mid-section.");
+  assert.equal(byCode.filtering_hook, "Low hook, cheap leads: this hook is filtering, not failing — it lets fewer people in, but the right ones. Don't 'fix' the hook.");
   assert.equal(byCode.form_friction, "The video sells but the form blocks: review the instant form / post-click friction.");
   assert.equal(byCode.fatigue, "Fatigue signs: the audience has seen this too many times — prepare fresh creative.");
   assert.equal(byCode.low_quality, "Volume without quality: review the ad's promise vs the product.");
@@ -398,6 +419,7 @@ test("assembleAdsInsights attaches thumbnails + ctr30 and emits benchmarks/topPe
   assert.equal(a.ctr30, 180 / 9000); // 0.02
   assert.ok(out.benchmarks && typeof out.benchmarks.hook === "number");
   assert.equal(out.benchmarks.costPerA, 100); // €100 spend over 1 A-lead, weighted
+  assert.equal(out.benchmarks.costPerQualified, 100); // €100 over 1 qualified (Viewing booked)
   assert.equal(out.totals.costPerA, 100);
   assert.ok(out.topPerformers && "cheapestALead" in out.topPerformers);
   assert.ok(out.topPerformers && "bestHook" in out.topPerformers);

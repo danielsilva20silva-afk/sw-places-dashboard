@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, ComposedChart, LineChart, Line, Bar, XAxis, YAxis,
   Tooltip, CartesianGrid, Legend,
 } from "recharts";
-import { GOLD, CLASSIFICATION_CONFIG } from "../constants";
+import { GOLD } from "../constants";
 import { getAdsInsights } from "../api";
 import useIsMobile from "../useIsMobile";
 
@@ -130,20 +130,23 @@ function Modal({ onClose, children, maxWidth = 680 }) {
 // title= tooltips and the "Legend" modal.
 const LEGEND = [
   { key: "adName", label: "Ad", text: "The ad creative and its name." },
-  { key: "spend", label: "Spend", text: "Amount spent on this ad in the selected period." },
-  { key: "impressions", label: "Impr.", text: "Number of times the ad was shown." },
+  { key: "spend", label: "Spend", text: "Amount spent on this ad in the selected period. Hover the cell for impressions." },
   { key: "hookRate", label: "Hook", text: "% of impressions that watched at least 3 seconds. Does the first moment grab attention?" },
   { key: "holdRate", label: "Hold", text: "% of 3s viewers that watched to the end (ThruPlay). Does the video keep people?" },
-  { key: "avgWatchTime", label: "Avg watch", text: "Average seconds watched per play." },
   { key: "ctr", label: "CTR", text: "% of impressions that clicked the link." },
-  { key: "leads", label: "Leads", text: "Form submissions (leads) reported by Meta." },
-  { key: "cpl", label: "CPL", text: "Cost per lead (spend ÷ leads)." },
-  { key: "qualified", label: "Qual.", text: "Leads Brandon marked as qualified or better." },
-  { key: "costPerQualified", label: "€ per qual.", text: "Spend ÷ qualified leads." },
-  { key: "costPerA", label: "€ / A", text: "What an A-grade (hot) lead costs from this ad. The single best measure of creative quality." },
-  { key: "byClass", label: "A / B / C", text: "Brandon's lead-quality classification counts (+N = not yet classified)." },
+  { key: "leads", label: "Leads", text: "Form submissions (leads) from Meta, with cost per lead (CPL) below. Sorts by CPL." },
+  { key: "qualified", label: "Qualified", text: "Leads Brandon marked qualified or better, with spend ÷ qualified below. Sorts by € per qualified." },
+  { key: "aLeads", label: "A-leads", text: "A-grade (hot) leads, with € per A-lead below — the single best measure of creative quality. Hover for the A/B/C breakdown. Sorts by € per A." },
 ];
 const LEGEND_TEXT = Object.fromEntries(LEGEND.map((l) => [l.key, l.text]));
+
+// A/B/C breakdown as a one-line tooltip string, e.g. "A 2 · B 2 · C 2 · +25 unclassified".
+function abcTip(byClass) {
+  if (!byClass) return "";
+  const parts = [`A ${byClass.A || 0}`, `B ${byClass.B || 0}`, `C ${byClass.C || 0}`];
+  if (byClass.unclassified) parts.push(`+${byClass.unclassified} unclassified`);
+  return parts.join(" · ");
+}
 
 // Subtle vs-benchmark cell tint: green when better by >10%, red when worse by
 // >10%, nothing inside the ±10% neutral band. `higherBetter` flips direction for
@@ -156,48 +159,25 @@ function tintBg(value, benchmark, higherBetter) {
   return undefined;
 }
 
-// A/B/C chip cluster + unclassified count.
-function ClassChips({ byClass }) {
-  if (!byClass) return <span style={{ color: "#CCC" }}>—</span>;
-  const order = ["A", "B", "C"];
-  return (
-    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-      {order.map((k) => {
-        const n = byClass[k] || 0;
-        const c = CLASSIFICATION_CONFIG[k];
-        return (
-          <span key={k} title={`${n} ${k}-leads`} style={{
-            fontSize: 11, fontWeight: 700, minWidth: 20, textAlign: "center",
-            padding: "1px 5px", borderRadius: 6, color: c.text, background: c.bg,
-            border: `1px solid ${c.border}`, opacity: n ? 1 : 0.4,
-          }}>{n}</span>
-        );
-      })}
-      {byClass.unclassified ? (
-        <span title={`${byClass.unclassified} unclassified`} style={{ fontSize: 11, color: "#AAA" }}>
-          +{byClass.unclassified}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
 // ── Main sortable table columns ──
-// numeric: higher = better? only affects nothing here; sort is plain numeric/text.
+// Trimmed to fit a 13" laptop with no horizontal scroll: impressions live in the
+// Spend cell's tooltip, avg-watch lives in the detail panel, and the three
+// count+cost pairs are merged into two-line cells ("kind: two") — the big number
+// is the count, the muted line under it is the cost (which also carries the
+// benchmark tint and drives the column's sort).
 const COLUMNS = [
-  { key: "adName", label: "Ad", align: "left", get: (a) => a.adName, fmt: (v) => v || "—", text: true },
-  { key: "spend", label: "Spend", get: (a) => a.spend, fmt: fmtEur },
-  { key: "impressions", label: "Impr.", get: (a) => a.impressions, fmt: fmtNum },
+  { key: "adName", label: "Ad", align: "left", get: (a) => a.adName, text: true, kind: "ad" },
+  { key: "spend", label: "Spend", title: "Amount spent in the period (hover for impressions)", get: (a) => a.spend, fmt: fmtEur, kind: "spend",
+    tip: (a) => `${fmtEur(a.spend)} · ${fmtNum(a.impressions)} impressions` },
   { key: "hookRate", label: "Hook", title: "3-second plays ÷ impressions (tinted vs period average)", get: (a) => a.hookRate, fmt: fmtPct, bench: "hook", higherBetter: true },
   { key: "holdRate", label: "Hold", title: "ThruPlays ÷ 3-second plays (tinted vs period average)", get: (a) => a.holdRate, fmt: fmtPct, bench: "hold", higherBetter: true },
-  { key: "avgWatchTime", label: "Avg watch", title: "Average watch time (tinted vs period average)", get: (a) => a.avgWatchTime, fmt: fmtSec, bench: "avgWatch", higherBetter: true },
   { key: "ctr", label: "CTR", title: "Link clicks ÷ impressions (tinted vs period average)", get: (a) => a.ctr, fmt: fmtPct, bench: "ctr", higherBetter: true },
-  { key: "leads", label: "Leads", title: "Leads reported by Meta", get: (a) => a.leads, fmt: fmtNum },
-  { key: "cpl", label: "CPL", title: "Cost per lead — spend ÷ Meta leads (tinted vs period average)", get: (a) => a.cpl, fmt: fmtCost, bench: "cpl", higherBetter: false },
-  { key: "qualified", label: "Qual.", title: "Leads in a qualified-or-better status (our pipeline)", get: (a) => a.qualified, fmt: fmtNum },
-  { key: "costPerQualified", label: "€ / qual.", title: "Spend ÷ qualified leads", get: (a) => a.costPerQualified, fmt: fmtCost },
-  { key: "costPerA", label: "€ / A", title: "Spend ÷ A-leads — what a hot lead costs (tinted vs period average)", get: (a) => a.costPerA, fmt: fmtCost, bench: "costPerA", higherBetter: false },
-  { key: "byClass", label: "A / B / C", align: "left", get: (a) => a.aLeads, sortKey: (a) => a.aLeads, chips: true },
+  { key: "leads", label: "Leads", title: "Meta leads, with cost per lead below — sorts by CPL", get: (a) => a.leads, fmt: fmtNum, kind: "two", sortKey: (a) => a.cpl,
+    cost: { get: (a) => a.cpl, fmt: fmtCost, bench: "cpl", higherBetter: false } },
+  { key: "qualified", label: "Qualified", title: "Qualified-or-better leads, with spend ÷ qualified below — sorts by € per qualified", get: (a) => a.qualified, fmt: fmtNum, kind: "two", sortKey: (a) => a.costPerQualified,
+    cost: { get: (a) => a.costPerQualified, fmt: fmtCost, bench: "costPerQualified", higherBetter: false } },
+  { key: "aLeads", label: "A-leads", title: "A-grade (hot) leads, with € per A-lead below — sorts by € per A. Hover for A/B/C.", get: (a) => a.aLeads, fmt: fmtNum, kind: "two", sortKey: (a) => a.costPerA,
+    cost: { get: (a) => a.costPerA, fmt: fmtCost, bench: "costPerA", higherBetter: false }, tip: (a) => abcTip(a.byClass) },
 ];
 
 const th = {
@@ -712,7 +692,7 @@ export default function AdsTab() {
               </button>
             </div>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 860 }}>
+              <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 680 }}>
                 <thead>
                   <tr>
                     {COLUMNS.map((c) => (
@@ -734,19 +714,35 @@ export default function AdsTab() {
                         onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = "#FAFAFA"; }}
                         onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = "transparent"; }}>
                         {COLUMNS.map((c) => {
-                          // Subtle vs-period-average tint on rate/cost cells (skipped on
-                          // selected rows so the cream highlight stays legible).
-                          const tint = (!isSel && c.bench && benchmarks) ? tintBg(c.get(ad), benchmarks[c.bench], c.higherBetter) : undefined;
+                          // Whole-cell tint for the plain rate columns (Hook/Hold/CTR),
+                          // skipped on selected rows so the cream highlight stays legible.
+                          // The merged two-line cells carry their tint on the cost sub-line.
+                          const cellTint = (!isSel && c.bench && benchmarks) ? tintBg(c.get(ad), benchmarks[c.bench], c.higherBetter) : undefined;
+                          const isAd = c.kind === "ad";
+                          let content;
+                          if (isAd) {
+                            content = (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 9, maxWidth: "100%" }}>
+                                <Thumb url={ad.thumbnailUrl} name={ad.adName} size={30} hasVideo={hasPlayable(ad)} />
+                                <span style={{ fontWeight: 600, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.adName}>{ad.adName || "—"}</span>
+                              </span>
+                            );
+                          } else if (c.kind === "two") {
+                            const costTint = (!isSel && benchmarks) ? tintBg(c.cost.get(ad), benchmarks[c.cost.bench], c.cost.higherBetter) : undefined;
+                            content = (
+                              <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.2 }}>
+                                <span style={{ fontWeight: 600, color: "#111" }}>{c.fmt(c.get(ad))}</span>
+                                <span style={{ fontSize: 11, color: "#999", marginTop: 1, padding: costTint ? "0 5px" : 0, borderRadius: 4, background: costTint }}>{c.cost.fmt(c.cost.get(ad))}</span>
+                              </span>
+                            );
+                          } else {
+                            content = c.fmt(c.get(ad));
+                          }
                           return (
-                            <td key={c.key} style={{ ...td, textAlign: c.align || "right", background: tint, maxWidth: c.key === "adName" ? 240 : undefined, overflow: c.key === "adName" ? "hidden" : undefined, textOverflow: c.key === "adName" ? "ellipsis" : undefined }}>
-                              {c.chips ? <ClassChips byClass={ad.byClass} />
-                                : c.key === "adName" ? (
-                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 9, maxWidth: "100%" }}>
-                                    <Thumb url={ad.thumbnailUrl} name={ad.adName} size={30} hasVideo={hasPlayable(ad)} />
-                                    <span style={{ fontWeight: 600, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ad.adName}>{ad.adName || "—"}</span>
-                                  </span>
-                                )
-                                : c.fmt(c.get(ad))}
+                            <td key={c.key} title={c.tip ? c.tip(ad) : undefined}
+                              style={{ ...td, textAlign: c.align || "right", background: c.kind === "two" ? undefined : cellTint,
+                                maxWidth: isAd ? 260 : undefined, overflow: isAd ? "hidden" : undefined, textOverflow: isAd ? "ellipsis" : undefined }}>
+                              {content}
                             </td>
                           );
                         })}

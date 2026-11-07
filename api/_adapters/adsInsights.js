@@ -301,9 +301,10 @@ function buildAd(r, { platformByAd, hourlyByAd, dailyByAd, joinMap, thumbnails, 
 // as a volume floor by the diagnoses.
 export function weightedBenchmarks(ads) {
   let imp = 0, three = 0, thru = 0, clicks = 0, spend = 0, leads = 0, plays = 0, watchW = 0;
-  // cost-per-A average: spend-weighted over ONLY the ads that produced ≥1 A-lead,
-  // so an ad with zero A-leads never inflates the benchmark with its spend.
-  let aSpend = 0, aLeads = 0;
+  // cost-per-qualified / cost-per-A averages: spend-weighted over ONLY the ads
+  // that produced ≥1 qualified (resp. ≥1 A-lead), so an ad with none of them
+  // never inflates the benchmark with its spend.
+  let qSpend = 0, qLeads = 0, aSpend = 0, aLeads = 0;
   for (const a of Array.isArray(ads) ? ads : []) {
     imp += num(a.impressions);
     three += num(a.threeSecPlays);
@@ -313,6 +314,7 @@ export function weightedBenchmarks(ads) {
     leads += num(a.leads);
     plays += num(a.videoPlays);
     watchW += num(a.avgWatchTime) * num(a.videoPlays);
+    if (num(a.qualified) >= 1) { qSpend += num(a.spend); qLeads += num(a.qualified); }
     if (num(a.aLeads) >= 1) { aSpend += num(a.spend); aLeads += num(a.aLeads); }
   }
   const n = (Array.isArray(ads) ? ads : []).length;
@@ -322,6 +324,7 @@ export function weightedBenchmarks(ads) {
     avgWatch: ratio(watchW, plays),
     ctr: ratio(clicks, imp),
     cpl: ratio(spend, leads),
+    costPerQualified: ratio(qSpend, qLeads),
     costPerA: ratio(aSpend, aLeads),
     leadsPerAd: n ? leads / n : 0,
   };
@@ -383,6 +386,12 @@ export const DIAGNOSES = [
     text: "Strong hook but the middle loses people: tighten or speed up the mid-section.",
     test: (a, b) => b.hook != null && b.hold != null && a.hookRate != null && a.holdRate != null
       && a.hookRate > b.hook && a.holdRate < b.hold,
+  },
+  {
+    code: "filtering_hook",
+    text: "Low hook, cheap leads: this hook is filtering, not failing — it lets fewer people in, but the right ones. Don't 'fix' the hook.",
+    test: (a, b) => b.hook != null && b.cpl != null && a.hookRate != null && a.cpl != null
+      && a.hookRate < b.hook && a.cpl < b.cpl && num(a.leads) >= 3,
   },
   {
     code: "form_friction",
