@@ -13,6 +13,8 @@ import {
   joinLeadsByAd,
   assembleAdsInsights,
   metaDatePreset,
+  presetWindow,
+  inWindow,
 } from "./adsInsights.js";
 
 // ── ratio / zero-division guard ─────────────────────────────────────────────
@@ -117,6 +119,48 @@ test("joinLeadsByAd on no leads / non-array is empty, never throws", () => {
   assert.equal(joinLeadsByAd(undefined).size, 0);
 });
 
+// ── date-window scoping of the lead join (period correctness) ────────────────
+test("presetWindow derives since/until from the preset; maximum = no window", () => {
+  const now = Date.parse("2026-02-10T12:00:00Z");
+  assert.equal(presetWindow("maximum", now), null);
+  assert.equal(presetWindow("7d", now).since, now - 7 * 86400000);
+  assert.equal(presetWindow("7d", now).until, now);
+  assert.equal(presetWindow("14d", now).since, now - 14 * 86400000);
+  assert.equal(presetWindow("30d", now).since, now - 30 * 86400000);
+  assert.equal(presetWindow("bogus", now).since, now - 7 * 86400000); // unmapped → 7d, mirrors metaDatePreset
+});
+
+test("inWindow: inside counts, outside doesn't, boundaries inclusive, untimed excluded from a window", () => {
+  const now = Date.parse("2026-02-10T12:00:00Z");
+  const w = presetWindow("7d", now); // [now-7d, now]
+  assert.equal(inWindow("2026-02-08T00:00:00Z", w), true);  // 2 days ago → inside
+  assert.equal(inWindow("2026-01-01T00:00:00Z", w), false); // 40 days ago → outside
+  assert.equal(inWindow(new Date(w.since).toISOString(), w), true);  // exactly at `since` → inclusive
+  assert.equal(inWindow(new Date(w.until).toISOString(), w), true);  // exactly at `until` → inclusive
+  assert.equal(inWindow(new Date(w.since - 1).toISOString(), w), false); // 1 ms before since → out
+  assert.equal(inWindow("", w), false);          // no timestamp → excluded from a bounded window
+  assert.equal(inWindow("not-a-date", w), false); // unparseable → excluded
+  assert.equal(inWindow("", null), true);         // maximum (no window) → everything counts
+});
+
+test("joinLeadsByAd windows by the lead's ORIGINAL created_at, not the classification date", () => {
+  const now = Date.parse("2026-02-10T12:00:00Z");
+  const leads = [
+    { source: "Meta Ads · Reel A", classification: "A", status: "Closed", created_at: "2026-02-09T09:00:00Z" }, // in 7d
+    { source: "Meta Ads · Reel A", classification: "A", status: "Closed", created_at: "2025-11-01T09:00:00Z" }, // old → out of 7d
+    { source: "Meta Ads · Reel A", classification: "B", status: "New", created_at: "2026-02-08T09:00:00Z" },    // in 7d
+  ];
+  const win = joinLeadsByAd(leads, { window: presetWindow("7d", now) });
+  const a7 = win.get("reel a");
+  assert.equal(a7.total, 2);     // only the two recent leads
+  assert.equal(a7.A, 1);         // the old A-lead is excluded
+  assert.equal(a7.qualified, 1); // only the recent Closed lead
+  // maximum (no window) counts them all, incl. the old one
+  const all = joinLeadsByAd(leads, { window: presetWindow("maximum", now) });
+  assert.equal(all.get("reel a").total, 3);
+  assert.equal(all.get("reel a").A, 2);
+});
+
 // ── full assembly, incl. cost-per-qualified / cost-per-A with zero division ──
 test("assembleAdsInsights joins Meta rows with leads and computes costs", () => {
   const main = {
@@ -157,7 +201,9 @@ test("assembleAdsInsights joins Meta rows with leads and computes costs", () => 
     { source: "Meta Ads · Ghost Ad", classification: "B", status: "Closed" }, // no insights row → unmatched
   ];
 
-  const out = assembleAdsInsights({ main, platform, hourly, daily, leads, preset: "7d" });
+  // "maximum" → no date window, so these timestamp-less fixture leads all join
+  // (this test is about the join + cost math, not the period scoping below).
+  const out = assembleAdsInsights({ main, platform, hourly, daily, leads, preset: "maximum" });
   assert.equal(out.ok, true);
   assert.equal(out.ads.length, 1); // only Reel A (spend > 0)
 
@@ -204,6 +250,34 @@ test("assembleAdsInsights with an ad that has zero qualified/A leads → null co
   assert.equal(ad.ctr, 0); // 0 clicks / 500 impressions → a real 0, not a divide-by-zero
   assert.equal(ad.cpl, null); // 0 leads → divide-by-zero guarded to null
   assert.equal(ad.hookRate, 0); // 0 three-sec plays / 500 impressions → real 0 (denominator is impressions)
+});
+
+test("assembleAdsInsights scopes QUALIFIED / A-LEADS / costs / benchmarks to the preset window", () => {
+  const now = Date.parse("2026-02-10T12:00:00Z");
+  const main = { data: [{ ad_id: "1", ad_name: "Reel A", spend: "100", impressions: "4000", inline_link_clicks: "40", actions: [{ action_type: "lead", value: "7" }] }] };
+  const leads = [
+    // in the last 7 days
+    { source: "Meta Ads · Reel A", classification: "A", status: "Viewing booked", created_at: "2026-02-09T09:00:00Z" },
+    { source: "Meta Ads · Reel A", classification: "B", status: "New", created_at: "2026-02-08T09:00:00Z" },
+    // older — must NOT count in the 7-day view (the all-time bug)
+    { source: "Meta Ads · Reel A", classification: "A", status: "Closed", created_at: "2025-12-01T09:00:00Z" },
+    { source: "Meta Ads · Reel A", classification: "A", status: "Closed", created_at: "2025-11-15T09:00:00Z" },
+  ];
+  const win = assembleAdsInsights({ main, leads, preset: "7d", now });
+  const a = win.ads[0];
+  assert.equal(a.sysLeads, 2);          // only the 2 recent leads, not all 4
+  assert.equal(a.aLeads, 1);            // 1 recent A (the 2 old A-leads excluded)
+  assert.equal(a.qualified, 1);         // 1 recent qualified (Viewing booked)
+  assert.equal(a.byClass.A, 1);         // tooltip counts are windowed too
+  assert.equal(a.costPerA, 100);        // €100 / 1 A-lead, not /3
+  assert.equal(a.costPerQualified, 100);
+  assert.equal(win.benchmarks.costPerA, 100); // benchmark weighting is windowed
+  assert.equal(win.totals.aLeads, 1);
+
+  // the same data over "maximum" counts all 4 leads (3 A-leads)
+  const all = assembleAdsInsights({ main, leads, preset: "maximum", now });
+  assert.equal(all.ads[0].aLeads, 3);
+  assert.equal(all.ads[0].costPerA, 100 / 3);
 });
 
 test("metaDatePreset maps the UI range to Meta's enum, defaults to last_7d", () => {
@@ -413,7 +487,7 @@ test("assembleAdsInsights attaches thumbnails + ctr30 and emits benchmarks/topPe
     { source: "Meta Ads · Reel A", classification: "B", status: "New" },
     { source: "Meta Ads · Reel A", classification: "C", status: "New" },
   ];
-  const out = assembleAdsInsights({ main, baseline, thumbnails, leads, preset: "7d" });
+  const out = assembleAdsInsights({ main, baseline, thumbnails, leads, preset: "maximum" }); // all-time: join the fixture leads
   const a = out.ads[0];
   assert.equal(a.thumbnailUrl, "https://cdn/thumb1.jpg");
   assert.equal(a.ctr30, 180 / 9000); // 0.02

@@ -129,16 +129,55 @@ export function normAdName(name) {
   return s(name).trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-// Group leads by (normalised) ad name → quality tallies. "total" is total leads in
-// system for that ad (all-time; our leads carry no spend-window), with A/B/C +
-// unclassified counts and a qualified-or-better count. Keyed by normAdName; each
-// entry keeps the first-seen display `adName`.
-export function joinLeadsByAd(leads, { qualifiedStatuses = QUALIFIED_STATUSES } = {}) {
+// ── Date-window scoping for the lead join ───────────────────────────────────
+// Meta insights are period-scoped by date_preset, but our leads live all-time in
+// the sheet/subscribers. Without this, a 7-day view would still count an ad's
+// all-time qualified/A-leads (e.g. 7 leads but 85 qualified). So the join is
+// scoped to the SAME rolling window as the Meta call, keyed on each lead's
+// ORIGINAL creation time (`created_at` — the Instant-Form created_time or the
+// subscriber's created_at), never the classification date (which lags creation).
+export const PRESET_DAYS = { "7d": 7, "14d": 14, "30d": 30 };
+
+// Rolling [since, until] window (epoch ms) matching the preset, or null for
+// "maximum" (all-time, no filter). Unmapped presets default to 7d, mirroring
+// metaDatePreset's last_7d fallback so the join matches the Meta call.
+export function presetWindow(preset, now = Date.now()) {
+  const p = s(preset);
+  if (p === "maximum") return null;
+  const days = PRESET_DAYS[p] || 7;
+  const end = num(now);
+  return { since: end - days * 86400000, until: end };
+}
+
+// Lead creation time → epoch ms; null when missing or unparseable.
+export function leadTime(createdAt) {
+  const str = s(createdAt).trim();
+  if (!str) return null;
+  const t = Date.parse(str);
+  return Number.isFinite(t) ? t : null;
+}
+
+// Is a lead (by created_at) inside the window? No window (maximum) → always true.
+// A lead we can't place in time is EXCLUDED from a bounded window — we can't claim
+// it belongs to the period, so a 7-day view never inherits an untimed older lead.
+export function inWindow(createdAt, window) {
+  if (!window) return true;
+  const t = leadTime(createdAt);
+  if (t == null) return false;
+  return t >= window.since && t <= window.until;
+}
+
+// Group leads by (normalised) ad name → quality tallies. "total" is the ad's leads
+// WITHIN the window (see presetWindow), with A/B/C + unclassified counts and a
+// qualified-or-better count. Pass `window` to period-scope the join (default null
+// = all-time). Keyed by normAdName; each entry keeps the first-seen display adName.
+export function joinLeadsByAd(leads, { qualifiedStatuses = QUALIFIED_STATUSES, window = null } = {}) {
   const qSet = new Set(qualifiedStatuses);
   const map = new Map();
   for (const l of Array.isArray(leads) ? leads : []) {
     const adName = leadAdName(l?.source);
     if (!adName) continue;
+    if (!inWindow(l?.created_at, window)) continue; // period-scope to match Meta's date_preset
     const key = normAdName(adName);
     if (!map.has(key)) {
       map.set(key, { adName, total: 0, A: 0, B: 0, C: 0, unclassified: 0, qualified: 0 });
@@ -464,8 +503,12 @@ function computeTotals(ads) {
 // `thumbnails` (Map adId→url) and `baseline` (last-30d `main` payload, for each
 // ad's own trailing CTR) are optional — the page degrades gracefully without them
 // (placeholder thumbs; the fatigue diagnosis just can't fire).
-export function assembleAdsInsights({ main, platform, hourly, daily, leads, preset, cachedAt, thumbnails, videos, previews, facebookUrls, baseline } = {}) {
-  const joinMap = joinLeadsByAd(leads);
+export function assembleAdsInsights({ main, platform, hourly, daily, leads, preset, cachedAt, now, thumbnails, videos, previews, facebookUrls, baseline } = {}) {
+  // Scope the lead-quality join to the same window as the Meta insights call, so
+  // QUALIFIED / A-LEADS / byClass / costs / benchmarks / podiums all reflect the
+  // selected period — not the ad's all-time leads.
+  const window = presetWindow(preset, now == null ? Date.now() : now);
+  const joinMap = joinLeadsByAd(leads, { window });
   const platformByAd = groupByAd(rowsOf(platform));
   const hourlyByAd = groupByAd(rowsOf(hourly));
   const dailyByAd = groupByAd(rowsOf(daily));
