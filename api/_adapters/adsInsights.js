@@ -431,6 +431,9 @@ export const DIAGNOSES = [
     text: "Low hook, cheap leads: this hook is filtering, not failing — it lets fewer people in, but the right ones. Don't 'fix' the hook.",
     test: (a, b) => b.hook != null && b.cpl != null && a.hookRate != null && a.cpl != null
       && a.hookRate < b.hook && a.cpl < b.cpl && num(a.leads) >= 3,
+    // Outcome data (cheap leads) outranks the diagnostic guess: if this fires,
+    // drop weak_hook so the box never says both "fix" and "don't fix the hook".
+    suppresses: ["weak_hook"],
   },
   {
     code: "form_friction",
@@ -456,13 +459,20 @@ export const DIAGNOSES = [
 
 export function adDiagnoses(ad, benchmarks) {
   const b = benchmarks || {};
-  const out = [];
+  const fired = [];
   for (const d of DIAGNOSES) {
-    let fired;
-    try { fired = !!d.test(ad, b); } catch { fired = false; }
-    if (fired) out.push({ code: d.code, text: d.text });
+    let hit;
+    try { hit = !!d.test(ad, b); } catch { hit = false; }
+    if (hit) fired.push(d);
   }
-  return out;
+  // Rule precedence: any fired rule can suppress others by code (its `suppresses`
+  // list), so contradictory diagnoses never co-occur. General mechanism — add a
+  // `suppresses` to a rule rather than special-casing here.
+  const suppressed = new Set();
+  for (const d of fired) {
+    if (Array.isArray(d.suppresses)) for (const code of d.suppresses) suppressed.add(code);
+  }
+  return fired.filter((d) => !suppressed.has(d.code)).map((d) => ({ code: d.code, text: d.text }));
 }
 
 function computeTotals(ads) {

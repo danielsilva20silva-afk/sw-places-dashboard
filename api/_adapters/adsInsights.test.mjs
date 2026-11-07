@@ -456,6 +456,21 @@ test("diagnosis low_quality: fires / doesn't / boundary", () => {
   assert.ok(!codes({ ...baseAd, leads: 6, sysLeads: 10, qualified: 2 }).includes("low_quality")); // share==0.2 (boundary) → no
 });
 
+test("rule precedence: filtering_hook suppresses the contradictory weak_hook", () => {
+  // both conditions true: hook<avg & hold>avg (weak_hook) AND cpl<avg & ≥3 leads (filtering)
+  const both = codes({ ...baseAd, hookRate: 0.2, holdRate: 0.4, cpl: 10, leads: 5 });
+  assert.ok(both.includes("filtering_hook"));
+  assert.ok(!both.includes("weak_hook")); // suppressed: "don't fix the hook" outranks "fix the hook"
+  // weak_hook alone (CPL above avg → filtering can't fire) is unaffected
+  const wh = codes({ ...baseAd, hookRate: 0.2, holdRate: 0.4, cpl: 40, leads: 5 });
+  assert.ok(wh.includes("weak_hook"));
+  assert.ok(!wh.includes("filtering_hook"));
+  // filtering_hook alone (hold below avg → weak_hook can't fire) still fires
+  const fh = codes({ ...baseAd, hookRate: 0.2, holdRate: 0.2, cpl: 10, leads: 5 });
+  assert.ok(fh.includes("filtering_hook"));
+  assert.ok(!fh.includes("weak_hook"));
+});
+
 test("an average ad trips no diagnosis; rules are independent", () => {
   assert.deepEqual(codes(baseAd), []);
   assert.equal(DIAGNOSES.length, 6);
