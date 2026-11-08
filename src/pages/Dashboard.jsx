@@ -14,6 +14,7 @@ import LeadDrawer from "../components/LeadDrawer";
 import EventModal from "../components/EventModal";
 import DashboardTab from "../tabs/DashboardTab";
 import LeadsTab from "../tabs/LeadsTab";
+import AdsTab from "../tabs/AdsTab";
 import TemplatesTab from "../tabs/TemplatesTab";
 import NewsletterTab from "../tabs/NewsletterTab";
 import AnaTab from "../tabs/AnaTab";
@@ -629,9 +630,13 @@ export default function Dashboard({ onLogout }) {
   // Only tabs whose feature flag is true render (nav + content). shownTab
   // falls back to the first enabled tab if activeTab points at a disabled one
   // (stale state / direct link) instead of rendering it.
-  const ALL_TABS = [["dashboard", "Dashboard"], ["leads", "Leads"], ["templates", "Templates"], ["conversas", "Conversas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
-  const tabs = ALL_TABS.filter(([key]) => hasFeature(key));
-  const shownTab = hasFeature(activeTab) ? activeTab : (tabs[0]?.[0] || "dashboard");
+  const ALL_TABS = [["dashboard", "Dashboard"], ["leads", "Leads"], ["ads", "Ads"], ["templates", "Templates"], ["conversas", "Conversas"], ["recuperar", "Recuperar conversas"], ["newsletter", "Newsletter"], ["ana", "Testar Ana"]];
+  // A tab key usually IS its feature flag; the "ads" tab is gated by the
+  // adsInsights flag (the tab stays "ads" so URLs/labels read naturally).
+  const TAB_FEATURE = { ads: "adsInsights" };
+  const tabFeature = (key) => TAB_FEATURE[key] || key;
+  const tabs = ALL_TABS.filter(([key]) => hasFeature(tabFeature(key)));
+  const shownTab = hasFeature(tabFeature(activeTab)) ? activeTab : (tabs[0]?.[0] || "dashboard");
 
   // Notifications panel: full-width sheet on mobile (never clipped), anchored dropdown on desktop
   const notifPanelStyle = isMobile
@@ -831,6 +836,8 @@ export default function Dashboard({ onLogout }) {
             {shownTab ==="leads" && (
               <LeadsTab leads={activeLeads} onOpenLead={setDrawerLead} onStatusChange={changeStatus} onCreateLead={addLead} actionsView={actionsView} archiveOn={archiveOn} archivedLeads={archivedLeads} onUnarchive={unarchiveLead} onApplyClassifications={applyClassifications} />
             )}
+
+            {shownTab ==="ads" && <AdsTab />}
 
             {shownTab ==="templates" && <TemplatesTab leads={activeLeads} />}
 

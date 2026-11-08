@@ -397,6 +397,7 @@ export default {
     archive: true,      // archive leads / hide-without-delete (api/brandon-store.js?resource=archive)
     classSuggest: true, // suggested A/B/C from the Meta form's Intent answer (suggest, never auto-assign)
     followupCadence: true, // derived follow-up cadence engine + "Due today" panel (src/followups.js)
+    adsInsights: true,  // "Ads" page — Meta Ads creative performance × lead quality (api/brandon-store.js?resource=ads-insights)
   },
 
   // Brandon's own pipeline (English). STATUS_CONFIG reuses the SW Places colour

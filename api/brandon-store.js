@@ -1,5 +1,7 @@
 import serverConfig from "./_config.js";
 import { getContext } from "./_adapters/supabase.js";
+import dataAdapter from "./_adapters/index.js";
+import { assembleAdsInsights, metaDatePreset } from "./_adapters/adsInsights.js";
 
 // Combined Supabase-backed store for two brandon-only features, behind ONE
 // serverless function (Vercel Hobby caps deployments at 12 functions). Dispatch
@@ -351,6 +353,368 @@ async function handleArchive(req, res, supabase) {
   return res.status(405).json({ error: "Method not allowed" });
 }
 
+// ─────────────────────────── ads insights ───────────────────────────
+// Creative-performance analysis: Meta Ads insights (level=ad) joined with our own
+// lead-quality data (classification A/B/C + pipeline status). Meta rate limits are
+// real, so the assembled JSON is cached 15 min — a per-instance memory cache plus
+// a best-effort Supabase app_config row (cross-instance). The Meta access token is
+// read from app_config (key='meta_ads_token'), kept fresh by an external weekly
+// job — never hardcoded, never sent to the client. All pure maths lives in
+// api/_adapters/adsInsights.js (underscore-pathed → not a Vercel function).
+const META_API_VERSION = "v21.0";
+const META_AD_ACCOUNT_ID = "1694636325217643";
+const META_TOKEN_KEY = "meta_ads_token";
+const ADS_CACHE_TTL_MS = 15 * 60 * 1000;
+const ADS_CACHE_PREFIX = "ads_insights_cache:";
+const CONFIG_TABLE = "app_config";
+const META_PRESETS = new Set(["7d", "14d", "30d", "maximum"]);
+const META_PAGE_LIMIT = 200;
+const META_MAX_PAGES = 25;
+
+// Per-instance (warm) cache: preset → { at, payload }. Survives within one lambda
+// instance only; the app_config row below covers cross-instance reuse.
+const adsMemCache = new Map();
+
+const isFresh = (at) => typeof at === "number" && Date.now() - at < ADS_CACHE_TTL_MS;
+
+// Read the Meta token from app_config. Defensive about the value column name
+// (value | token | access_token) since the external job owns this table.
+async function readMetaToken(supabase) {
+  try {
+    const { data, error } = await supabase
+      .from(CONFIG_TABLE)
+      .select("*")
+      .eq("key", META_TOKEN_KEY)
+      .maybeSingle();
+    if (error) {
+      console.error("ads-insights readMetaToken:", error.message);
+      return "";
+    }
+    if (!data) return "";
+    return s(data.value || data.token || data.access_token || data.data).trim();
+  } catch (err) {
+    console.error("ads-insights readMetaToken threw:", err?.message || err);
+    return "";
+  }
+}
+
+// Persistent cache in app_config (best-effort both ways — a different table shape
+// or a missing row just means we fetch fresh; it never breaks the request).
+async function readAdsCache(supabase, preset) {
+  try {
+    const { data, error } = await supabase
+      .from(CONFIG_TABLE)
+      .select("value")
+      .eq("key", ADS_CACHE_PREFIX + preset)
+      .maybeSingle();
+    if (error || !data) return null;
+    const raw = data.value;
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (parsed && isFresh(Date.parse(parsed.cachedAt))) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+async function writeAdsCache(supabase, preset, payload) {
+  try {
+    await supabase
+      .from(CONFIG_TABLE)
+      .upsert({ key: ADS_CACHE_PREFIX + preset, value: JSON.stringify(payload) }, { onConflict: "key" });
+  } catch {
+    /* best-effort: caching is an optimisation, never a hard dependency */
+  }
+}
+
+// One Meta insights request, following paging.next to completion (capped). Returns
+// { data } with every page concatenated. Throws a MetaError the caller maps to a
+// clean, UI-showable message (never a 500 crash).
+class MetaError extends Error {
+  constructor(message, code) { super(message); this.code = code; }
+}
+function isTokenError(errObj) {
+  const code = Number(errObj?.code);
+  const msg = s(errObj?.message).toLowerCase();
+  return code === 190 || code === 102 || code === 10 || msg.includes("access token") || msg.includes("session has expired");
+}
+
+async function metaFetchAll(params, token, edge = "insights") {
+  const base = `https://graph.facebook.com/${META_API_VERSION}/act_${META_AD_ACCOUNT_ID}/${edge}`;
+  const qs = new URLSearchParams({ ...params, access_token: token, limit: String(META_PAGE_LIMIT) });
+  let url = `${base}?${qs.toString()}`;
+  const out = [];
+  for (let page = 0; page < META_MAX_PAGES && url; page++) {
+    let resp, json;
+    try {
+      resp = await fetch(url);
+      json = await resp.json();
+    } catch (err) {
+      throw new MetaError(`Couldn't reach Meta: ${err?.message || err}`, "network");
+    }
+    if (json?.error) {
+      throw new MetaError(s(json.error.message) || "Meta API error.", isTokenError(json.error) ? "token" : "meta");
+    }
+    if (Array.isArray(json?.data)) out.push(...json.data);
+    url = json?.paging?.next || "";
+  }
+  return { data: out };
+}
+
+// Preview iframe format to request from the previews edge. Tried in order per ad
+// (first one that yields an iframe wins) so an ad with only one placement still
+// resolves. INSTAGRAM_STANDARD suits this IG-reel-heavy account; MOBILE_FEED is
+// the broad fallback.
+const META_PREVIEW_FORMATS = ["INSTAGRAM_STANDARD", "MOBILE_FEED_STANDARD"];
+const MAX_PREVIEW_ADS = 60;      // cap per-ad preview calls (safety for big accounts)
+const PREVIEW_CONCURRENCY = 8;
+
+// Fetch every ad's creative thumbnail, (when a video) its video_id, and its
+// effective_object_story_id (for the Facebook permalink). The ads edge carries no
+// date filter, so we map ALL ads and let the caller use only the ids that have
+// spend. Returns { thumbs, videoIds, storyIds } (all Map(adId→…)). Best-effort.
+async function fetchAdCreatives(token) {
+  const thumbs = new Map();
+  const videoIds = new Map();
+  const storyIds = new Map();
+  try {
+    const { data } = await metaFetchAll(
+      { fields: "id,creative{thumbnail_url,video_id,effective_object_story_id}", thumbnail_width: "256", thumbnail_height: "256" },
+      token,
+      "ads"
+    );
+    for (const ad of data) {
+      const id = s(ad?.id);
+      if (!id) continue;
+      const url = s(ad?.creative?.thumbnail_url);
+      if (url) thumbs.set(id, url);
+      const vid = s(ad?.creative?.video_id);
+      if (vid) videoIds.set(id, vid);
+      const story = s(ad?.creative?.effective_object_story_id);
+      if (story) storyIds.set(id, story);
+    }
+  } catch (err) {
+    // A token error is surfaced by the parallel insights calls; here we just
+    // degrade media to placeholders rather than sink the whole page.
+    console.error("ads-insights fetchAdCreatives:", err?.message || err);
+  }
+  return { thumbs, videoIds, storyIds };
+}
+
+// Resolve video ids → playable source URLs via the batch-by-ids endpoint
+// (GET /?ids=v1,v2&fields=source). Signed, expiring CDN URLs. Meta commonly
+// REFUSES `source` for ad-account videos (a known permission restriction); a
+// failed batch logs the real error (first one, for diagnostics) and is skipped —
+// the UI then falls back to the preview iframe. Returns { map, sampleError }.
+async function fetchVideoSources(ids, token) {
+  const map = new Map();
+  let sampleError = null;
+  const uniq = [...new Set(ids.filter(Boolean))];
+  const CHUNK = 50;
+  for (let i = 0; i < uniq.length; i += CHUNK) {
+    const batch = uniq.slice(i, i + CHUNK);
+    const qs = new URLSearchParams({ ids: batch.join(","), fields: "source", access_token: token });
+    try {
+      const resp = await fetch(`https://graph.facebook.com/${META_API_VERSION}/?${qs.toString()}`);
+      const json = await resp.json();
+      if (json?.error) {
+        if (!sampleError) sampleError = json.error;
+        continue;
+      }
+      for (const [vid, obj] of Object.entries(json || {})) {
+        // Per-id errors can also appear inline under the id key.
+        if (obj?.error && !sampleError) sampleError = obj.error;
+        const src = s(obj?.source);
+        if (src) map.set(vid, src);
+      }
+    } catch (err) {
+      if (!sampleError) sampleError = { message: err?.message || String(err) };
+    }
+  }
+  return { map, sampleError };
+}
+
+// Pull the iframe src out of a previews-edge body (HTML-unescaping &amp; etc.).
+function extractIframeSrc(body) {
+  const m = /<iframe[^>]+src=["']([^"']+)["']/i.exec(s(body));
+  if (!m) return "";
+  return m[1].replace(/&amp;/g, "&").replace(/&#0?38;/g, "&");
+}
+
+// Per-ad rendered ad preview → Map(adId → iframe src). GET /{ad_id}/previews
+// returns a renderable iframe body; these URLs are signed and short-lived, so
+// they get the same cache-TTL treatment as thumbnails. Scoped to the (spend) ad
+// ids the caller passes, capped and concurrency-limited. Best-effort per ad;
+// returns { map, sampleError }.
+async function fetchAdPreviews(adIds, token) {
+  const map = new Map();
+  let sampleError = null;
+  const ids = [...new Set(adIds.filter(Boolean))].slice(0, MAX_PREVIEW_ADS);
+  for (let i = 0; i < ids.length; i += PREVIEW_CONCURRENCY) {
+    const chunk = ids.slice(i, i + PREVIEW_CONCURRENCY);
+    const results = await Promise.all(chunk.map(async (adId) => {
+      for (const fmt of META_PREVIEW_FORMATS) {
+        try {
+          const qs = new URLSearchParams({ ad_format: fmt, access_token: token });
+          const resp = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${adId}/previews?${qs.toString()}`);
+          const json = await resp.json();
+          if (json?.error) { if (!sampleError) sampleError = json.error; continue; }
+          const src = extractIframeSrc(json?.data?.[0]?.body);
+          if (src) return [adId, src];
+        } catch (err) {
+          if (!sampleError) sampleError = { message: err?.message || String(err) };
+        }
+      }
+      return [adId, ""];
+    }));
+    for (const [adId, src] of results) if (src) map.set(adId, src);
+  }
+  return { map, sampleError };
+}
+
+// `effective_object_story_id` → Facebook permalink. The id is "{page}_{post}";
+// facebook.com/{page}_{post} resolves to the post. Stable (not signed).
+function facebookUrlFromStory(storyId) {
+  const id = s(storyId).trim();
+  return id ? `https://www.facebook.com/${id}` : "";
+}
+
+// Build the lead list exactly as the dashboard sees it (the client's configured
+// adapter — for brandon the Supabase-subscribers + Meta-sheet composite), so the
+// join uses the same `source`/classification/status the UI shows.
+async function fetchCompositeLeads() {
+  try {
+    const cc = dataAdapter.getContext();
+    if (!cc) return [];
+    return await dataAdapter.getLeads(cc);
+  } catch (err) {
+    console.error("ads-insights fetchCompositeLeads:", err?.message || err);
+    return []; // the page still renders Meta spend/creative metrics without the join
+  }
+}
+
+async function handleAdsInsights(req, res, supabase) {
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const rawPreset = s(req.query?.preset).trim();
+  const preset = META_PRESETS.has(rawPreset) ? rawPreset : "7d";
+  const force = s(req.query?.force).trim() === "1";
+
+  // Cache: memory first (per-instance), then the app_config row (cross-instance).
+  if (!force) {
+    const mem = adsMemCache.get(preset);
+    if (mem && isFresh(mem.at)) {
+      return res.status(200).json({ ...mem.payload, cached: true });
+    }
+    const persisted = await readAdsCache(supabase, preset);
+    if (persisted) {
+      adsMemCache.set(preset, { at: Date.parse(persisted.cachedAt), payload: persisted });
+      return res.status(200).json({ ...persisted, cached: true });
+    }
+  }
+
+  const token = await readMetaToken(supabase);
+  if (!token) {
+    return res.status(200).json({
+      ok: false,
+      errorCode: "token_expired",
+      error: "Meta token missing or expired — renew it in Apps Script.",
+    });
+  }
+
+  const datePreset = metaDatePreset(preset);
+  const videoFields = [
+    "ad_id", "ad_name", "spend", "impressions", "reach", "frequency", "ctr",
+    "inline_link_clicks", "actions", "cost_per_action_type",
+    "video_play_actions", "video_continuous_2_sec_watched_actions",
+    "video_thruplay_watched_actions", "video_avg_time_watched_actions",
+    "video_p25_watched_actions", "video_p50_watched_actions",
+    "video_p75_watched_actions", "video_p95_watched_actions", "video_p100_watched_actions",
+  ].join(",");
+
+  // A non-token breakdown failure degrades to empty (the main table still
+  // renders); a token error from any insights call bubbles to the catch.
+  const softBreakdown = (label) => (e) => { if (e.code === "token") throw e; console.error(`ads-insights ${label}:`, e.message); return { data: [] }; };
+
+  try {
+    // Phase 1 — insights + creatives + leads in parallel. `main` is the heavy
+    // per-ad call; `baseline` is a last-30d CTR reference (fatigue); `creatives`
+    // carries thumbnails + video ids + story ids. Breakdowns/baseline/creatives
+    // are best-effort; a token error from an insights call bubbles to the catch.
+    const [main, platform, hourly, daily, baseline, creatives, leads] = await Promise.all([
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: videoFields }, token),
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,impressions,actions", breakdowns: "publisher_platform,platform_position" }, token).catch(softBreakdown("platform breakdown")),
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,impressions,actions", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone" }, token).catch(softBreakdown("hourly breakdown")),
+      metaFetchAll({ level: "ad", date_preset: datePreset, fields: "ad_id,spend,actions", time_increment: "1" }, token).catch(softBreakdown("daily series")),
+      metaFetchAll({ level: "ad", date_preset: "last_30d", fields: "ad_id,impressions,inline_link_clicks" }, token).catch(softBreakdown("30d baseline")),
+      fetchAdCreatives(token),
+      fetchCompositeLeads(),
+    ]);
+
+    // The ad ids with spend in the period — scope the per-ad preview calls (and
+    // the video-source lookup) to just these, not the whole account.
+    const spendAdIds = [...new Set((main.data || []).map((r) => s(r.ad_id)).filter(Boolean))];
+    const spendVideoIds = spendAdIds.map((id) => creatives.videoIds.get(id)).filter(Boolean);
+
+    // Phase 2 — media that depends on the spend set: video sources (often refused
+    // by Meta → iframe fallback) and the rendered ad-preview iframes. Parallel.
+    const [videoRes, previewRes] = await Promise.all([
+      fetchVideoSources(spendVideoIds, token),
+      fetchAdPreviews(spendAdIds, token),
+    ]);
+
+    // adId → playable video source (only where Meta actually served `source`).
+    const videos = new Map();
+    for (const adId of spendAdIds) {
+      const vid = creatives.videoIds.get(adId);
+      const src = vid && videoRes.map.get(vid);
+      if (src) videos.set(adId, src);
+    }
+    // adId → Facebook permalink (from the story id).
+    const facebookUrls = new Map();
+    for (const [adId, story] of creatives.storyIds) {
+      const url = facebookUrlFromStory(story);
+      if (url) facebookUrls.set(adId, url);
+    }
+
+    const payload = assembleAdsInsights({
+      main, platform, hourly, daily, baseline, leads, preset,
+      thumbnails: creatives.thumbs, videos, previews: previewRes.map, facebookUrls,
+      cachedAt: new Date().toISOString(),
+    });
+
+    // Diagnostics (vercel logs): coverage + the real error Meta returns for the
+    // refused video `source` field, on a sample.
+    const nVideo = payload.ads.filter((a) => a.videoUrl).length;
+    const nPreview = payload.ads.filter((a) => a.previewUrl).length;
+    const nFb = payload.ads.filter((a) => a.facebookUrl).length;
+    const nNone = payload.ads.filter((a) => !a.videoUrl && !a.previewUrl && !a.facebookUrl).length;
+    console.log(`ads-insights[${preset}]: ${payload.ads.length} ads — ${nVideo} video, ${nPreview} preview-iframe, ${nFb} facebook-link, ${nNone} none; thumbs ${payload.ads.filter((a) => a.thumbnailUrl).length}`);
+    if (videoRes.sampleError) console.log(`ads-insights[${preset}] video source refused (sample):`, JSON.stringify(videoRes.sampleError));
+    if (previewRes.sampleError) console.log(`ads-insights[${preset}] preview error (sample):`, JSON.stringify(previewRes.sampleError));
+
+    adsMemCache.set(preset, { at: Date.parse(payload.cachedAt), payload });
+    await writeAdsCache(supabase, preset, payload);
+    return res.status(200).json({ ...payload, cached: false });
+  } catch (err) {
+    if (err instanceof MetaError && err.code === "token") {
+      return res.status(200).json({
+        ok: false,
+        errorCode: "token_expired",
+        error: "Meta token expired — renew it in Apps Script.",
+      });
+    }
+    console.error("ads-insights fetch error:", err?.message || err);
+    return res.status(200).json({
+      ok: false,
+      errorCode: "meta_error",
+      error: "Couldn't fetch data from Meta. Please try again shortly.",
+    });
+  }
+}
+
 // ───────────────────────────── dispatch ─────────────────────────────
 export default async function handler(req, res) {
   const resource = s(req.query?.resource).trim();
@@ -368,9 +732,12 @@ export default async function handler(req, res) {
   if (resource === "archive" && !serverConfig.archive) {
     return res.status(403).json({ error: "Arquivo não está disponível para este cliente." });
   }
-  const KNOWN = ["links", "templates", "greetings", "actions", "archive"];
+  if (resource === "ads-insights" && !serverConfig.adsInsights) {
+    return res.status(403).json({ error: "Ads não está disponível para este cliente." });
+  }
+  const KNOWN = ["links", "templates", "greetings", "actions", "archive", "ads-insights"];
   if (!KNOWN.includes(resource)) {
-    return res.status(400).json({ error: "resource inválido (usa 'links', 'templates', 'greetings', 'actions' ou 'archive')." });
+    return res.status(400).json({ error: "resource inválido (usa 'links', 'templates', 'greetings', 'actions', 'archive' ou 'ads-insights')." });
   }
 
   // Supabase configured? (missing env → friendly, never a crash)
@@ -384,6 +751,7 @@ export default async function handler(req, res) {
     if (resource === "greetings") return await handleGreetings(req, res, ctx.supabase);
     if (resource === "actions") return await handleActions(req, res, ctx.supabase);
     if (resource === "archive") return await handleArchive(req, res, ctx.supabase);
+    if (resource === "ads-insights") return await handleAdsInsights(req, res, ctx.supabase);
     return await handleTemplates(req, res, ctx.supabase);
   } catch (err) {
     if (err?.expose) return res.status(err.status).json({ error: err.message });

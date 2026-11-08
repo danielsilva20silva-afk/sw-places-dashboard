@@ -440,3 +440,18 @@ export async function setAnaState(subscriberId, active) {
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
+
+// GET /api/brandon-store?resource=ads-insights&preset=7d → assembled Ads page
+// payload (Meta Ads creative metrics joined with our lead-quality data). brandon
+// only (adsInsights feature). Returns the parsed body as-is: on success
+// { ok:true, totals, ads, unmatchedLeadAds, cachedAt, cached }; on a handled Meta
+// problem { ok:false, errorCode, error } (HTTP is still 200 — the UI shows the
+// message). `force=1` bypasses the 15-min cache.
+export async function getAdsInsights(preset = "7d", { force = false } = {}) {
+  const q = new URLSearchParams({ resource: "ads-insights", preset });
+  if (force) q.set("force", "1");
+  const res = await fetch(`/api/brandon-store?${q.toString()}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
