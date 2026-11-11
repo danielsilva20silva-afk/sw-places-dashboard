@@ -1,6 +1,6 @@
 // Unit tests for the follow-up cadence engine. Run: node src/followups.test.mjs
 import assert from "node:assert/strict";
-import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, STATUS_CHANGE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS, CONTACT_ANCHOR_STATUSES, isContactAnchorStatus, statusChangeActionTitle, noAnswerChipVisible, noAnswerStatusTransition, TERMINAL_STATUSES, isTerminalStatus } from "./followups.js";
+import { computeFollowup, attemptStats, downgradeTarget, downgradeThreshold, ATTEMPT_TITLE, DOWNGRADE_TITLE, STATUS_CHANGE_TITLE, PREFILLED_NO_ANSWER_NOTE, NO_ANSWER_STATUS, CONTACT_ANCHOR_STATUSES, isContactAnchorStatus, statusChangeActionTitle, noAnswerChipVisible, noAnswerStatusTransition, TERMINAL_STATUSES, isTerminalStatus, attemptDotsInfo } from "./followups.js";
 import { compareActions } from "./actions.js";
 
 const DAY = 86400000;
@@ -392,6 +392,40 @@ const statusAct = (status, ms, id) => ({ done: true, title: statusChangeActionTi
   // Defaults to the "New" label when opts omitted.
   assert.equal(noAnswerStatusTransition("New"), NO_ANSWER_STATUS);
   ok("no-answer click: only a New lead transitions to the no-answer status");
+}
+
+// ── attemptDotsInfo: dots on any non-terminal lead with logged attempts ──
+{
+  // No-answer keeps the threshold cap, and returns the object even at 0 attempts
+  // (unchanged behavior — the empty threshold dots show the chain length).
+  assert.deepEqual(
+    attemptDotsInfo({ attempts: 3, attemptThreshold: 4 }, NO_ANSWER_STATUS),
+    { attempts: 3, threshold: 4 },
+    "no-answer: keep attempts + threshold cap",
+  );
+  assert.deepEqual(
+    attemptDotsInfo({ attempts: 0, attemptThreshold: 4 }, NO_ANSWER_STATUS),
+    { attempts: 0, threshold: 4 },
+    "no-answer: shown even at 0 attempts",
+  );
+  // Other non-terminal status with attempts → raw count, no threshold cap.
+  for (const st of ["Contacted — qualifying", "Contacted — answered", "Viewing booked", "New"]) {
+    assert.deepEqual(
+      attemptDotsInfo({ attempts: 2, attemptThreshold: 3 }, st),
+      { attempts: 2, threshold: null },
+      `${st} with 2 attempts → { attempts: 2, threshold: null }`,
+    );
+  }
+  // Other status with 0 attempts → nothing.
+  assert.equal(attemptDotsInfo({ attempts: 0, attemptThreshold: 3 }, "Contacted — qualifying"), null,
+    "qualifying with 0 attempts → null");
+  // Terminal statuses never show dots, even with attempts logged.
+  for (const st of ["Closed", "Lost"]) {
+    assert.equal(attemptDotsInfo({ attempts: 5, attemptThreshold: 4 }, st), null, `${st} → null`);
+  }
+  // No followup record → null.
+  assert.equal(attemptDotsInfo(null, "Contacted — qualifying"), null, "no followup → null");
+  ok("attemptDotsInfo: dots on any non-terminal lead with attempts; no-answer keeps the cap");
 }
 
 console.log(`\nALL ${n} TESTS PASSED ✓`);

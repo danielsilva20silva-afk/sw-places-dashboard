@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { STATUSES, STATUS_CONFIG, CLASSIFICATION_CONFIG, calendarTriggerStatus, statusRoles } from "../constants";
 import { branding, hasFeature } from "../config";
 import { suggestClassification } from "../suggestClassification";
-import { NO_ANSWER_STATUS, PREFILLED_NO_ANSWER_NOTE, noAnswerChipVisible } from "../followups";
+import { PREFILLED_NO_ANSWER_NOTE, noAnswerChipVisible, attemptDotsInfo } from "../followups";
 import { t } from "../labels";
 import { leadWhen, relDate, isValidEmail, isValidPhone, cleanField, waNumber, emailHref, emailOpensNewTab, sourceCampaignLabel } from "../utils";
 import { appendNote } from "../notesFormat";
@@ -231,8 +231,10 @@ export default function LeadDrawer({ lead, onClose, onUpdate, onDelete, onReques
   // local `status`, so it reacts if the status changes while the drawer is open.
   const onNoAnswerChip = (onLogNoAnswer && noAnswerChipVisible(followupCadenceOn, status))
     ? () => onLogNoAnswer(lead.id) : undefined;
-  const noAnswerAttemptsInfo = followupCadenceOn && followup && status === NO_ANSWER_STATUS
-    ? { attempts: followup.attempts, threshold: followup.attemptThreshold } : null;
+  // Attempt dots: no-answer leads keep the threshold-capped "n / M" dots; any other
+  // non-terminal lead with logged attempts shows the raw count (threshold null). Uses
+  // the live-synced local `status` so it reacts to status changes while open.
+  const noAnswerAttemptsInfo = followupCadenceOn ? attemptDotsInfo(followup, status) : null;
   const followupCadenceText = (fu) => {
     if (!fu) return "";
     if (fu.overridden) return t("fu_from_action");

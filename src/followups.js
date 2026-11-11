@@ -69,6 +69,29 @@ export function noAnswerChipVisible(followupCadenceOn, status) {
   return !!followupCadenceOn && !isTerminalStatus(status);
 }
 
+// Attempt-dots visibility + shape, shared by the drawer notes views (NotesHistory /
+// MergedNotes) and the Due-Today rows so they stay in lockstep. Dots show for ANY
+// non-terminal lead that has logged attempts since its last real contact — not only
+// the no-answer status — because Brandon logs the "No answer" chip from other
+// statuses (e.g. "Contacted — qualifying") too and expects to see the count.
+//   • NO_ANSWER_STATUS → keep the downgrade threshold cap (the "n / M" dots). This
+//     is the one status where auto-downgrade fires, so the cap is meaningful; the
+//     object is returned even at 0 attempts (unchanged from before — the empty
+//     threshold dots communicate the chain length).
+//   • any other non-terminal status WITH attempts > 0 → threshold:null, so the dots
+//     render the raw count ("n of n", no cap) — showing "n / M" there would imply a
+//     downgrade that never happens.
+//   • terminal (Closed/Lost), or no followup, or other status with 0 attempts → null.
+// Callers already gate on the followupCadence flag (brandon-only); the overridden
+// gate (Due-Today) stays with the caller. Pure — takes the computed followup record.
+export function attemptDotsInfo(followup, status) {
+  if (!followup || isTerminalStatus(status)) return null;
+  const attempts = followup.attempts || 0;
+  if (status === NO_ANSWER_STATUS) return { attempts, threshold: followup.attemptThreshold };
+  if (attempts > 0) return { attempts, threshold: null };
+  return null;
+}
+
 // Clicking "No answer" transitions a brand-new lead to the no-answer status (he
 // tried calling a new lead and nobody picked up); any other status is unchanged.
 // Returns the status to set, or null to leave it as is. newStatus defaults to the

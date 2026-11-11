@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { t } from "../labels";
-import { NO_ANSWER_STATUS } from "../followups";
+import { NO_ANSWER_STATUS, attemptDotsInfo } from "../followups";
 import ClassificationBadge from "./ClassificationBadge";
 import useIsMobile from "../useIsMobile";
 
@@ -9,7 +9,8 @@ import useIsMobile from "../useIsMobile";
 // `items` is a pre-sorted [{ lead, fu }] (overdue first, then A/B/C, then classify).
 // Clicking a row opens the lead drawer. Compact so a big backlog stays usable:
 // first PREVIEW rows + a count summary header, expanding to a scrollable list.
-// Cadence rows for "Contacted — no answer" leads get attempt dots and a compact
+// Rows with logged call attempts since the last real contact get attempt dots (any
+// non-terminal status, not just no-answer); the no-answer status also gets a compact
 // one-click "No answer" button.
 const PREVIEW = 15;
 
@@ -28,7 +29,11 @@ function Dots({ attempts, threshold }) {
 function Row({ item, onOpenLead, onLogNoAnswer, onCompleteAction, isMobile }) {
   const { lead, fu } = item;
   const label = fu.isOverdue ? `${fu.daysOverdue}d ${t("fu_overdue_suffix")}` : t("fu_today");
-  const noAnswer = !fu.overridden && lead.status === NO_ANSWER_STATUS;
+  const noAnswer = !fu.overridden && lead.status === NO_ANSWER_STATUS; // gates the quick "No answer" button (no-answer only)
+  // Dots are broader than the button: any non-terminal lead with logged attempts,
+  // threshold-capped only for no-answer. Keep the overridden gate (scheduled-action
+  // rows don't show the cadence attempt dots).
+  const dots = !fu.overridden ? attemptDotsInfo(fu, lead.status) : null;
   // Scheduled-action rows keep a complete-checkbox (like the old Actions card).
   const scheduled = fu.overridden && fu.nextAction;
   return (
@@ -54,7 +59,7 @@ function Row({ item, onOpenLead, onLogNoAnswer, onCompleteAction, isMobile }) {
           {t("fu_classify")}
         </span>
       )}
-      {noAnswer && <Dots attempts={fu.attempts || 0} threshold={fu.attemptThreshold} />}
+      {dots && <Dots attempts={dots.attempts || 0} threshold={dots.threshold} />}
       <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: fu.isOverdue ? "#DC2626" : "#B45309" }}>{label}</span>
       {noAnswer && onLogNoAnswer && (
         <button
